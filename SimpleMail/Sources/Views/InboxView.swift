@@ -491,16 +491,18 @@ struct EmailRow: View {
 struct AvatarView: View {
     let initials: String
     let email: String
+    var size: CGFloat = 40
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(avatarColor)
             Text(initials)
-                .font(.caption2)
+                .font(size > 32 ? .caption : .system(size: size * 0.35))
                 .fontWeight(.semibold)
                 .foregroundStyle(.white)
         }
+        .frame(width: size, height: size)
     }
 
     private var avatarColor: Color {

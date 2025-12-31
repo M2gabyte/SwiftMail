@@ -702,17 +702,29 @@ actor GmailService: GmailAPIProvider {
     private nonisolated func parseEmail(from message: MessageResponse) -> Email {
         var from = ""
         var subject = ""
-        var date = Date()
         var listUnsubscribe: String?
         var listId: String?
         var precedence: String?
         var autoSubmitted: String?
 
+        // Prefer internalDate (milliseconds since epoch) over header date
+        var date: Date
+        if let internalDate = message.internalDate,
+           let timestamp = Double(internalDate) {
+            date = Date(timeIntervalSince1970: timestamp / 1000.0)
+        } else {
+            date = Date()
+        }
+
         for header in message.payload?.headers ?? [] {
             switch header.name.lowercased() {
             case "from": from = header.value
             case "subject": subject = header.value
-            case "date": date = parseDate(header.value) ?? Date()
+            case "date":
+                // Only use header date if internalDate wasn't available
+                if message.internalDate == nil {
+                    date = parseDate(header.value) ?? date
+                }
             case "list-unsubscribe": listUnsubscribe = header.value
             case "list-id": listId = header.value
             case "precedence": precedence = header.value
@@ -724,7 +736,7 @@ actor GmailService: GmailAPIProvider {
         let email = Email(
             id: message.id,
             threadId: message.threadId,
-            snippet: message.snippet ?? "",
+            snippet: decodeHTMLEntities(message.snippet ?? ""),
             subject: subject,
             from: from,
             date: date,
@@ -747,7 +759,15 @@ actor GmailService: GmailAPIProvider {
         var to: [String] = []
         var cc: [String] = []
         var subject = ""
-        var date = Date()
+
+        // Prefer internalDate (milliseconds since epoch) over header date
+        var date: Date
+        if let internalDate = message.internalDate,
+           let timestamp = Double(internalDate) {
+            date = Date(timeIntervalSince1970: timestamp / 1000.0)
+        } else {
+            date = Date()
+        }
 
         for header in message.payload?.headers ?? [] {
             switch header.name.lowercased() {
@@ -755,7 +775,10 @@ actor GmailService: GmailAPIProvider {
             case "to": to = parseAddressList(header.value)
             case "cc": cc = parseAddressList(header.value)
             case "subject": subject = header.value
-            case "date": date = parseDate(header.value) ?? Date()
+            case "date":
+                if message.internalDate == nil {
+                    date = parseDate(header.value) ?? date
+                }
             default: break
             }
         }
@@ -765,7 +788,7 @@ actor GmailService: GmailAPIProvider {
         return EmailDetail(
             id: message.id,
             threadId: message.threadId,
-            snippet: message.snippet ?? "",
+            snippet: decodeHTMLEntities(message.snippet ?? ""),
             subject: subject,
             from: from,
             date: date,
@@ -781,6 +804,33 @@ actor GmailService: GmailAPIProvider {
 
     private nonisolated func parseAddressList(_ value: String) -> [String] {
         value.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+    }
+
+    private nonisolated func decodeHTMLEntities(_ string: String) -> String {
+        var result = string
+        // Common HTML entities
+        let entities: [(String, String)] = [
+            ("&#39;", "'"),
+            ("&#x27;", "'"),
+            ("&apos;", "'"),
+            ("&quot;", "\""),
+            ("&#34;", "\""),
+            ("&amp;", "&"),
+            ("&lt;", "<"),
+            ("&gt;", ">"),
+            ("&nbsp;", " "),
+            ("&#160;", " "),
+            ("&hellip;", "…"),
+            ("&#8230;", "…"),
+            ("&mdash;", "—"),
+            ("&#8212;", "—"),
+            ("&ndash;", "–"),
+            ("&#8211;", "–")
+        ]
+        for (entity, replacement) in entities {
+            result = result.replacingOccurrences(of: entity, with: replacement)
+        }
+        return result
     }
 
     // Cached date formatters for parsing (thread-safe static allocation)
@@ -914,6 +964,7 @@ struct MessageResponse: Codable {
     let labelIds: [String]?
     let payload: Payload?
     let historyId: String?
+    let internalDate: String?  // Unix timestamp in milliseconds
 }
 
 struct ThreadResponse: Codable {

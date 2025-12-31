@@ -122,7 +122,8 @@ struct EmailMessageCard: View {
                 HStack(spacing: 12) {
                     AvatarView(
                         initials: initials,
-                        email: senderEmail
+                        email: senderEmail,
+                        size: 40
                     )
 
                     VStack(alignment: .leading, spacing: 2) {
