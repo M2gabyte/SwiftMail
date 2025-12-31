@@ -796,9 +796,11 @@ actor GmailService {
 - v1.6:
   - Fixed email body rendering with dynamic WebView height calculation using JavaScript message handlers
   - WebView now measures content height after load and image load events
+  - Fixed WebView memory leak with WeakScriptMessageHandler wrapper (breaks WKScriptMessageHandler retain cycle)
   - Added block sender functionality (saves to UserDefaults blocked list)
   - Blocked senders are filtered out in InboxViewModel.applyFilters()
   - BlockedSendersView in Settings allows viewing and unblocking senders
+  - VIPSendersView now properly loads/saves from UserDefaults with add functionality
   - Added unsubscribe support (parses List-Unsubscribe header, prefers https over mailto)
   - Added report spam action (uses Gmail API to move to spam)
   - Added listUnsubscribe field to EmailDetail model and DTO
