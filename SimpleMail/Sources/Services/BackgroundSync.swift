@@ -1,6 +1,7 @@
 import Foundation
 import BackgroundTasks
 import UserNotifications
+import SwiftData
 
 // MARK: - Background Sync Manager
 
@@ -172,6 +173,7 @@ final class BackgroundSyncManager {
 
     // MARK: - Notification Setup
 
+    @discardableResult
     func requestNotificationPermission() async -> Bool {
         let center = UNUserNotificationCenter.current()
 

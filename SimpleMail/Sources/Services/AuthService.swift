@@ -46,20 +46,13 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     // MARK: - ASWebAuthenticationPresentationContextProviding
 
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        if Thread.isMainThread {
+        // Must dispatch to main thread synchronously to access UIApplication
+        return DispatchQueue.main.sync {
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let window = windowScene.windows.first else {
-                return UIWindow()
+                return ASPresentationAnchor()
             }
             return window
-        } else {
-            return DispatchQueue.main.sync {
-                guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                      let window = windowScene.windows.first else {
-                    return UIWindow()
-                }
-                return window
-            }
         }
     }
 

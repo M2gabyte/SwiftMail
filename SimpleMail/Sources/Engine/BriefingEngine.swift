@@ -468,7 +468,7 @@ actor BriefingEngine {
         let domain = senderEmail.split(separator: "@").last.map(String.init) ?? ""
 
         let senderRange = NSRange(senderEmail.startIndex..., in: senderEmail)
-        let nameRange = NSRange(senderName.startIndex..., in: senderName)
+        // Note: nameRange removed - not used in current implementation
 
         // Strong negative: no-reply patterns
         if noReplyPatterns.contains(where: { $0.firstMatch(in: senderEmail, range: senderRange) != nil }) {
