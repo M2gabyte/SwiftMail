@@ -196,6 +196,7 @@ final class Email {
 @Model
 final class EmailDetail {
     // Full email with body, to, cc
+    var listUnsubscribe: String?  // For unsubscribe functionality
 }
 
 @Model
@@ -338,11 +339,13 @@ ContentView
 
 **EmailDetailView:**
 - Thread view with expandable messages
-- WebView for HTML email body
+- WebView for HTML email body with dynamic height calculation
+- AI summary card for long emails (with boilerplate filtering)
 - Attachment previews with QuickLook
 - Action footer (reply, reply all, forward, archive)
 - Tab bar hidden for full-screen experience
 - Action toolbar positioned at bottom (replaces tab bar)
+- Block sender, unsubscribe, report spam actions in overflow menu
 
 **ComposeView:**
 - FlowLayout for recipient chips
@@ -683,14 +686,14 @@ let viewModel = InboxViewModel(gmailService: mockService)
 ## Future Enhancements
 
 ### Planned Features
-- [ ] Apple Intelligence summarization
+- [x] Apple Intelligence summarization (extractive fallback implemented)
+- [x] Email signature formatting (bold, italic, links)
 - [ ] Smart reply suggestions
 - [ ] Undo send (30-second window)
 - [ ] Account switching UI
 - [ ] Widget support
 - [ ] Watch app
 - [ ] Mac Catalyst support
-- [ ] Email signature formatting (bold, italic, links)
 
 ### API Extensions
 - [ ] Gmail push notifications (FCM)
@@ -787,9 +790,17 @@ actor GmailService {
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.5*
+*Architecture version: 1.6*
 
 **Changelog:**
+- v1.6:
+  - Fixed email body rendering with dynamic WebView height calculation using JavaScript message handlers
+  - WebView now measures content height after load and image load events
+  - Added block sender functionality (saves to UserDefaults blocked list)
+  - Added unsubscribe support (parses List-Unsubscribe header, prefers https over mailto)
+  - Added report spam action (uses Gmail API to move to spam)
+  - Added listUnsubscribe field to EmailDetail model and DTO
+  - AI summary now filters common boilerplate text (view in browser, unsubscribe links, etc.)
 - v1.5:
   - Implemented Undo Toast for archive actions with 4-second timeout and optimistic UI updates
   - Added UndoToast component with animated slide-up/down transitions
