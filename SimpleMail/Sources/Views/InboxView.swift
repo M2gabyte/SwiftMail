@@ -8,8 +8,6 @@ struct InboxView: View {
     @State private var viewModel = InboxViewModel()
     @State private var showingSearch = false
     @State private var showingCompose = false
-    @State private var showingSnooze = false
-    @State private var emailToSnooze: Email?
 
     var body: some View {
         NavigationStack {
@@ -29,13 +27,7 @@ struct InboxView: View {
                     hasMoreEmails: viewModel.hasMoreEmails,
                     onTap: { email in viewModel.openEmail(email) },
                     onArchive: { email in viewModel.archiveEmail(email) },
-                    onSnooze: { email in
-                        emailToSnooze = email
-                        showingSnooze = true
-                    },
                     onToggleRead: { email in viewModel.toggleRead(email) },
-                    onStar: { email in viewModel.starEmail(email) },
-                    onTrash: { email in viewModel.trashEmail(email) },
                     onLoadMore: { email in
                         Task { await viewModel.loadMoreIfNeeded(currentEmail: email) }
                     },
@@ -75,12 +67,14 @@ struct InboxView: View {
             .sheet(isPresented: $showingCompose) {
                 ComposeView()
             }
-            .sheet(isPresented: $showingSnooze) {
-                SnoozePickerSheet { date in
-                    if let email = emailToSnooze {
-                        viewModel.snoozeEmail(email, until: date)
-                    }
-                    emailToSnooze = nil
+            .overlay(alignment: .bottom) {
+                if viewModel.showingUndoToast {
+                    UndoToast(
+                        message: viewModel.undoToastMessage,
+                        onUndo: { viewModel.undoArchive() }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 16)
                 }
             }
         }
@@ -264,10 +258,7 @@ struct EmailListView: View {
     let hasMoreEmails: Bool
     let onTap: (Email) -> Void
     let onArchive: (Email) -> Void
-    let onSnooze: (Email) -> Void
     let onToggleRead: (Email) -> Void
-    let onStar: (Email) -> Void
-    let onTrash: (Email) -> Void
     let onLoadMore: (Email) -> Void
     let onRefresh: () async -> Void
 
@@ -280,19 +271,12 @@ struct EmailListView: View {
                             .listRowBackground(Color(.systemBackground))
                             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
+                                Button {
                                     onArchive(email)
                                 } label: {
                                     Label("Archive", systemImage: "archivebox")
                                 }
-                                .tint(.orange)
-
-                                Button(role: .destructive) {
-                                    onTrash(email)
-                                } label: {
-                                    Label("Trash", systemImage: "trash")
-                                }
-                                .tint(.red)
+                                .tint(.green)
                             }
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                 Button {
@@ -304,23 +288,6 @@ struct EmailListView: View {
                                     )
                                 }
                                 .tint(.blue)
-
-                                Button {
-                                    onSnooze(email)
-                                } label: {
-                                    Label("Snooze", systemImage: "clock")
-                                }
-                                .tint(.purple)
-
-                                Button {
-                                    onStar(email)
-                                } label: {
-                                    Label(
-                                        email.isStarred ? "Unstar" : "Star",
-                                        systemImage: email.isStarred ? "star.slash" : "star.fill"
-                                    )
-                                }
-                                .tint(.yellow)
                             }
                             .onTapGesture {
                                 onTap(email)
@@ -583,6 +550,43 @@ struct FloatingNavPill: View {
                 .fill(.black.opacity(0.8))
                 .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         )
+    }
+}
+
+// MARK: - Undo Toast
+
+struct UndoToast: View {
+    let message: String
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "archivebox")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.8))
+
+            Text(message)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+
+            Spacer()
+
+            Button(action: onUndo) {
+                Text("Undo")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.yellow)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.darkGray))
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+        )
+        .padding(.horizontal, 16)
     }
 }
 

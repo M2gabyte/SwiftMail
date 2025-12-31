@@ -338,7 +338,12 @@ actor GmailService: GmailAPIProvider {
         let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)?format=full")!
 
         let message: MessageResponse = try await request(url: url, token: token)
-        return parseEmailDetail(from: message)
+        var emailDetail = parseEmailDetail(from: message)
+
+        // Fetch body attachment if needed
+        emailDetail = try await fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
+
+        return emailDetail
     }
 
     // MARK: - Fetch Thread
@@ -349,7 +354,124 @@ actor GmailService: GmailAPIProvider {
 
         let thread: ThreadResponse = try await request(url: url, token: token)
 
-        return thread.messages?.compactMap { parseEmailDetail(from: $0) } ?? []
+        guard let messages = thread.messages else { return [] }
+
+        // Parse all messages and fetch body attachments if needed
+        var emailDetails: [EmailDetail] = []
+        for message in messages {
+            var emailDetail = parseEmailDetail(from: message)
+            emailDetail = try await fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
+            emailDetails.append(emailDetail)
+        }
+
+        return emailDetails
+    }
+
+    // MARK: - Fetch Body Attachment If Needed
+
+    /// Fetches body content if it's stored as an attachment rather than inline
+    private func fetchBodyAttachmentIfNeeded(
+        for emailDetail: EmailDetail,
+        from message: MessageResponse,
+        token: String
+    ) async throws -> EmailDetail {
+        // If body is already populated with non-whitespace content, no need to fetch
+        let trimmedBody = emailDetail.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedBody.isEmpty {
+            return emailDetail
+        }
+
+        logger.info("Body is empty for message \(message.id), checking for body attachment")
+
+        // Look for body attachment ID in the message parts
+        guard let payload = message.payload,
+              let bodyAttachmentInfo = findBodyAttachment(in: payload) else {
+            logger.warning("No body attachment found for message \(message.id)")
+            return emailDetail
+        }
+
+        logger.info("Found body attachment \(bodyAttachmentInfo.attachmentId) with mimeType \(bodyAttachmentInfo.mimeType)")
+
+        // Fetch the attachment content
+        let bodyData = try await fetchAttachment(
+            messageId: message.id,
+            attachmentId: bodyAttachmentInfo.attachmentId
+        )
+
+        // Decode the body content
+        let body: String
+        if let text = String(data: bodyData, encoding: .utf8) {
+            body = text
+        } else {
+            body = ""
+        }
+
+        // Create updated EmailDetail with the fetched body
+        return EmailDetail(
+            id: emailDetail.id,
+            threadId: emailDetail.threadId,
+            snippet: emailDetail.snippet,
+            subject: emailDetail.subject,
+            from: emailDetail.from,
+            date: emailDetail.date,
+            isUnread: emailDetail.isUnread,
+            isStarred: emailDetail.isStarred,
+            hasAttachments: emailDetail.hasAttachments,
+            labelIds: emailDetail.labelIds,
+            body: body,
+            to: emailDetail.to,
+            cc: emailDetail.cc
+        )
+    }
+
+    /// Body attachment info returned from recursive search
+    private struct BodyAttachmentInfo {
+        let attachmentId: String
+        let mimeType: String
+    }
+
+    /// Recursively finds a body part that has an attachmentId (for large email bodies)
+    private nonisolated func findBodyAttachment(in payload: Payload) -> BodyAttachmentInfo? {
+        // Check top-level body
+        if let mimeType = payload.mimeType?.lowercased(),
+           (mimeType == "text/html" || mimeType == "text/plain"),
+           let attachmentId = payload.body?.attachmentId {
+            return BodyAttachmentInfo(attachmentId: attachmentId, mimeType: mimeType)
+        }
+
+        // Check parts recursively (prefer HTML)
+        if let parts = payload.parts {
+            // First pass: look for HTML attachment
+            if let htmlInfo = findBodyAttachmentRecursively(in: parts, preferredMimeType: "text/html") {
+                return htmlInfo
+            }
+
+            // Second pass: fall back to plain text
+            if let plainInfo = findBodyAttachmentRecursively(in: parts, preferredMimeType: "text/plain") {
+                return plainInfo
+            }
+        }
+
+        return nil
+    }
+
+    /// Recursively searches parts for a body attachment with the specified MIME type
+    private nonisolated func findBodyAttachmentRecursively(in parts: [Part], preferredMimeType: String) -> BodyAttachmentInfo? {
+        for part in parts {
+            if let mimeType = part.mimeType?.lowercased(), mimeType == preferredMimeType {
+                if let attachmentId = part.body?.attachmentId {
+                    return BodyAttachmentInfo(attachmentId: attachmentId, mimeType: mimeType)
+                }
+            }
+
+            // Recursively check nested parts
+            if let nestedParts = part.parts {
+                if let found = findBodyAttachmentRecursively(in: nestedParts, preferredMimeType: preferredMimeType) {
+                    return found
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - Search
@@ -874,41 +996,52 @@ actor GmailService: GmailAPIProvider {
     private nonisolated func extractBody(from payload: Payload?) -> String {
         guard let payload = payload else { return "" }
 
-        // Try to find HTML or plain text body
-        if let data = payload.body?.data {
-            return decodeBase64URL(data)
+        // For simple messages with direct body
+        if let mimeType = payload.mimeType?.lowercased(),
+           (mimeType == "text/html" || mimeType == "text/plain"),
+           let data = payload.body?.data, !data.isEmpty {
+            let decoded = decodeBase64URL(data)
+            if !decoded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return decoded
+            }
         }
 
-        // Check parts
+        // Recursively search all parts for HTML first, then plain text
         if let parts = payload.parts {
-            // Prefer HTML
-            if let htmlPart = findPart(parts, mimeType: "text/html"),
-               let data = htmlPart.body?.data {
-                return decodeBase64URL(data)
+            // First pass: look for HTML anywhere in the tree
+            if let html = findBodyRecursively(in: parts, preferredMimeType: "text/html"),
+               !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return html
             }
 
-            // Fall back to plain text
-            if let textPart = findPart(parts, mimeType: "text/plain"),
-               let data = textPart.body?.data {
-                return decodeBase64URL(data)
-            }
-
-            // Check nested parts
-            for part in parts {
-                if let nestedParts = part.parts {
-                    if let htmlPart = findPart(nestedParts, mimeType: "text/html"),
-                       let data = htmlPart.body?.data {
-                        return decodeBase64URL(data)
-                    }
-                    if let textPart = findPart(nestedParts, mimeType: "text/plain"),
-                       let data = textPart.body?.data {
-                        return decodeBase64URL(data)
-                    }
-                }
+            // Second pass: fall back to plain text
+            if let plain = findBodyRecursively(in: parts, preferredMimeType: "text/plain"),
+               !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return plain
             }
         }
 
         return ""
+    }
+
+    /// Recursively searches through all parts to find body content with the specified MIME type
+    private nonisolated func findBodyRecursively(in parts: [Part], preferredMimeType: String) -> String? {
+        for part in parts {
+            // Check if this part matches the preferred MIME type
+            if let mimeType = part.mimeType?.lowercased(), mimeType == preferredMimeType {
+                if let data = part.body?.data {
+                    return decodeBase64URL(data)
+                }
+            }
+
+            // Recursively check nested parts
+            if let nestedParts = part.parts {
+                if let found = findBodyRecursively(in: nestedParts, preferredMimeType: preferredMimeType) {
+                    return found
+                }
+            }
+        }
+        return nil
     }
 
     private nonisolated func findPart(_ parts: [Part], mimeType: String) -> Part? {

@@ -27,6 +27,7 @@
 		A1000020 /* SnoozeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020 /* SnoozeManager.swift */; };
 		A1000021 /* AttachmentViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000021 /* AttachmentViewer.swift */; };
 		A1000022 /* BatchOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000022 /* BatchOperations.swift */; };
+		A1000023 /* PeopleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000023 /* PeopleService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +54,7 @@
 		B1000020 /* SnoozeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozeManager.swift; sourceTree = "<group>"; };
 		B1000021 /* AttachmentViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentViewer.swift; sourceTree = "<group>"; };
 		B1000022 /* BatchOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchOperations.swift; sourceTree = "<group>"; };
+		B1000023 /* PeopleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -147,6 +149,7 @@
 				B1000015 /* BackgroundSync.swift */,
 				B1000019 /* EmailCache.swift */,
 				B1000020 /* SnoozeManager.swift */,
+				B1000023 /* PeopleService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -239,6 +242,7 @@
 				A1000020 /* SnoozeManager.swift in Sources */,
 				A1000021 /* AttachmentViewer.swift in Sources */,
 				A1000022 /* BatchOperations.swift in Sources */,
+				A1000023 /* PeopleService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

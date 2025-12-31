@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import BackgroundTasks
+import LocalAuthentication
 
 @main
 struct SimpleMailApp: App {
@@ -85,19 +86,225 @@ struct SimpleMailApp: App {
 
 struct ContentView: View {
     @EnvironmentObject private var authService: AuthService
+    @StateObject private var themeManager = ThemeManager.shared
+    @StateObject private var biometricManager = BiometricAuthManager.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showingSignIn = true
 
     var body: some View {
-        Group {
-            if authService.isAuthenticated {
-                MainTabView()
-                    .transition(.opacity)
-            } else {
-                SignInView()
+        ZStack {
+            Group {
+                if authService.isAuthenticated {
+                    MainTabView()
+                        .transition(.opacity)
+                } else {
+                    SignInView()
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.3), value: authService.isAuthenticated)
+
+            // Biometric Lock Screen
+            if biometricManager.isLocked && authService.isAuthenticated {
+                LockScreenView()
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: authService.isAuthenticated)
+        .preferredColorScheme(themeManager.colorScheme)
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                biometricManager.lockIfNeeded()
+            } else if newPhase == .active && biometricManager.isLocked {
+                Task {
+                    await biometricManager.authenticate()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Lock Screen View
+
+struct LockScreenView: View {
+    @StateObject private var biometricManager = BiometricAuthManager.shared
+
+    var body: some View {
+        ZStack {
+            // Blurred background
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 32) {
+                Image(systemName: "envelope.fill")
+                    .font(.system(size: 60))
+                    .foregroundStyle(.blue)
+
+                Text("SimpleMail is Locked")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Button(action: {
+                    Task {
+                        await biometricManager.authenticate()
+                    }
+                }) {
+                    HStack(spacing: 12) {
+                        Image(systemName: biometricManager.biometricIcon)
+                        Text("Unlock with \(biometricManager.biometricName)")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.horizontal, 32)
+
+                if let error = biometricManager.authError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Theme Manager
+
+@MainActor
+class ThemeManager: ObservableObject {
+    static let shared = ThemeManager()
+
+    @Published var currentTheme: AppTheme = .system {
+        didSet {
+            saveTheme()
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch currentTheme {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+
+    private let themeKey = "appTheme"
+
+    private init() {
+        loadTheme()
+    }
+
+    private func loadTheme() {
+        if let savedTheme = UserDefaults.standard.string(forKey: themeKey),
+           let theme = AppTheme(rawValue: savedTheme) {
+            currentTheme = theme
+        }
+    }
+
+    private func saveTheme() {
+        UserDefaults.standard.set(currentTheme.rawValue, forKey: themeKey)
+    }
+}
+
+// MARK: - Biometric Auth Manager
+
+@MainActor
+class BiometricAuthManager: ObservableObject {
+    static let shared = BiometricAuthManager()
+
+    @Published var isLocked: Bool = false
+    @Published var authError: String?
+
+    private let settingsKey = "appSettings"
+
+    var isBiometricEnabled: Bool {
+        if let data = UserDefaults.standard.data(forKey: settingsKey),
+           let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            return settings.biometricLock
+        }
+        return false
+    }
+
+    var biometricType: LABiometryType {
+        let context = LAContext()
+        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        return context.biometryType
+    }
+
+    var biometricIcon: String {
+        switch biometricType {
+        case .faceID: return "faceid"
+        case .touchID: return "touchid"
+        case .opticID: return "opticid"
+        default: return "lock.fill"
+        }
+    }
+
+    var biometricName: String {
+        switch biometricType {
+        case .faceID: return "Face ID"
+        case .touchID: return "Touch ID"
+        case .opticID: return "Optic ID"
+        default: return "Biometrics"
+        }
+    }
+
+    private init() {}
+
+    func lockIfNeeded() {
+        if isBiometricEnabled {
+            isLocked = true
+        }
+    }
+
+    func authenticate() async {
+        let context = LAContext()
+        var error: NSError?
+
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            // Try device passcode as fallback
+            await authenticateWithPasscode()
+            return
+        }
+
+        do {
+            let success = try await context.evaluatePolicy(
+                .deviceOwnerAuthenticationWithBiometrics,
+                localizedReason: "Unlock SimpleMail to access your emails"
+            )
+
+            if success {
+                isLocked = false
+                authError = nil
+            }
+        } catch {
+            authError = error.localizedDescription
+            // Try device passcode as fallback
+            await authenticateWithPasscode()
+        }
+    }
+
+    private func authenticateWithPasscode() async {
+        let context = LAContext()
+
+        do {
+            let success = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Unlock SimpleMail to access your emails"
+            )
+
+            if success {
+                isLocked = false
+                authError = nil
+            }
+        } catch {
+            authError = error.localizedDescription
+        }
     }
 }
 
@@ -136,6 +343,10 @@ struct MainTabView: View {
         }
         .sheet(isPresented: $showingSearch) {
             SearchView()
+        }
+        .task {
+            // Preload contacts in background for autocomplete
+            await PeopleService.shared.preloadContacts()
         }
     }
 }

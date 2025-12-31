@@ -100,7 +100,8 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
                 "https://www.googleapis.com/auth/gmail.send",
                 "https://www.googleapis.com/auth/gmail.modify",
                 "https://www.googleapis.com/auth/userinfo.email",
-                "https://www.googleapis.com/auth/userinfo.profile"
+                "https://www.googleapis.com/auth/userinfo.profile",
+                "https://www.googleapis.com/auth/contacts.readonly"
             ].joined(separator: " ")),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),

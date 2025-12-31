@@ -34,6 +34,18 @@ final class InboxViewModel {
     private var nextPageToken: String?
     var hasMoreEmails: Bool { nextPageToken != nil }
 
+    // MARK: - Undo Toast State
+
+    var showingUndoToast = false
+    var undoToastMessage = ""
+    private var pendingArchive: PendingArchive?
+    private var undoTask: Task<Void, Never>?
+
+    struct PendingArchive {
+        let email: Email
+        let index: Int
+    }
+
     // MARK: - Computed Properties
 
     var emailSections: [EmailSection] {
@@ -261,19 +273,80 @@ final class InboxViewModel {
     }
 
     func archiveEmail(_ email: Email) {
-        // Optimistic update
-        withAnimation {
-            emails.removeAll { $0.id == email.id }
+        // Cancel any existing undo task and finalize it
+        if let pending = pendingArchive {
+            undoTask?.cancel()
+            finalizeArchive(pending.email)
+        }
+
+        // Find the email's current index before removing
+        guard let index = emails.firstIndex(where: { $0.id == email.id }) else { return }
+
+        // Store pending archive for potential undo
+        pendingArchive = PendingArchive(email: email, index: index)
+
+        // Optimistic update - remove from list immediately
+        withAnimation(.easeOut(duration: 0.25)) {
+            emails.remove(at: index)
         }
         updateFilterCounts()
         HapticFeedback.medium()
 
-        // Call Gmail API
+        // Show undo toast
+        undoToastMessage = "Email Archived"
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showingUndoToast = true
+        }
+
+        // Start 4-second countdown to finalize
+        undoTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+
+            // Check if task was cancelled (user tapped undo)
+            guard !Task.isCancelled else { return }
+
+            // Finalize the archive
+            if let pending = pendingArchive, pending.email.id == email.id {
+                finalizeArchive(email)
+            }
+        }
+    }
+
+    func undoArchive() {
+        // Cancel the pending archive task
+        undoTask?.cancel()
+        undoTask = nil
+
+        // Restore the email at its original position
+        guard let pending = pendingArchive else { return }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            // Insert at original index, clamped to valid range
+            let insertIndex = min(pending.index, emails.count)
+            emails.insert(pending.email, at: insertIndex)
+            showingUndoToast = false
+        }
+
+        pendingArchive = nil
+        updateFilterCounts()
+        HapticFeedback.light()
+    }
+
+    private func finalizeArchive(_ email: Email) {
+        // Hide toast
+        withAnimation(.easeOut(duration: 0.2)) {
+            showingUndoToast = false
+        }
+        pendingArchive = nil
+
+        // Call Gmail API to actually archive
         Task {
             do {
                 try await GmailService.shared.archive(messageId: email.id)
+                logger.info("Email archived: \(email.id)")
             } catch {
-                // Rollback on failure
+                // Rollback on failure - reload emails
+                logger.error("Failed to archive email: \(error.localizedDescription)")
                 self.error = error
                 await loadEmails()
             }

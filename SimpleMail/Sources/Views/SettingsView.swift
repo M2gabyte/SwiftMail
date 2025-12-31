@@ -4,6 +4,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
+    @StateObject private var themeManager = ThemeManager.shared
     @State private var showingSignOutAlert = false
 
     var body: some View {
@@ -75,7 +76,7 @@ struct SettingsView: View {
                         Text("Compact").tag(ListDensity.compact)
                     }
 
-                    Picker("Theme", selection: $viewModel.settings.theme) {
+                    Picker("Theme", selection: $themeManager.currentTheme) {
                         Text("System").tag(AppTheme.system)
                         Text("Light").tag(AppTheme.light)
                         Text("Dark").tag(AppTheme.dark)

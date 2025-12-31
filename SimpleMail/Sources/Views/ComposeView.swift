@@ -166,38 +166,97 @@ struct RecipientField: View {
     @Binding var pendingInput: String
     let isFocused: Bool
 
+    @State private var suggestions: [PeopleService.Contact] = []
+    @State private var showingSuggestions = false
+
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(label)
-                .foregroundStyle(.secondary)
-                .frame(width: 60, alignment: .leading)
-                .padding(.top, 12)
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 60, alignment: .leading)
+                    .padding(.top, 12)
 
-            FlowLayout(spacing: 6) {
-                ForEach(recipients, id: \.self) { recipient in
-                    RecipientChip(email: recipient) {
-                        recipients.removeAll { $0 == recipient }
-                    }
-                }
-
-                TextField("", text: $pendingInput)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .autocorrectionDisabled()
-                    .frame(minWidth: 100)
-                    .onSubmit {
-                        addRecipient()
-                    }
-                    .onChange(of: pendingInput) { _, newValue in
-                        if newValue.hasSuffix(" ") || newValue.hasSuffix(",") {
-                            pendingInput = String(newValue.dropLast())
-                            addRecipient()
+                FlowLayout(spacing: 6) {
+                    ForEach(recipients, id: \.self) { recipient in
+                        RecipientChip(email: recipient) {
+                            recipients.removeAll { $0 == recipient }
                         }
                     }
+
+                    TextField("", text: $pendingInput)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .autocorrectionDisabled()
+                        .frame(minWidth: 100)
+                        .onSubmit {
+                            addRecipient()
+                        }
+                        .onChange(of: pendingInput) { _, newValue in
+                            if newValue.hasSuffix(" ") || newValue.hasSuffix(",") {
+                                pendingInput = String(newValue.dropLast())
+                                addRecipient()
+                            } else {
+                                searchContacts(query: newValue)
+                            }
+                        }
+                }
+                .padding(.vertical, 8)
             }
-            .padding(.vertical, 8)
+            .padding(.horizontal)
+
+            // Autocomplete suggestions
+            if showingSuggestions && !suggestions.isEmpty && isFocused {
+                VStack(spacing: 0) {
+                    ForEach(suggestions.prefix(5)) { contact in
+                        Button(action: {
+                            selectContact(contact)
+                        }) {
+                            HStack(spacing: 10) {
+                                // Avatar
+                                ZStack {
+                                    Circle()
+                                        .fill(avatarColor(for: contact.email))
+                                    Text(contact.initials)
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.white)
+                                }
+                                .frame(width: 28, height: 28)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    if !contact.name.isEmpty {
+                                        Text(contact.name)
+                                            .font(.subheadline)
+                                            .lineLimit(1)
+                                    }
+                                    Text(contact.email)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        if contact.id != suggestions.prefix(5).last?.id {
+                            Divider()
+                                .padding(.leading, 54)
+                        }
+                    }
+                }
+                .background(Color(.systemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                .padding(.horizontal, 76) // Align with text field
+                .padding(.top, -4)
+            }
         }
-        .padding(.horizontal)
     }
 
     private func addRecipient() {
@@ -205,7 +264,43 @@ struct RecipientField: View {
         if !trimmed.isEmpty && trimmed.contains("@") {
             recipients.append(trimmed)
             pendingInput = ""
+            showingSuggestions = false
         }
+    }
+
+    private func selectContact(_ contact: PeopleService.Contact) {
+        if !recipients.contains(contact.email) {
+            recipients.append(contact.email)
+        }
+        pendingInput = ""
+        showingSuggestions = false
+    }
+
+    private func searchContacts(query: String) {
+        guard query.count >= 1 else {
+            suggestions = []
+            showingSuggestions = false
+            return
+        }
+
+        Task {
+            // First try to search, which will fetch contacts if cache is empty
+            let results = await PeopleService.shared.searchContacts(query: query)
+            // Filter out already selected recipients
+            let filtered = results.filter { !recipients.contains($0.email) }
+            await MainActor.run {
+                suggestions = filtered
+                showingSuggestions = !filtered.isEmpty
+            }
+        }
+    }
+
+    private func avatarColor(for email: String) -> Color {
+        let hash = email.hashValue
+        let colors: [Color] = [
+            .blue, .green, .orange, .purple, .pink, .teal, .indigo, .cyan
+        ]
+        return colors[abs(hash) % colors.count]
     }
 }
 

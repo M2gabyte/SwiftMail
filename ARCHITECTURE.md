@@ -49,6 +49,7 @@ SimpleMail/
 │   ├── Services/
 │   │   ├── AuthService.swift        # OAuth authentication
 │   │   ├── GmailService.swift       # Gmail API client
+│   │   ├── PeopleService.swift      # Google People API (contacts)
 │   │   ├── BackgroundSync.swift     # Background refresh
 │   │   ├── SnoozeManager.swift      # Snooze persistence
 │   │   └── EmailCache.swift         # Offline caching
@@ -331,19 +332,120 @@ ContentView
 - Sticky header with scope toggle + filter pills
 - Pull-to-refresh
 - Infinite scroll pagination
-- Swipe actions (archive, trash, star, snooze, read)
+- Swipe actions: trailing = Archive (green), leading = Toggle Read (blue)
 - Multi-select batch mode
+- Undo toast for archive actions (4-second window)
 
 **EmailDetailView:**
 - Thread view with expandable messages
 - WebView for HTML email body
 - Attachment previews with QuickLook
 - Action footer (reply, reply all, forward, archive)
+- Tab bar hidden for full-screen experience
+- Action toolbar positioned at bottom (replaces tab bar)
 
 **ComposeView:**
 - FlowLayout for recipient chips
+- Email autocomplete with Google People API
 - Auto-save drafts
 - Reply threading with In-Reply-To headers
+
+### 8. Google People API (PeopleService.swift)
+
+**Contact Autocomplete:**
+```swift
+actor PeopleService {
+    static let shared = PeopleService()
+
+    struct Contact: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let email: String
+        let photoURL: String?
+    }
+
+    func fetchContacts() async throws -> [Contact]
+    func searchContacts(query: String) async -> [Contact]
+    func preloadContacts() async
+}
+```
+
+**Features:**
+- Fetches user's Google contacts and "other contacts" (people you've emailed)
+- 5-minute cache to reduce API calls
+- Preloads on app launch for faster compose autocomplete
+- Deduplicates contacts by email address
+
+**OAuth Scope Required:**
+```
+https://www.googleapis.com/auth/contacts.readonly
+```
+
+### 9. Theme Manager (SimpleMailApp.swift)
+
+**Appearance Settings:**
+```swift
+@MainActor
+class ThemeManager: ObservableObject {
+    static let shared = ThemeManager()
+
+    @Published var currentTheme: AppTheme = .system
+
+    var colorScheme: ColorScheme? {
+        switch currentTheme {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+enum AppTheme: String, Codable {
+    case system, light, dark
+}
+```
+
+**Features:**
+- Persists theme setting to UserDefaults
+- Applied via `.preferredColorScheme()` on root view
+- Immediate UI update on change
+
+### 10. Biometric Authentication (SimpleMailApp.swift)
+
+**Face ID / Touch ID Lock:**
+```swift
+@MainActor
+class BiometricAuthManager: ObservableObject {
+    static let shared = BiometricAuthManager()
+
+    @Published var isLocked: Bool = false
+
+    func lockIfNeeded()  // Called when app enters background
+    func authenticate() async  // Uses LAContext
+}
+```
+
+**Flow:**
+```
+App enters background
+    ↓
+If biometricLock setting enabled
+    ↓
+Set isLocked = true
+    ↓
+App becomes active
+    ↓
+Show LockScreenView overlay
+    ↓
+Prompt Face ID / Touch ID
+    ↓
+On success: isLocked = false
+```
+
+**Features:**
+- Respects user's "Require Face ID" setting
+- Falls back to device passcode if biometric fails
+- Adaptive icon/name for Face ID vs Touch ID vs Optic ID
 
 ## Data Flow
 
@@ -588,12 +690,19 @@ let viewModel = InboxViewModel(gmailService: mockService)
 - [ ] Widget support
 - [ ] Watch app
 - [ ] Mac Catalyst support
+- [ ] Email signature formatting (bold, italic, links)
 
 ### API Extensions
 - [ ] Gmail push notifications (FCM)
 - [ ] Vacation responder API
 - [ ] Filter creation API
 - [ ] Label CRUD API
+
+### Open Decisions
+- [ ] Decide whether to keep LightSweep animation effects
+  - Currently using subtle animations on email interactions
+  - Consider performance impact on lower-end devices
+  - Evaluate if it adds value to UX
 
 ## Deployment
 
@@ -678,9 +787,31 @@ actor GmailService {
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.3*
+*Architecture version: 1.5*
 
 **Changelog:**
+- v1.5:
+  - Implemented Undo Toast for archive actions with 4-second timeout and optimistic UI updates
+  - Added UndoToast component with animated slide-up/down transitions
+  - Email is removed immediately on swipe, restored at exact index on undo
+  - EmailDetailView now hides main tab bar using `.toolbar(.hidden, for: .tabBar)`
+  - Action toolbar (Reply/Archive) repositioned to bottom of screen with shadow
+  - Improved email body extraction to check for whitespace-only content
+  - Added debug logging for body attachment fetching
+- v1.4:
+  - Added Google People API integration (PeopleService) for email autocomplete with contact suggestions
+  - Added Google Contacts scope (`contacts.readonly`) to OAuth
+  - Added Theme Manager for Light/Dark/System appearance settings with persistence
+  - Added Biometric Auth Manager for Face ID/Touch ID lock functionality
+  - Added lock screen view with biometric authentication on app resume
+  - Improved email body extraction with recursive part search for deeply nested MIME structures
+  - Added async fetching for email body attachments (when body has attachmentId)
+  - Simplified swipe actions: trailing = Archive (green), leading = Toggle Read (blue)
+  - Removed Trash/Star/Snooze from swipe actions for cleaner UX
+  - Fixed date parsing to use Gmail's `internalDate` (milliseconds since epoch)
+  - Added HTML entity decoding for email snippets
+  - Fixed compose recipient field with pending input handling
+  - Contacts preloaded on app launch for faster autocomplete
 - v1.3: Fixed MIME builder types (concrete MIMEHeader vs protocol), SwiftData predicate variable capture, MainActor.assumeIsolated for OAuth callbacks
 - v1.2: Added Sendable DTOs, actor-based Keychain, nonisolated optimizations
 - v1.1: Added @Observable migration, MIME Result Builder, Base64URL utilities, OSLog integration, protocol-based testing

@@ -105,6 +105,7 @@ struct EmailDetailView: View {
         .task {
             await viewModel.loadThread()
         }
+        .toolbar(.hidden, for: .tabBar)
     }
 }
 
@@ -298,8 +299,14 @@ struct EmailDetailFooter: View {
             FooterButton(icon: "arrowshape.turn.up.right.fill", label: "Forward", action: onForward)
             FooterButton(icon: "archivebox.fill", label: "Archive", action: onArchive)
         }
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.1), radius: 8, y: -4)
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 }
 
