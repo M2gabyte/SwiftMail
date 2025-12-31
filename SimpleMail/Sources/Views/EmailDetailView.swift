@@ -351,10 +351,11 @@ struct EmailBodyWebView: UIViewRepresentable {
         </html>
         """
 
-        // Add message handler for height updates
+        // Add message handler for height updates (using weak wrapper to prevent retain cycle)
         let contentController = webView.configuration.userContentController
         contentController.removeScriptMessageHandler(forName: "heightHandler")
-        contentController.add(context.coordinator, name: "heightHandler")
+        let weakHandler = WeakScriptMessageHandler(coordinator: context.coordinator)
+        contentController.add(weakHandler, name: "heightHandler")
 
         webView.loadHTMLString(styledHTML, baseURL: nil)
     }
@@ -363,48 +364,34 @@ struct EmailBodyWebView: UIViewRepresentable {
         Coordinator()
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    class Coordinator: NSObject, WKNavigationDelegate {
         var lastHTML: String = ""
         var contentHeight: Binding<CGFloat>?
 
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            if message.name == "heightHandler" {
-                // JavaScript numbers come as NSNumber, need to convert properly
-                let height: CGFloat
-                if let doubleValue = message.body as? Double {
-                    height = CGFloat(doubleValue)
-                } else if let intValue = message.body as? Int {
-                    height = CGFloat(intValue)
-                } else if let nsNumber = message.body as? NSNumber {
-                    height = CGFloat(nsNumber.doubleValue)
-                } else {
-                    return
-                }
+        func handleHeightMessage(_ body: Any) {
+            // JavaScript numbers come as NSNumber, need to convert properly
+            let height: CGFloat
+            if let doubleValue = body as? Double {
+                height = CGFloat(doubleValue)
+            } else if let intValue = body as? Int {
+                height = CGFloat(intValue)
+            } else if let nsNumber = body as? NSNumber {
+                height = CGFloat(nsNumber.doubleValue)
+            } else {
+                return
+            }
 
-                DispatchQueue.main.async {
-                    // Add some padding and minimum height
-                    self.contentHeight?.wrappedValue = max(100, height + 20)
-                }
+            DispatchQueue.main.async {
+                // Add some padding and minimum height
+                self.contentHeight?.wrappedValue = max(100, height + 20)
             }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // Fallback: get height via JavaScript if message handler didn't fire
             webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
-                let height: CGFloat
-                if let doubleValue = result as? Double {
-                    height = CGFloat(doubleValue)
-                } else if let intValue = result as? Int {
-                    height = CGFloat(intValue)
-                } else if let nsNumber = result as? NSNumber {
-                    height = CGFloat(nsNumber.doubleValue)
-                } else {
-                    return
-                }
-
-                DispatchQueue.main.async {
-                    self?.contentHeight?.wrappedValue = max(100, height + 20)
-                }
+                guard let result = result else { return }
+                self?.handleHeightMessage(result)
             }
         }
 
@@ -416,6 +403,24 @@ struct EmailBodyWebView: UIViewRepresentable {
             } else {
                 decisionHandler(.allow)
             }
+        }
+    }
+}
+
+// MARK: - Weak Script Message Handler (prevents retain cycle)
+
+/// WKScriptMessageHandler creates a strong reference cycle.
+/// This wrapper breaks the cycle by holding a weak reference to the actual handler.
+class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var coordinator: EmailBodyWebView.Coordinator?
+
+    init(coordinator: EmailBodyWebView.Coordinator) {
+        self.coordinator = coordinator
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "heightHandler" {
+            coordinator?.handleHeightMessage(message.body)
         }
     }
 }

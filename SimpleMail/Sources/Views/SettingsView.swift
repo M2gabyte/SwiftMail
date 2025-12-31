@@ -636,29 +636,83 @@ struct SignaturePreview: View {
 
 struct VIPSendersView: View {
     @State private var vipSenders: [String] = []
+    @State private var showingAddSheet = false
+    @State private var newSenderEmail = ""
+
+    private let vipSendersKey = "vipSenders"
 
     var body: some View {
         List {
             ForEach(vipSenders, id: \.self) { sender in
-                Text(sender)
+                HStack {
+                    Image(systemName: "star.fill")
+                        .foregroundStyle(.yellow)
+                    Text(sender)
+                        .font(.body)
+                }
             }
-            .onDelete { indexSet in
-                vipSenders.remove(atOffsets: indexSet)
-            }
+            .onDelete(perform: removeVIP)
         }
         .navigationTitle("VIP Senders")
         .toolbar {
-            EditButton()
+            ToolbarItem(placement: .topBarLeading) {
+                if !vipSenders.isEmpty {
+                    EditButton()
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: { showingAddSheet = true }) {
+                    Image(systemName: "plus")
+                }
+            }
         }
         .overlay {
             if vipSenders.isEmpty {
                 ContentUnavailableView(
                     "No VIP Senders",
                     systemImage: "star",
-                    description: Text("Mark important senders as VIP to always be notified.")
+                    description: Text("Add important senders to always be notified of their emails.")
                 )
             }
         }
+        .onAppear {
+            loadVIPSenders()
+        }
+        .alert("Add VIP Sender", isPresented: $showingAddSheet) {
+            TextField("Email address", text: $newSenderEmail)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.emailAddress)
+            Button("Cancel", role: .cancel) {
+                newSenderEmail = ""
+            }
+            Button("Add") {
+                addVIPSender()
+            }
+        } message: {
+            Text("Enter the email address of the sender you want to mark as VIP.")
+        }
+    }
+
+    private func loadVIPSenders() {
+        vipSenders = UserDefaults.standard.stringArray(forKey: vipSendersKey) ?? []
+    }
+
+    private func addVIPSender() {
+        let email = newSenderEmail.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !email.isEmpty, email.contains("@"), !vipSenders.contains(email) else {
+            newSenderEmail = ""
+            return
+        }
+        vipSenders.append(email)
+        UserDefaults.standard.set(vipSenders, forKey: vipSendersKey)
+        newSenderEmail = ""
+        HapticFeedback.success()
+    }
+
+    private func removeVIP(at offsets: IndexSet) {
+        vipSenders.remove(atOffsets: offsets)
+        UserDefaults.standard.set(vipSenders, forKey: vipSendersKey)
+        HapticFeedback.light()
     }
 }
 
