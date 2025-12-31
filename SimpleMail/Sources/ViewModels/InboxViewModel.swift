@@ -177,8 +177,20 @@ final class InboxViewModel {
 
     // MARK: - Filtering
 
+    private var blockedSenders: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: "blockedSenders") ?? [])
+    }
+
     private func applyFilters(_ emails: [Email]) -> [Email] {
         var filtered = emails
+
+        // Filter out blocked senders first
+        let blocked = blockedSenders
+        if !blocked.isEmpty {
+            filtered = filtered.filter { email in
+                !blocked.contains(email.senderEmail.lowercased())
+            }
+        }
 
         // Apply scope filter
         if scope == .people {

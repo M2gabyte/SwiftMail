@@ -368,8 +368,19 @@ struct EmailBodyWebView: UIViewRepresentable {
         var contentHeight: Binding<CGFloat>?
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            if message.name == "heightHandler",
-               let height = message.body as? CGFloat {
+            if message.name == "heightHandler" {
+                // JavaScript numbers come as NSNumber, need to convert properly
+                let height: CGFloat
+                if let doubleValue = message.body as? Double {
+                    height = CGFloat(doubleValue)
+                } else if let intValue = message.body as? Int {
+                    height = CGFloat(intValue)
+                } else if let nsNumber = message.body as? NSNumber {
+                    height = CGFloat(nsNumber.doubleValue)
+                } else {
+                    return
+                }
+
                 DispatchQueue.main.async {
                     // Add some padding and minimum height
                     self.contentHeight?.wrappedValue = max(100, height + 20)
@@ -380,10 +391,19 @@ struct EmailBodyWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // Fallback: get height via JavaScript if message handler didn't fire
             webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
-                if let height = result as? CGFloat {
-                    DispatchQueue.main.async {
-                        self?.contentHeight?.wrappedValue = max(100, height + 20)
-                    }
+                let height: CGFloat
+                if let doubleValue = result as? Double {
+                    height = CGFloat(doubleValue)
+                } else if let intValue = result as? Int {
+                    height = CGFloat(intValue)
+                } else if let nsNumber = result as? NSNumber {
+                    height = CGFloat(nsNumber.doubleValue)
+                } else {
+                    return
+                }
+
+                DispatchQueue.main.async {
+                    self?.contentHeight?.wrappedValue = max(100, height + 20)
                 }
             }
         }

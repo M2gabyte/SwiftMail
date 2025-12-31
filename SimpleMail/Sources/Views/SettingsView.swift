@@ -665,28 +665,49 @@ struct VIPSendersView: View {
 struct BlockedSendersView: View {
     @State private var blockedSenders: [String] = []
 
+    private let blockedSendersKey = "blockedSenders"
+
     var body: some View {
         List {
             ForEach(blockedSenders, id: \.self) { sender in
-                Text(sender)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sender)
+                            .font(.body)
+                    }
+                    Spacer()
+                }
             }
-            .onDelete { indexSet in
-                blockedSenders.remove(atOffsets: indexSet)
-            }
+            .onDelete(perform: unblockSender)
         }
         .navigationTitle("Blocked Senders")
         .toolbar {
-            EditButton()
+            if !blockedSenders.isEmpty {
+                EditButton()
+            }
         }
         .overlay {
             if blockedSenders.isEmpty {
                 ContentUnavailableView(
                     "No Blocked Senders",
                     systemImage: "hand.raised",
-                    description: Text("Blocked senders will be automatically moved to trash.")
+                    description: Text("Blocked senders will be hidden from your inbox.")
                 )
             }
         }
+        .onAppear {
+            loadBlockedSenders()
+        }
+    }
+
+    private func loadBlockedSenders() {
+        blockedSenders = UserDefaults.standard.stringArray(forKey: blockedSendersKey) ?? []
+    }
+
+    private func unblockSender(at offsets: IndexSet) {
+        blockedSenders.remove(atOffsets: offsets)
+        UserDefaults.standard.set(blockedSenders, forKey: blockedSendersKey)
+        HapticFeedback.light()
     }
 }
 
