@@ -1,21 +1,29 @@
 import Foundation
 import SwiftData
 import UserNotifications
+import OSLog
 
 // MARK: - Snooze Manager
 
+private let logger = Logger(subsystem: "com.simplemail.app", category: "SnoozeManager")
+
 @MainActor
-final class SnoozeManager: ObservableObject {
+@Observable
+final class SnoozeManager {
     static let shared = SnoozeManager()
 
-    @Published var snoozedEmails: [SnoozedEmail] = []
+    var snoozedEmails: [SnoozedEmail] = []
 
     private var modelContext: ModelContext?
     private var checkTimer: Timer?
 
     private init() {
-        // Start checking for expired snoozes
         startSnoozeCheck()
+    }
+
+    deinit {
+        checkTimer?.invalidate()
+        checkTimer = nil
     }
 
     // MARK: - Configuration
@@ -28,7 +36,10 @@ final class SnoozeManager: ObservableObject {
     // MARK: - Load Snoozed Emails
 
     func loadSnoozedEmails() {
-        guard let context = modelContext else { return }
+        guard let context = modelContext else {
+            logger.warning("Cannot load snoozed emails: no model context")
+            return
+        }
 
         let descriptor = FetchDescriptor<SnoozedEmail>(
             sortBy: [SortDescriptor(\.snoozeUntil, order: .forward)]
@@ -36,8 +47,9 @@ final class SnoozeManager: ObservableObject {
 
         do {
             snoozedEmails = try context.fetch(descriptor)
+            logger.info("Loaded \(self.snoozedEmails.count) snoozed emails")
         } catch {
-            print("[SnoozeManager] Failed to load snoozed emails: \(error)")
+            logger.error("Failed to load snoozed emails: \(error.localizedDescription)")
         }
     }
 
@@ -45,11 +57,10 @@ final class SnoozeManager: ObservableObject {
 
     func snoozeEmail(_ email: Email, until date: Date) async {
         guard let context = modelContext else {
-            print("[SnoozeManager] No model context configured")
+            logger.error("Cannot snooze email: no model context configured")
             return
         }
 
-        // Create snoozed email record
         let snoozed = SnoozedEmail(
             id: email.id,
             threadId: email.threadId,
@@ -67,47 +78,48 @@ final class SnoozeManager: ObservableObject {
             snoozedEmails.append(snoozed)
             snoozedEmails.sort { $0.snoozeUntil < $1.snoozeUntil }
 
-            // Schedule notification
             await scheduleSnoozeNotification(for: snoozed)
 
-            print("[SnoozeManager] Snoozed email until: \(date)")
+            logger.info("Snoozed email '\(email.subject)' until \(date.formatted())")
         } catch {
-            print("[SnoozeManager] Failed to save snoozed email: \(error)")
+            logger.error("Failed to save snoozed email: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Unsnooze Email
 
     func unsnoozeEmail(_ snoozed: SnoozedEmail) async {
-        guard let context = modelContext else { return }
-
-        // Move back to inbox via Gmail API
-        do {
-            try await GmailService.shared.unarchive(messageId: snoozed.id)
-        } catch {
-            print("[SnoozeManager] Failed to unarchive email: \(error)")
+        guard let context = modelContext else {
+            logger.warning("Cannot unsnooze: no model context")
+            return
         }
 
-        // Remove from local database
+        do {
+            try await GmailService.shared.unarchive(messageId: snoozed.id)
+            logger.info("Unarchived email via Gmail API")
+        } catch {
+            logger.error("Failed to unarchive email: \(error.localizedDescription)")
+        }
+
         context.delete(snoozed)
 
         do {
             try context.save()
             snoozedEmails.removeAll { $0.id == snoozed.id }
-
-            // Cancel notification
             cancelSnoozeNotification(for: snoozed)
-
-            print("[SnoozeManager] Unsnoozed email: \(snoozed.subject)")
+            logger.info("Unsnoozed email: \(snoozed.subject)")
         } catch {
-            print("[SnoozeManager] Failed to delete snoozed record: \(error)")
+            logger.error("Failed to delete snoozed record: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Cancel Snooze
 
     func cancelSnooze(_ snoozed: SnoozedEmail) {
-        guard let context = modelContext else { return }
+        guard let context = modelContext else {
+            logger.warning("Cannot cancel snooze: no model context")
+            return
+        }
 
         context.delete(snoozed)
 
@@ -115,8 +127,9 @@ final class SnoozeManager: ObservableObject {
             try context.save()
             snoozedEmails.removeAll { $0.id == snoozed.id }
             cancelSnoozeNotification(for: snoozed)
+            logger.info("Cancelled snooze for: \(snoozed.subject)")
         } catch {
-            print("[SnoozeManager] Failed to cancel snooze: \(error)")
+            logger.error("Failed to cancel snooze: \(error.localizedDescription)")
         }
     }
 
@@ -171,9 +184,9 @@ final class SnoozeManager: ObservableObject {
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            print("[SnoozeManager] Scheduled notification for: \(snoozed.snoozeUntil)")
+            logger.info("Scheduled notification for: \(snoozed.snoozeUntil.formatted())")
         } catch {
-            print("[SnoozeManager] Failed to schedule notification: \(error)")
+            logger.error("Failed to schedule notification: \(error.localizedDescription)")
         }
     }
 

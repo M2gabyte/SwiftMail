@@ -1,30 +1,33 @@
 import Foundation
 import SwiftUI
 import SwiftData
-import Combine
+import OSLog
 
 // MARK: - Inbox ViewModel
 
-@MainActor
-class InboxViewModel: ObservableObject {
-    // MARK: - Published State
+private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxViewModel")
 
-    @Published var emails: [Email] = []
-    @Published var scope: InboxScope = .all
-    @Published var activeFilter: InboxFilter? = nil
-    @Published var currentMailbox: Mailbox = .inbox
-    @Published var isLoading = false
-    @Published var isLoadingMore = false
-    @Published var error: Error?
+@MainActor
+@Observable
+final class InboxViewModel {
+    // MARK: - State
+
+    var emails: [Email] = []
+    var scope: InboxScope = .all
+    var activeFilter: InboxFilter? = nil
+    var currentMailbox: Mailbox = .inbox
+    var isLoading = false
+    var isLoadingMore = false
+    var error: Error?
 
     // MARK: - Navigation
 
-    @Published var selectedEmail: Email?
-    @Published var showingEmailDetail = false
+    var selectedEmail: Email?
+    var showingEmailDetail = false
 
     // MARK: - Filter Counts
 
-    @Published var filterCounts: [InboxFilter: Int] = [:]
+    var filterCounts: [InboxFilter: Int] = [:]
 
     // MARK: - Pagination
 
@@ -65,7 +68,7 @@ class InboxViewModel: ObservableObject {
             self.emails = fetchedEmails
             self.nextPageToken = pageToken
         } catch {
-            print("Failed to fetch emails: \(error)")
+            logger.error("Failed to fetch emails: \(error.localizedDescription)")
             self.error = error
             loadMockData()
         }
@@ -98,14 +101,14 @@ class InboxViewModel: ObservableObject {
                 labelIds: labelIds
             )
 
-            // Append new emails, avoiding duplicates
             let existingIds = Set(emails.map { $0.id })
             let uniqueNewEmails = moreEmails.filter { !existingIds.contains($0.id) }
             emails.append(contentsOf: uniqueNewEmails)
             nextPageToken = newPageToken
             updateFilterCounts()
+            logger.info("Loaded \(uniqueNewEmails.count) more emails")
         } catch {
-            print("Failed to load more emails: \(error)")
+            logger.error("Failed to load more emails: \(error.localizedDescription)")
             self.error = error
         }
     }

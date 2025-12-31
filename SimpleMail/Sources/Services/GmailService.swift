@@ -1,12 +1,233 @@
 import Foundation
+import OSLog
+
+// MARK: - Base64URL Utilities
+
+enum Base64URL {
+    /// Encode data to URL-safe Base64 (no padding)
+    static func encode(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    /// Decode URL-safe Base64 to string
+    static func decode(_ encoded: String) -> String? {
+        let base64 = encoded
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        // Add padding efficiently
+        let paddingLength = (4 - base64.count % 4) % 4
+        let padded = paddingLength > 0 ? base64 + String(repeating: "=", count: paddingLength) : base64
+
+        guard let data = Data(base64Encoded: padded) else {
+            logger.warning("Failed to decode Base64URL data")
+            return nil
+        }
+
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Decode URL-safe Base64 to Data
+    static func decodeToData(_ encoded: String) -> Data? {
+        let base64 = encoded
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        let paddingLength = (4 - base64.count % 4) % 4
+        let padded = paddingLength > 0 ? base64 + String(repeating: "=", count: paddingLength) : base64
+
+        return Data(base64Encoded: padded)
+    }
+}
+
+// MARK: - MIME Message Builder (Result Builder Pattern)
+
+@resultBuilder
+struct MIMEBuilder {
+    static func buildBlock(_ components: MIMEComponent...) -> [MIMEComponent] {
+        components
+    }
+
+    static func buildOptional(_ component: [MIMEComponent]?) -> [MIMEComponent] {
+        component ?? []
+    }
+
+    static func buildEither(first component: [MIMEComponent]) -> [MIMEComponent] {
+        component
+    }
+
+    static func buildEither(second component: [MIMEComponent]) -> [MIMEComponent] {
+        component
+    }
+
+    static func buildArray(_ components: [[MIMEComponent]]) -> [MIMEComponent] {
+        components.flatMap { $0 }
+    }
+}
+
+protocol MIMEComponent {
+    func render() -> String
+}
+
+struct MIMEHeader: MIMEComponent {
+    let name: String
+    let value: String
+
+    func render() -> String {
+        "\(name): \(value)"
+    }
+}
+
+struct MIMEBody: MIMEComponent {
+    let content: String
+    let contentType: String
+    let charset: String
+
+    init(_ content: String, contentType: String = "text/plain", charset: String = "UTF-8") {
+        self.content = content
+        self.contentType = contentType
+        self.charset = charset
+    }
+
+    func render() -> String {
+        content
+    }
+}
+
+struct MIMEMessage {
+    let to: [String]
+    let cc: [String]
+    let bcc: [String]
+    let subject: String
+    let body: String
+    let bodyHtml: String?
+    let inReplyTo: String?
+    let references: String?
+
+    init(
+        to: [String],
+        cc: [String] = [],
+        bcc: [String] = [],
+        subject: String,
+        body: String,
+        bodyHtml: String? = nil,
+        inReplyTo: String? = nil,
+        references: String? = nil
+    ) {
+        self.to = to
+        self.cc = cc
+        self.bcc = bcc
+        self.subject = subject
+        self.body = body
+        self.bodyHtml = bodyHtml
+        self.inReplyTo = inReplyTo
+        self.references = references
+    }
+
+    @MIMEBuilder
+    private var headers: [MIMEComponent] {
+        MIMEHeader(name: "To", value: to.joined(separator: ", "))
+
+        if !cc.isEmpty {
+            MIMEHeader(name: "Cc", value: cc.joined(separator: ", "))
+        }
+
+        if !bcc.isEmpty {
+            MIMEHeader(name: "Bcc", value: bcc.joined(separator: ", "))
+        }
+
+        MIMEHeader(name: "Subject", value: subject)
+        MIMEHeader(name: "MIME-Version", value: "1.0")
+
+        if let inReplyTo = inReplyTo {
+            MIMEHeader(name: "In-Reply-To", value: inReplyTo)
+        }
+
+        if let references = references {
+            MIMEHeader(name: "References", value: references)
+        }
+    }
+
+    func build() -> String {
+        if let html = bodyHtml {
+            return buildMultipart(html: html)
+        } else {
+            return buildPlainText()
+        }
+    }
+
+    private func buildPlainText() -> String {
+        var result = headers.map { $0.render() }
+        result.append("Content-Type: text/plain; charset=\"UTF-8\"")
+        return result.joined(separator: "\r\n") + "\r\n\r\n" + body
+    }
+
+    private func buildMultipart(html: String) -> String {
+        let boundary = "boundary_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+
+        var result = headers.map { $0.render() }
+        result.append("Content-Type: multipart/alternative; boundary=\"\(boundary)\"")
+
+        let headerSection = result.joined(separator: "\r\n")
+
+        let plainPart = """
+        --\(boundary)\r
+        Content-Type: text/plain; charset="UTF-8"\r
+        Content-Transfer-Encoding: quoted-printable\r
+        \r
+        \(body)
+        """
+
+        let htmlPart = """
+        --\(boundary)\r
+        Content-Type: text/html; charset="UTF-8"\r
+        Content-Transfer-Encoding: quoted-printable\r
+        \r
+        \(html)\r
+        --\(boundary)--
+        """
+
+        return headerSection + "\r\n\r\n" + plainPart + "\r\n" + htmlPart
+    }
+
+    /// Encode the message for Gmail API
+    func encoded() -> String {
+        guard let data = build().data(using: .utf8) else {
+            return ""
+        }
+        return Base64URL.encode(data)
+    }
+}
+
+// MARK: - Gmail API Protocol (for testability)
+
+protocol GmailAPIProvider: Sendable {
+    func fetchInbox(query: String?, maxResults: Int, pageToken: String?, labelIds: [String]) async throws -> (emails: [Email], nextPageToken: String?)
+    func fetchThread(threadId: String) async throws -> [EmailDetail]
+    func sendEmail(to: [String], cc: [String], bcc: [String], subject: String, body: String, bodyHtml: String?, inReplyTo: String?, references: String?, threadId: String?) async throws -> String
+    func archive(messageId: String) async throws
+    func markAsRead(messageId: String) async throws
+    func markAsUnread(messageId: String) async throws
+    func star(messageId: String) async throws
+    func unstar(messageId: String) async throws
+    func trash(messageId: String) async throws
+    func search(query: String, maxResults: Int) async throws -> [Email]
+}
+
+// MARK: - Gmail Service Logger
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "GmailService")
 
 // MARK: - Gmail Service
 
-actor GmailService {
+actor GmailService: GmailAPIProvider {
     static let shared = GmailService()
 
     private let baseURL = "https://gmail.googleapis.com/gmail/v1"
-    private let batchSize = 3 // Prevent rate limiting
+    private let batchSize = 3
     private let requestTimeout: TimeInterval = 20
 
     // MARK: - Get Access Token
@@ -28,6 +249,8 @@ actor GmailService {
         pageToken: String? = nil,
         labelIds: [String] = ["INBOX"]
     ) async throws -> (emails: [Email], nextPageToken: String?) {
+        logger.info("Fetching inbox: labels=\(labelIds), max=\(maxResults), page=\(pageToken ?? "first")")
+
         let token = try await getAccessToken()
 
         var components = URLComponents(string: "\(baseURL)/users/me/messages")!
@@ -55,6 +278,7 @@ actor GmailService {
         )
 
         guard let messageRefs = listResponse.messages, !messageRefs.isEmpty else {
+            logger.info("No emails found")
             return ([], nil)
         }
 
@@ -64,6 +288,7 @@ actor GmailService {
             token: token
         )
 
+        logger.info("Fetched \(emails.count) emails, hasMore=\(listResponse.nextPageToken != nil)")
         return (emails, listResponse.nextPageToken)
     }
 
@@ -277,10 +502,13 @@ actor GmailService {
         references: String? = nil,
         threadId: String? = nil
     ) async throws -> String {
+        logger.info("Sending email to \(to.count) recipients")
+
         let token = try await getAccessToken()
         let url = URL(string: "\(baseURL)/users/me/messages/send")!
 
-        let mimeMessage = buildMimeMessage(
+        // Use the type-safe MIME builder
+        let mimeMessage = MIMEMessage(
             to: to,
             cc: cc,
             bcc: bcc,
@@ -291,18 +519,13 @@ actor GmailService {
             references: references
         )
 
-        let encodedMessage = mimeMessage.data(using: .utf8)!.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = requestTimeout
 
-        var payload: [String: Any] = ["raw": encodedMessage]
+        var payload: [String: Any] = ["raw": mimeMessage.encoded()]
         if let threadId = threadId {
             payload["threadId"] = threadId
         }
@@ -312,10 +535,12 @@ actor GmailService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            logger.error("Failed to send email: status \((response as? HTTPURLResponse)?.statusCode ?? -1)")
             throw GmailError.sendFailed
         }
 
         let sendResponse = try JSONDecoder().decode(MessageRef.self, from: data)
+        logger.info("Email sent successfully: \(sendResponse.id)")
         return sendResponse.id
     }
 
@@ -328,23 +553,17 @@ actor GmailService {
         bodyHtml: String? = nil,
         existingDraftId: String? = nil
     ) async throws -> String {
+        logger.info("Saving draft\(existingDraftId != nil ? " (updating)" : "")")
+
         let token = try await getAccessToken()
 
-        let mimeMessage = buildMimeMessage(
+        // Use the type-safe MIME builder
+        let mimeMessage = MIMEMessage(
             to: to,
-            cc: [],
-            bcc: [],
             subject: subject,
             body: body,
-            bodyHtml: bodyHtml,
-            inReplyTo: nil,
-            references: nil
+            bodyHtml: bodyHtml
         )
-
-        let encodedMessage = mimeMessage.data(using: .utf8)!.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
 
         let url: URL
         let method: String
@@ -364,7 +583,7 @@ actor GmailService {
         request.timeoutInterval = requestTimeout
 
         let payload: [String: Any] = [
-            "message": ["raw": encodedMessage]
+            "message": ["raw": mimeMessage.encoded()]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
@@ -372,10 +591,12 @@ actor GmailService {
 
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 || httpResponse.statusCode == 201 else {
+            logger.error("Failed to save draft: status \((response as? HTTPURLResponse)?.statusCode ?? -1)")
             throw GmailError.actionFailed
         }
 
         let draftResponse = try JSONDecoder().decode(DraftResponse.self, from: data)
+        logger.info("Draft saved: \(draftResponse.id)")
         return draftResponse.id
     }
 
@@ -406,17 +627,19 @@ actor GmailService {
     // MARK: - Attachments
 
     func fetchAttachment(messageId: String, attachmentId: String) async throws -> Data {
+        logger.info("Fetching attachment \(attachmentId) from message \(messageId)")
+
         let token = try await getAccessToken()
         let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/attachments/\(attachmentId)")!
 
         let response: AttachmentResponse = try await request(url: url, token: token)
 
-        guard let data = Data(base64Encoded: response.data
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")) else {
+        guard let data = Base64URL.decodeToData(response.data) else {
+            logger.error("Failed to decode attachment data")
             throw GmailError.invalidResponse
         }
 
+        logger.info("Fetched attachment: \(data.count) bytes")
         return data
     }
 
@@ -446,80 +669,30 @@ actor GmailService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            logger.error("Invalid response type from \(url.path)")
             throw GmailError.invalidResponse
         }
 
         switch httpResponse.statusCode {
         case 200:
-            return try JSONDecoder().decode(T.self, from: data)
+            do {
+                return try JSONDecoder().decode(T.self, from: data)
+            } catch {
+                logger.error("JSON decode error for \(T.self): \(error.localizedDescription)")
+                throw GmailError.invalidResponse
+            }
         case 401:
+            logger.warning("Authentication required for \(url.path)")
             throw GmailError.notAuthenticated
         case 429:
+            logger.warning("Rate limited on \(url.path)")
             throw GmailError.rateLimited
         case 404:
+            logger.warning("Resource not found: \(url.path)")
             throw GmailError.notFound
         default:
+            logger.error("Server error \(httpResponse.statusCode) on \(url.path)")
             throw GmailError.serverError(httpResponse.statusCode)
-        }
-    }
-
-    // MARK: - MIME Builder
-
-    private func buildMimeMessage(
-        to: [String],
-        cc: [String],
-        bcc: [String],
-        subject: String,
-        body: String,
-        bodyHtml: String?,
-        inReplyTo: String?,
-        references: String?
-    ) -> String {
-        var headers: [String] = []
-
-        headers.append("To: \(to.joined(separator: ", "))")
-        if !cc.isEmpty {
-            headers.append("Cc: \(cc.joined(separator: ", "))")
-        }
-        if !bcc.isEmpty {
-            headers.append("Bcc: \(bcc.joined(separator: ", "))")
-        }
-        headers.append("Subject: \(subject)")
-        headers.append("MIME-Version: 1.0")
-
-        if let inReplyTo = inReplyTo {
-            headers.append("In-Reply-To: \(inReplyTo)")
-        }
-        if let references = references {
-            headers.append("References: \(references)")
-        }
-
-        if let html = bodyHtml {
-            // Multipart alternative
-            let boundary = "boundary_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
-            headers.append("Content-Type: multipart/alternative; boundary=\"\(boundary)\"")
-
-            let plainPart = """
-            --\(boundary)
-            Content-Type: text/plain; charset="UTF-8"
-            Content-Transfer-Encoding: quoted-printable
-
-            \(body)
-            """
-
-            let htmlPart = """
-            --\(boundary)
-            Content-Type: text/html; charset="UTF-8"
-            Content-Transfer-Encoding: quoted-printable
-
-            \(html)
-            --\(boundary)--
-            """
-
-            return headers.joined(separator: "\r\n") + "\r\n\r\n" + plainPart + "\r\n" + htmlPart
-        } else {
-            headers.append("Content-Type: text/plain; charset=\"UTF-8\"")
-            return headers.joined(separator: "\r\n") + "\r\n\r\n" + body
         }
     }
 
@@ -687,19 +860,7 @@ actor GmailService {
     }
 
     private func decodeBase64URL(_ encoded: String) -> String {
-        let base64 = encoded
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-
-        // Add padding if needed
-        let padded = base64 + String(repeating: "=", count: (4 - base64.count % 4) % 4)
-
-        guard let data = Data(base64Encoded: padded),
-              let string = String(data: data, encoding: .utf8) else {
-            return ""
-        }
-
-        return string
+        Base64URL.decode(encoded) ?? ""
     }
 }
 

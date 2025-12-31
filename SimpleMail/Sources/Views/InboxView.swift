@@ -5,7 +5,7 @@ import SwiftData
 
 struct InboxView: View {
     @Environment(\.modelContext) private var modelContext
-    @StateObject private var viewModel = InboxViewModel()
+    @State private var viewModel = InboxViewModel()
     @State private var showingSearch = false
     @State private var showingCompose = false
     @State private var showingSnooze = false
@@ -387,6 +387,47 @@ struct EmailListView: View {
     }
 }
 
+// MARK: - Cached Date Formatters (Performance Critical)
+
+private enum DateFormatters {
+    static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    static let fullDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, h:mm a"
+        return formatter
+    }()
+
+    static let calendar = Calendar.current
+
+    static func formatEmailDate(_ date: Date) -> String {
+        if calendar.isDateInToday(date) {
+            return timeFormatter.string(from: date)
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+        return dateFormatter.string(from: date)
+    }
+
+    static func formatDetailDate(_ date: Date) -> String {
+        if calendar.isDateInToday(date) {
+            return timeFormatter.string(from: date)
+        }
+        return fullDateFormatter.string(from: date)
+    }
+}
+
 // MARK: - Email Row
 
 struct EmailRow: View {
@@ -411,7 +452,7 @@ struct EmailRow: View {
 
                     Spacer()
 
-                    Text(formatDate(email.date))
+                    Text(DateFormatters.formatEmailDate(email.date))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
@@ -442,24 +483,6 @@ struct EmailRow: View {
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        let calendar = Calendar.current
-
-        if calendar.isDateInToday(date) {
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            return formatter.string(from: date)
-        }
-
-        if calendar.isDateInYesterday(date) {
-            return "Yesterday"
-        }
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
     }
 }
 
