@@ -89,6 +89,7 @@ Store tokens in Keychain
 - Multi-account support
 - Secure Keychain storage
 - Thread-safe with `@MainActor`
+- `MainActor.assumeIsolated` for safe nonisolated protocol callbacks
 
 ### 2. Gmail Service (GmailService.swift)
 
@@ -110,11 +111,27 @@ actor GmailService: GmailAPIProvider {
 **Type-Safe MIME Builder (Result Builder Pattern):**
 ```swift
 @resultBuilder
-struct MIMEBuilder { ... }
+struct MIMEHeaderBuilder {
+    static func buildBlock(_ components: [MIMEHeader]...) -> [MIMEHeader] {
+        components.flatMap { $0 }
+    }
+    static func buildOptional(_ component: [MIMEHeader]?) -> [MIMEHeader] {
+        component ?? []
+    }
+    static func buildExpression(_ expression: MIMEHeader) -> [MIMEHeader] {
+        [expression]
+    }
+}
 
-struct MIMEMessage {
-    @MIMEBuilder
-    private var headers: [MIMEComponent] {
+struct MIMEHeader: Sendable {
+    let name: String
+    let value: String
+    var rendered: String { "\(name): \(value)" }
+}
+
+struct MIMEMessage: Sendable {
+    @MIMEHeaderBuilder
+    private var headers: [MIMEHeader] {
         MIMEHeader(name: "To", value: to.joined(separator: ", "))
         if !cc.isEmpty {
             MIMEHeader(name: "Cc", value: cc.joined(separator: ", "))
@@ -123,8 +140,8 @@ struct MIMEMessage {
         MIMEHeader(name: "MIME-Version", value: "1.0")
     }
 
-    func encoded() -> String {
-        Base64URL.encode(build().data(using: .utf8)!)
+    func build() -> String {
+        // Renders headers + body as RFC 2822 message
     }
 }
 ```
@@ -661,9 +678,10 @@ actor GmailService {
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.2*
+*Architecture version: 1.3*
 
 **Changelog:**
+- v1.3: Fixed MIME builder types (concrete MIMEHeader vs protocol), SwiftData predicate variable capture, MainActor.assumeIsolated for OAuth callbacks
 - v1.2: Added Sendable DTOs, actor-based Keychain, nonisolated optimizations
 - v1.1: Added @Observable migration, MIME Result Builder, Base64URL utilities, OSLog integration, protocol-based testing
 - v1.0: Initial architecture documentation
