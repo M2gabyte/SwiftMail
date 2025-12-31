@@ -159,8 +159,16 @@ struct SignInView: View {
 
     var body: some View {
         ZStack {
-            TimeOfDayGradient()
-                .ignoresSafeArea()
+            // Use a guaranteed dark gradient for the sign-in screen
+            LinearGradient(
+                colors: [
+                    Color(red: 0.1, green: 0.2, blue: 0.4),
+                    Color(red: 0.15, green: 0.15, blue: 0.3)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
             VStack(spacing: 32) {
                 Spacer()
@@ -169,7 +177,7 @@ struct SignInView: View {
                 VStack(spacing: 16) {
                     Image(systemName: "envelope.fill")
                         .font(.system(size: 80))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.white)
                         .symbolEffect(.pulse, options: .repeating)
 
                     Text("SimpleMail")
@@ -179,7 +187,7 @@ struct SignInView: View {
 
                     Text("A better way to email")
                         .font(.title3)
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.8))
                 }
 
                 Spacer()
@@ -199,7 +207,7 @@ struct SignInView: View {
                     HStack(spacing: 12) {
                         if isLoading {
                             ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .progressViewStyle(CircularProgressViewStyle(tint: .blue))
                         } else {
                             Image("google-logo")
                                 .resizable()
@@ -209,10 +217,10 @@ struct SignInView: View {
                         Text("Sign in with Google")
                     }
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.blue)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(.blue)
+                    .background(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(isLoading)
@@ -221,7 +229,7 @@ struct SignInView: View {
                 // Privacy note
                 Text("Your emails stay on your device. We never see them.")
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
@@ -266,12 +274,12 @@ struct FeatureRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .foregroundStyle(.blue)
+                .foregroundStyle(.cyan)
                 .frame(width: 24)
 
             Text(text)
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(.white)
         }
     }
 }
