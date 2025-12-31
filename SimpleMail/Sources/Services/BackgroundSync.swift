@@ -107,9 +107,11 @@ final class BackgroundSyncManager {
         let (emails, _) = try await GmailService.shared.fetchInbox(maxResults: 50)
 
         // Update local cache (SwiftData)
-        // This would normally save to the database
+        await MainActor.run {
+            EmailCacheManager.shared.cacheEmails(emails)
+        }
 
-        print("[BackgroundSync] Synced \(emails.count) emails")
+        print("[BackgroundSync] Synced \(emails.count) emails to cache")
     }
 
     private func checkForNewEmails() async throws {

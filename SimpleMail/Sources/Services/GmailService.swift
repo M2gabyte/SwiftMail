@@ -221,6 +221,22 @@ actor GmailService {
         }
     }
 
+    func reportSpam(messageId: String) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["SPAM"], removeLabels: ["INBOX"])
+    }
+
+    func unmarkSpam(messageId: String) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["INBOX"], removeLabels: ["SPAM"])
+    }
+
+    func markImportant(messageId: String) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["IMPORTANT"])
+    }
+
+    func unmarkImportant(messageId: String) async throws {
+        try await modifyLabels(messageId: messageId, removeLabels: ["IMPORTANT"])
+    }
+
     private func modifyLabels(
         messageId: String,
         addLabels: [String] = [],
