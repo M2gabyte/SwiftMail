@@ -139,6 +139,66 @@ struct SettingsView: View {
                     Text("Powered by on-device Apple Intelligence. Your data stays private.")
                 }
 
+                // Gmail Settings Sync Section
+                Section {
+                    NavigationLink("Vacation Responder") {
+                        VacationResponderView()
+                    }
+
+                    NavigationLink("Labels") {
+                        LabelsManagementView()
+                    }
+
+                    NavigationLink("Filters") {
+                        FiltersManagementView()
+                    }
+
+                    Button(action: {
+                        Task {
+                            await viewModel.syncGmailSettings()
+                        }
+                    }) {
+                        HStack {
+                            Text("Sync Gmail Settings")
+                            Spacer()
+                            if viewModel.isSyncingSettings {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(viewModel.isSyncingSettings)
+                } header: {
+                    Text("Gmail Settings")
+                } footer: {
+                    if let lastSync = viewModel.lastGmailSettingsSync {
+                        Text("Last synced \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+                    }
+                }
+
+                // Data Management Section
+                Section {
+                    Button(action: {
+                        Task {
+                            await viewModel.clearLocalCache()
+                        }
+                    }) {
+                        HStack {
+                            Text("Clear Local Cache")
+                            Spacer()
+                            Text(viewModel.cacheSize)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    NavigationLink("Snoozed Emails") {
+                        SnoozedEmailsView()
+                    }
+                } header: {
+                    Text("Data")
+                } footer: {
+                    Text("Clearing cache will remove locally stored emails. They'll be re-downloaded on next sync.")
+                }
+
                 // About Section
                 Section {
                     HStack {
@@ -241,12 +301,18 @@ struct AppSettings: Codable {
 class SettingsViewModel: ObservableObject {
     @Published var settings = AppSettings()
     @Published var currentAccount: AuthService.Account?
+    @Published var isSyncingSettings = false
+    @Published var lastGmailSettingsSync: Date?
+    @Published var cacheSize = "Calculating..."
 
     private let settingsKey = "appSettings"
+    private let gmailSyncKey = "lastGmailSettingsSync"
 
     init() {
         loadSettings()
         currentAccount = AuthService.shared.currentAccount
+        lastGmailSettingsSync = UserDefaults.standard.object(forKey: gmailSyncKey) as? Date
+        calculateCacheSize()
     }
 
     func loadSettings() {
@@ -269,7 +335,37 @@ class SettingsViewModel: ObservableObject {
         }
     }
 
+    func syncGmailSettings() async {
+        isSyncingSettings = true
+        defer { isSyncingSettings = false }
+
+        do {
+            // Fetch Gmail settings (labels, vacation responder, etc.)
+            _ = try await GmailService.shared.fetchLabels()
+
+            lastGmailSettingsSync = Date()
+            UserDefaults.standard.set(lastGmailSettingsSync, forKey: gmailSyncKey)
+
+            HapticFeedback.success()
+        } catch {
+            print("[Settings] Failed to sync Gmail settings: \(error)")
+            HapticFeedback.error()
+        }
+    }
+
+    func clearLocalCache() async {
+        EmailCacheManager.shared.clearCache()
+        calculateCacheSize()
+        HapticFeedback.success()
+    }
+
+    private func calculateCacheSize() {
+        let count = EmailCacheManager.shared.cachedEmailCount
+        cacheSize = "\(count) email\(count == 1 ? "" : "s")"
+    }
+
     func signOut() async {
+        EmailCacheManager.shared.clearCache()
         AuthService.shared.signOut()
     }
 }
@@ -375,6 +471,411 @@ struct BlockedSendersView: View {
                 )
             }
         }
+    }
+}
+
+// MARK: - Vacation Responder View
+
+struct VacationResponderView: View {
+    @StateObject private var viewModel = VacationResponderViewModel()
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Enable Vacation Responder", isOn: $viewModel.isEnabled)
+            }
+
+            if viewModel.isEnabled {
+                Section {
+                    DatePicker("Start Date", selection: $viewModel.startDate, displayedComponents: .date)
+                    DatePicker("End Date", selection: $viewModel.endDate, displayedComponents: .date)
+                }
+
+                Section {
+                    TextField("Subject", text: $viewModel.subject)
+                    TextEditor(text: $viewModel.message)
+                        .frame(minHeight: 150)
+                } header: {
+                    Text("Message")
+                }
+
+                Section {
+                    Toggle("Only Reply to Contacts", isOn: $viewModel.onlyContacts)
+                } footer: {
+                    Text("When enabled, only emails from your contacts will receive auto-replies.")
+                }
+            }
+        }
+        .navigationTitle("Vacation Responder")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    Task {
+                        await viewModel.saveSettings()
+                    }
+                }
+                .disabled(viewModel.isSaving)
+            }
+        }
+        .overlay {
+            if viewModel.isLoading {
+                ProgressView()
+            }
+        }
+        .task {
+            await viewModel.loadSettings()
+        }
+    }
+}
+
+@MainActor
+class VacationResponderViewModel: ObservableObject {
+    @Published var isEnabled = false
+    @Published var startDate = Date()
+    @Published var endDate = Date().addingTimeInterval(7 * 24 * 60 * 60)
+    @Published var subject = ""
+    @Published var message = ""
+    @Published var onlyContacts = false
+    @Published var isLoading = false
+    @Published var isSaving = false
+
+    func loadSettings() async {
+        isLoading = true
+        defer { isLoading = false }
+        // TODO: Load from Gmail API when vacation settings endpoint is added
+    }
+
+    func saveSettings() async {
+        isSaving = true
+        defer { isSaving = false }
+        // TODO: Save to Gmail API when vacation settings endpoint is added
+        HapticFeedback.success()
+    }
+}
+
+// MARK: - Labels Management View
+
+struct LabelsManagementView: View {
+    @StateObject private var viewModel = LabelsManagementViewModel()
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(viewModel.systemLabels) { label in
+                    LabelRow(label: label)
+                }
+            } header: {
+                Text("System Labels")
+            }
+
+            Section {
+                ForEach(viewModel.userLabels) { label in
+                    LabelRow(label: label)
+                }
+                .onDelete { indexSet in
+                    Task {
+                        await viewModel.deleteLabels(at: indexSet)
+                    }
+                }
+            } header: {
+                Text("Custom Labels")
+            }
+        }
+        .navigationTitle("Labels")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: { viewModel.showingCreateLabel = true }) {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $viewModel.showingCreateLabel) {
+            CreateLabelView { name, color in
+                Task {
+                    await viewModel.createLabel(name: name, color: color)
+                }
+            }
+        }
+        .overlay {
+            if viewModel.isLoading && viewModel.systemLabels.isEmpty {
+                ProgressView()
+            }
+        }
+        .task {
+            await viewModel.loadLabels()
+        }
+    }
+}
+
+struct LabelRow: View {
+    let label: GmailLabel
+
+    var body: some View {
+        HStack {
+            Circle()
+                .fill(labelColor)
+                .frame(width: 12, height: 12)
+
+            Text(label.name)
+
+            Spacer()
+
+            if let count = label.messagesUnread, count > 0 {
+                Text("\(count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var labelColor: Color {
+        if let colorStr = label.color?.backgroundColor {
+            return Color(hex: colorStr) ?? .gray
+        }
+        return .gray
+    }
+}
+
+struct CreateLabelView: View {
+    let onCreate: (String, Color) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var selectedColor = Color.blue
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Label Name", text: $name)
+                }
+
+                Section {
+                    ColorPicker("Color", selection: $selectedColor)
+                }
+            }
+            .navigationTitle("New Label")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        onCreate(name, selectedColor)
+                        dismiss()
+                    }
+                    .disabled(name.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+class LabelsManagementViewModel: ObservableObject {
+    @Published var systemLabels: [GmailLabel] = []
+    @Published var userLabels: [GmailLabel] = []
+    @Published var isLoading = false
+    @Published var showingCreateLabel = false
+
+    func loadLabels() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let labels = try await GmailService.shared.fetchLabels()
+            systemLabels = labels.filter { $0.type == "system" }
+            userLabels = labels.filter { $0.type == "user" }
+        } catch {
+            print("[Labels] Failed to load: \(error)")
+        }
+    }
+
+    func createLabel(name: String, color: Color) async {
+        // TODO: Implement label creation via Gmail API
+        HapticFeedback.success()
+    }
+
+    func deleteLabels(at indexSet: IndexSet) async {
+        // TODO: Implement label deletion via Gmail API
+        userLabels.remove(atOffsets: indexSet)
+        HapticFeedback.medium()
+    }
+}
+
+// MARK: - Filters Management View
+
+struct FiltersManagementView: View {
+    @StateObject private var viewModel = FiltersManagementViewModel()
+
+    var body: some View {
+        List {
+            ForEach(viewModel.filters) { filter in
+                FilterRow(filter: filter)
+            }
+            .onDelete { indexSet in
+                Task {
+                    await viewModel.deleteFilters(at: indexSet)
+                }
+            }
+        }
+        .navigationTitle("Filters")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: { viewModel.showingCreateFilter = true }) {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $viewModel.showingCreateFilter) {
+            CreateFilterView { filter in
+                Task {
+                    await viewModel.createFilter(filter)
+                }
+            }
+        }
+        .overlay {
+            if viewModel.isLoading && viewModel.filters.isEmpty {
+                ContentUnavailableView(
+                    "No Filters",
+                    systemImage: "line.3.horizontal.decrease.circle",
+                    description: Text("Create filters to automatically sort your emails.")
+                )
+            }
+        }
+        .task {
+            await viewModel.loadFilters()
+        }
+    }
+}
+
+struct EmailFilter: Identifiable {
+    let id: String
+    let from: String?
+    let to: String?
+    let subject: String?
+    let action: String
+}
+
+struct FilterRow: View {
+    let filter: EmailFilter
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let from = filter.from {
+                Text("From: \(from)")
+                    .font(.subheadline)
+            }
+            if let subject = filter.subject {
+                Text("Subject: \(subject)")
+                    .font(.subheadline)
+            }
+            Text(filter.action)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+struct CreateFilterView: View {
+    let onCreate: (EmailFilter) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var from = ""
+    @State private var subject = ""
+    @State private var action = "Archive"
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("From", text: $from)
+                    TextField("Subject contains", text: $subject)
+                } header: {
+                    Text("Match Criteria")
+                }
+
+                Section {
+                    Picker("Action", selection: $action) {
+                        Text("Archive").tag("Archive")
+                        Text("Mark as Read").tag("Mark as Read")
+                        Text("Star").tag("Star")
+                        Text("Apply Label").tag("Apply Label")
+                        Text("Delete").tag("Delete")
+                    }
+                } header: {
+                    Text("Action")
+                }
+            }
+            .navigationTitle("New Filter")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        let filter = EmailFilter(
+                            id: UUID().uuidString,
+                            from: from.isEmpty ? nil : from,
+                            to: nil,
+                            subject: subject.isEmpty ? nil : subject,
+                            action: action
+                        )
+                        onCreate(filter)
+                        dismiss()
+                    }
+                    .disabled(from.isEmpty && subject.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+class FiltersManagementViewModel: ObservableObject {
+    @Published var filters: [EmailFilter] = []
+    @Published var isLoading = false
+    @Published var showingCreateFilter = false
+
+    func loadFilters() async {
+        isLoading = true
+        defer { isLoading = false }
+        // TODO: Load filters from Gmail API
+    }
+
+    func createFilter(_ filter: EmailFilter) async {
+        filters.append(filter)
+        HapticFeedback.success()
+        // TODO: Create filter via Gmail API
+    }
+
+    func deleteFilters(at indexSet: IndexSet) async {
+        filters.remove(atOffsets: indexSet)
+        HapticFeedback.medium()
+        // TODO: Delete filter via Gmail API
+    }
+}
+
+// MARK: - Color Extension
+
+extension Color {
+    init?(hex: String) {
+        var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
+
+        guard hexSanitized.count == 6 else { return nil }
+
+        var rgb: UInt64 = 0
+        Scanner(string: hexSanitized).scanHexInt64(&rgb)
+
+        self.init(
+            red: Double((rgb & 0xFF0000) >> 16) / 255.0,
+            green: Double((rgb & 0x00FF00) >> 8) / 255.0,
+            blue: Double(rgb & 0x0000FF) / 255.0
+        )
     }
 }
 
