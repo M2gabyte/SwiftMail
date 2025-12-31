@@ -420,7 +420,8 @@ actor GmailService: GmailAPIProvider {
             labelIds: emailDetail.labelIds,
             body: body,
             to: emailDetail.to,
-            cc: emailDetail.cc
+            cc: emailDetail.cc,
+            listUnsubscribe: emailDetail.listUnsubscribe
         )
     }
 
@@ -881,6 +882,7 @@ actor GmailService: GmailAPIProvider {
         var to: [String] = []
         var cc: [String] = []
         var subject = ""
+        var listUnsubscribe: String?
 
         // Prefer internalDate (milliseconds since epoch) over header date
         var date: Date
@@ -897,6 +899,7 @@ actor GmailService: GmailAPIProvider {
             case "to": to = parseAddressList(header.value)
             case "cc": cc = parseAddressList(header.value)
             case "subject": subject = header.value
+            case "list-unsubscribe": listUnsubscribe = header.value
             case "date":
                 if message.internalDate == nil {
                     date = parseDate(header.value) ?? date
@@ -920,7 +923,8 @@ actor GmailService: GmailAPIProvider {
             labelIds: message.labelIds ?? [],
             body: body,
             to: to,
-            cc: cc
+            cc: cc,
+            listUnsubscribe: listUnsubscribe
         )
     }
 

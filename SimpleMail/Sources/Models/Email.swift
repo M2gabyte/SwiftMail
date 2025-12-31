@@ -55,6 +55,7 @@ struct EmailDetailDTO: Sendable, Identifiable, Hashable {
     let body: String
     let to: [String]
     let cc: [String]
+    let listUnsubscribe: String?
 
     var senderName: String {
         EmailParser.extractSenderName(from: from)
@@ -138,6 +139,7 @@ final class EmailDetail: Identifiable {
     var body: String
     var to: [String]
     var cc: [String]
+    var listUnsubscribe: String?
 
     init(
         id: String,
@@ -152,7 +154,8 @@ final class EmailDetail: Identifiable {
         labelIds: [String] = [],
         body: String = "",
         to: [String] = [],
-        cc: [String] = []
+        cc: [String] = [],
+        listUnsubscribe: String? = nil
     ) {
         self.id = id
         self.threadId = threadId
@@ -167,6 +170,7 @@ final class EmailDetail: Identifiable {
         self.body = body
         self.to = to
         self.cc = cc
+        self.listUnsubscribe = listUnsubscribe
     }
 }
 
@@ -322,7 +326,8 @@ extension EmailDetail {
             labelIds: labelIds,
             body: body,
             to: to,
-            cc: cc
+            cc: cc,
+            listUnsubscribe: listUnsubscribe
         )
     }
 }

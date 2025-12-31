@@ -107,6 +107,29 @@ struct EmailDetailView: View {
             Button("Snooze") {
                 showingSnoozeSheet = true
             }
+
+            Divider()
+
+            if viewModel.canUnsubscribe {
+                Button("Unsubscribe") {
+                    Task { await viewModel.unsubscribe() }
+                }
+            }
+
+            Button("Block Sender") {
+                Task {
+                    await viewModel.blockSender()
+                    dismiss()
+                }
+            }
+
+            Button("Report Spam", role: .destructive) {
+                Task {
+                    await viewModel.reportSpam()
+                    dismiss()
+                }
+            }
+
             Button("Move to Trash", role: .destructive) {
                 Task {
                     await viewModel.trash()
@@ -214,44 +237,75 @@ struct EmailMessageCard: View {
     }
 }
 
-// MARK: - Email Body View (WebView)
+// MARK: - Email Body View (WebView with dynamic height)
 
-struct EmailBodyView: UIViewRepresentable {
+struct EmailBodyView: View {
     let html: String
+    @State private var contentHeight: CGFloat = 200
+
+    var body: some View {
+        EmailBodyWebView(html: html, contentHeight: $contentHeight)
+            .frame(height: contentHeight)
+    }
+}
+
+struct EmailBodyWebView: UIViewRepresentable {
+    let html: String
+    @Binding var contentHeight: CGFloat
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.dataDetectorTypes = [.link, .phoneNumber, .address]
 
+        // Enable JavaScript for height calculation
+        let preferences = WKWebpagePreferences()
+        preferences.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = preferences
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
         webView.navigationDelegate = context.coordinator
 
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        // Only reload if HTML changed
+        guard context.coordinator.lastHTML != html else { return }
+        context.coordinator.lastHTML = html
+        context.coordinator.contentHeight = $contentHeight
+
         let styledHTML = """
         <!DOCTYPE html>
         <html>
         <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <style>
+                * { box-sizing: border-box; }
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    overflow-x: hidden;
+                }
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
                     font-size: 16px;
                     line-height: 1.5;
                     color: #1a1a1a;
-                    margin: 16px;
+                    padding: 16px;
                     word-wrap: break-word;
+                    overflow-wrap: break-word;
                 }
                 @media (prefers-color-scheme: dark) {
-                    body { color: #f0f0f0; }
+                    body { color: #f0f0f0; background-color: transparent; }
                 }
-                img { max-width: 100%; height: auto; }
+                img { max-width: 100%; height: auto; display: block; }
                 a { color: #007AFF; }
+                table { width: 100% !important; max-width: 100% !important; }
                 blockquote {
                     margin: 8px 0;
                     padding-left: 12px;
@@ -263,6 +317,8 @@ struct EmailBodyView: UIViewRepresentable {
                     padding: 2px 6px;
                     border-radius: 4px;
                     font-size: 14px;
+                    white-space: pre-wrap;
+                    word-break: break-word;
                 }
                 @media (prefers-color-scheme: dark) {
                     pre, code { background: #2a2a2a; }
@@ -272,9 +328,33 @@ struct EmailBodyView: UIViewRepresentable {
         </head>
         <body>
             \(html)
+            <script>
+                function updateHeight() {
+                    var height = document.body.scrollHeight;
+                    window.webkit.messageHandlers.heightHandler.postMessage(height);
+                }
+                // Update after images load
+                document.addEventListener('DOMContentLoaded', function() {
+                    updateHeight();
+                    var images = document.querySelectorAll('img');
+                    images.forEach(function(img) {
+                        img.onload = updateHeight;
+                        img.onerror = updateHeight;
+                    });
+                    // Final update after a short delay
+                    setTimeout(updateHeight, 500);
+                });
+                // Also update on window load
+                window.onload = updateHeight;
+            </script>
         </body>
         </html>
         """
+
+        // Add message handler for height updates
+        let contentController = webView.configuration.userContentController
+        contentController.removeScriptMessageHandler(forName: "heightHandler")
+        contentController.add(context.coordinator, name: "heightHandler")
 
         webView.loadHTMLString(styledHTML, baseURL: nil)
     }
@@ -283,7 +363,31 @@ struct EmailBodyView: UIViewRepresentable {
         Coordinator()
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        var lastHTML: String = ""
+        var contentHeight: Binding<CGFloat>?
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "heightHandler",
+               let height = message.body as? CGFloat {
+                DispatchQueue.main.async {
+                    // Add some padding and minimum height
+                    self.contentHeight?.wrappedValue = max(100, height + 20)
+                }
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Fallback: get height via JavaScript if message handler didn't fire
+            webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
+                if let height = result as? CGFloat {
+                    DispatchQueue.main.async {
+                        self?.contentHeight?.wrappedValue = max(100, height + 20)
+                    }
+                }
+            }
+        }
+
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             if navigationAction.navigationType == .linkActivated,
                let url = navigationAction.request.url {
@@ -463,15 +567,45 @@ struct EmailSummaryView: View {
     }
 
     private func extractKeySentences(from text: String, maxSentences: Int) -> String {
+        // Remove common email boilerplate phrases
+        var cleanedText = text
+        let boilerplatePatterns = [
+            "View in browser",
+            "View in your browser",
+            "View this email in your browser",
+            "Click here to view",
+            "Having trouble viewing",
+            "Can't see this email",
+            "Unsubscribe",
+            "Update preferences",
+            "Manage preferences",
+            "Privacy Policy",
+            "Terms of Service",
+            "©",
+            "All rights reserved",
+            "This email was sent to",
+            "You are receiving this",
+            "To unsubscribe"
+        ]
+
+        for pattern in boilerplatePatterns {
+            cleanedText = cleanedText.replacingOccurrences(of: pattern, with: "", options: .caseInsensitive)
+        }
+
+        // Remove arrows and other noise
+        cleanedText = cleanedText.replacingOccurrences(of: "-->", with: "")
+        cleanedText = cleanedText.replacingOccurrences(of: "->", with: "")
+
         let sentenceEndings = CharacterSet(charactersIn: ".!?")
         var sentences: [String] = []
         var currentSentence = ""
 
-        for char in text {
+        for char in cleanedText {
             currentSentence.append(char)
             if let scalar = char.unicodeScalars.first, sentenceEndings.contains(scalar) {
                 let trimmed = currentSentence.trimmingCharacters(in: .whitespaces)
-                if trimmed.count > 20 {
+                // Skip very short sentences and ones that look like boilerplate
+                if trimmed.count > 30 && !trimmed.lowercased().contains("click here") {
                     sentences.append(trimmed)
                 }
                 currentSentence = ""
@@ -481,7 +615,9 @@ struct EmailSummaryView: View {
         let selectedSentences = Array(sentences.prefix(maxSentences))
 
         if selectedSentences.isEmpty {
-            return String(text.prefix(200)) + (text.count > 200 ? "..." : "")
+            // Fallback: just get some content
+            let words = cleanedText.split(separator: " ").filter { $0.count > 2 }
+            return words.prefix(50).joined(separator: " ") + (words.count > 50 ? "..." : "")
         }
 
         return selectedSentences.joined(separator: " ")
@@ -545,6 +681,7 @@ class EmailDetailViewModel: ObservableObject {
     @Published var summaryExpanded: Bool = true
     @Published var isLoading = false
     @Published var error: Error?
+    @Published var unsubscribeURL: URL?
 
     var subject: String {
         messages.first?.subject ?? ""
@@ -556,6 +693,15 @@ class EmailDetailViewModel: ObservableObject {
 
     var isUnread: Bool {
         messages.contains { $0.isUnread }
+    }
+
+    var canUnsubscribe: Bool {
+        unsubscribeURL != nil
+    }
+
+    var senderEmail: String? {
+        guard let from = messages.last?.from else { return nil }
+        return EmailParser.extractSenderEmail(from: from)
     }
 
     var autoSummarizeEnabled: Bool {
@@ -580,6 +726,12 @@ class EmailDetailViewModel: ObservableObject {
             if let lastId = messages.last?.id {
                 expandedMessageIds.insert(lastId)
             }
+
+            // Parse unsubscribe URL from latest message
+            if let unsubscribeHeader = messages.last?.listUnsubscribe {
+                unsubscribeURL = parseUnsubscribeURL(from: unsubscribeHeader)
+            }
+
             // Mark as read
             for message in messages where message.isUnread {
                 try? await GmailService.shared.markAsRead(messageId: message.id)
@@ -587,6 +739,40 @@ class EmailDetailViewModel: ObservableObject {
         } catch {
             self.error = error
         }
+    }
+
+    /// Parse List-Unsubscribe header to extract a clickable URL
+    /// Format: <https://example.com/unsubscribe>, <mailto:unsubscribe@example.com>
+    private func parseUnsubscribeURL(from header: String) -> URL? {
+        // Extract all URLs from angle brackets
+        let pattern = "<([^>]+)>"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+
+        let range = NSRange(header.startIndex..., in: header)
+        let matches = regex.matches(in: header, range: range)
+
+        for match in matches {
+            if let urlRange = Range(match.range(at: 1), in: header) {
+                let urlString = String(header[urlRange])
+
+                // Prefer https URLs over mailto
+                if urlString.lowercased().hasPrefix("http") {
+                    return URL(string: urlString)
+                }
+            }
+        }
+
+        // Fall back to mailto if no http URL found
+        for match in matches {
+            if let urlRange = Range(match.range(at: 1), in: header) {
+                let urlString = String(header[urlRange])
+                if urlString.lowercased().hasPrefix("mailto:") {
+                    return URL(string: urlString)
+                }
+            }
+        }
+
+        return nil
     }
 
     func toggleExpanded(_ messageId: String) {
@@ -642,6 +828,36 @@ class EmailDetailViewModel: ObservableObject {
         // TODO: Save to local snooze database
         // Archive the email
         await archive()
+    }
+
+    func unsubscribe() async {
+        guard let url = unsubscribeURL else { return }
+        await MainActor.run {
+            UIApplication.shared.open(url)
+        }
+    }
+
+    func blockSender() async {
+        guard let email = senderEmail else { return }
+
+        // Save to blocked senders list
+        var blockedSenders = UserDefaults.standard.stringArray(forKey: "blockedSenders") ?? []
+        if !blockedSenders.contains(email.lowercased()) {
+            blockedSenders.append(email.lowercased())
+            UserDefaults.standard.set(blockedSenders, forKey: "blockedSenders")
+        }
+
+        // Move to trash
+        await trash()
+
+        HapticFeedback.success()
+    }
+
+    func reportSpam() async {
+        for message in messages {
+            try? await GmailService.shared.reportSpam(messageId: message.id)
+        }
+        HapticFeedback.success()
     }
 }
 
