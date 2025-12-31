@@ -418,14 +418,219 @@ struct AddAccountView: View {
 
 struct SignatureEditorView: View {
     @Binding var signature: String
+    @State private var showingLinkSheet = false
+    @State private var linkText = ""
+    @State private var linkURL = ""
+    @FocusState private var isEditorFocused: Bool
 
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
+            // Formatting Toolbar
+            HStack(spacing: 16) {
+                Button(action: insertBold) {
+                    Image(systemName: "bold")
+                        .font(.title3)
+                }
+
+                Button(action: insertItalic) {
+                    Image(systemName: "italic")
+                        .font(.title3)
+                }
+
+                Button(action: { showingLinkSheet = true }) {
+                    Image(systemName: "link")
+                        .font(.title3)
+                }
+
+                Divider()
+                    .frame(height: 20)
+
+                Button(action: insertLineBreak) {
+                    Image(systemName: "return")
+                        .font(.title3)
+                }
+
+                Spacer()
+
+                Button(action: clearSignature) {
+                    Image(systemName: "trash")
+                        .font(.title3)
+                        .foregroundStyle(.red)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(Color(.systemGray6))
+
+            Divider()
+
+            // Signature Editor
             TextEditor(text: $signature)
+                .focused($isEditorFocused)
                 .padding()
+
+            Divider()
+
+            // Preview Section
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Preview")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+
+                SignaturePreview(signature: signature)
+                    .padding(.horizontal)
+                    .padding(.bottom)
+            }
+            .background(Color(.systemGray6))
         }
         .navigationTitle("Email Signature")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingLinkSheet) {
+            InsertLinkSheet(
+                linkText: $linkText,
+                linkURL: $linkURL,
+                onInsert: insertLink
+            )
+        }
+        .onAppear {
+            isEditorFocused = true
+        }
+    }
+
+    private func insertBold() {
+        signature += "**bold text**"
+    }
+
+    private func insertItalic() {
+        signature += "_italic text_"
+    }
+
+    private func insertLineBreak() {
+        signature += "\n"
+    }
+
+    private func insertLink() {
+        if !linkText.isEmpty && !linkURL.isEmpty {
+            let formattedURL = linkURL.hasPrefix("http") ? linkURL : "https://\(linkURL)"
+            signature += "[\(linkText)](\(formattedURL))"
+        }
+        linkText = ""
+        linkURL = ""
+    }
+
+    private func clearSignature() {
+        signature = ""
+    }
+}
+
+// MARK: - Insert Link Sheet
+
+struct InsertLinkSheet: View {
+    @Binding var linkText: String
+    @Binding var linkURL: String
+    let onInsert: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Link Text", text: $linkText)
+                        .textInputAutocapitalization(.never)
+                    TextField("URL", text: $linkURL)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Link Details")
+                } footer: {
+                    Text("Example: https://example.com")
+                }
+            }
+            .navigationTitle("Insert Link")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Insert") {
+                        onInsert()
+                        dismiss()
+                    }
+                    .disabled(linkText.isEmpty || linkURL.isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
+// MARK: - Signature Preview
+
+struct SignaturePreview: View {
+    let signature: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if signature.isEmpty {
+                Text("No signature")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .italic()
+            } else {
+                Text(parseSignature(signature))
+                    .font(.subheadline)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func parseSignature(_ text: String) -> AttributedString {
+        var result = AttributedString(text)
+
+        // Parse bold: **text**
+        let boldPattern = /\*\*(.+?)\*\*/
+        if let match = text.firstMatch(of: boldPattern) {
+            let boldText = String(match.1)
+            if let range = result.range(of: "**\(boldText)**") {
+                result.replaceSubrange(range, with: AttributedString(boldText, attributes: AttributeContainer([.font: UIFont.boldSystemFont(ofSize: 15)])))
+            }
+        }
+
+        // Parse italic: _text_
+        let italicPattern = /_(.+?)_/
+        if let match = text.firstMatch(of: italicPattern) {
+            let italicText = String(match.1)
+            if let range = result.range(of: "_\(italicText)_") {
+                result.replaceSubrange(range, with: AttributedString(italicText, attributes: AttributeContainer([.font: UIFont.italicSystemFont(ofSize: 15)])))
+            }
+        }
+
+        // Parse links: [text](url)
+        let linkPattern = /\[(.+?)\]\((.+?)\)/
+        if let match = text.firstMatch(of: linkPattern) {
+            let linkText = String(match.1)
+            let linkURL = String(match.2)
+            let fullMatch = "[\(linkText)](\(linkURL))"
+            if let range = result.range(of: fullMatch),
+               let url = URL(string: linkURL) {
+                var linkAttr = AttributedString(linkText)
+                linkAttr.link = url
+                linkAttr.foregroundColor = .blue
+                linkAttr.underlineStyle = .single
+                result.replaceSubrange(range, with: linkAttr)
+            }
+        }
+
+        return result
     }
 }
 

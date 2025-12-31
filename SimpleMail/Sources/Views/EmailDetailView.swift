@@ -26,6 +26,18 @@ struct EmailDetailView: View {
                     ProgressView()
                         .padding(40)
                 } else {
+                    // AI Summary at thread level (for long emails)
+                    if viewModel.autoSummarizeEnabled,
+                       let latestMessage = viewModel.messages.last,
+                       latestMessage.body.count > 500 {
+                        EmailSummaryView(
+                            emailBody: latestMessage.body,
+                            isExpanded: $viewModel.summaryExpanded
+                        )
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                    }
+
                     ForEach(viewModel.messages) { message in
                         EmailMessageCard(
                             message: message,
@@ -284,6 +296,170 @@ struct EmailBodyView: UIViewRepresentable {
     }
 }
 
+// MARK: - Email Summary View
+
+struct EmailSummaryView: View {
+    let emailBody: String
+    @Binding var isExpanded: Bool
+
+    @State private var summary: String = ""
+    @State private var isGenerating = false
+    @State private var summaryError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header
+            Button(action: { withAnimation(.spring(response: 0.3)) { isExpanded.toggle() } }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "apple.intelligence")
+                        .font(.caption)
+                        .foregroundStyle(.purple)
+
+                    Text("Summary")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.purple)
+
+                    Spacer()
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Summary Content
+            if isExpanded {
+                if isGenerating {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Summarizing with Apple Intelligence...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                } else if let error = summaryError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .italic()
+                } else if !summary.isEmpty {
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                } else {
+                    Text("Summary unavailable")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .italic()
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.purple.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.purple.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .onAppear {
+            generateSummary()
+        }
+    }
+
+    private func generateSummary() {
+        isGenerating = true
+        summaryError = nil
+
+        Task {
+            // Strip HTML tags for plain text
+            let plainText = stripHTML(emailBody)
+
+            // Try Apple Intelligence summarization via Foundation Models
+            do {
+                summary = try await summarizeWithAppleIntelligence(plainText)
+            } catch {
+                // Fallback to extractive summarization
+                summary = extractKeySentences(from: plainText, maxSentences: 3)
+            }
+
+            isGenerating = false
+        }
+    }
+
+    @MainActor
+    private func summarizeWithAppleIntelligence(_ text: String) async throws -> String {
+        // TODO: Use Foundation Models framework for on-device summarization
+        // when FoundationModels SDK is available:
+        //
+        // import FoundationModels
+        // let session = LanguageModelSession()
+        // let prompt = "Summarize this email in 2-3 concise sentences:\n\n\(text)"
+        // let response = try await session.respond(to: prompt)
+        // return response.content
+        //
+        // For now, use extractive summarization
+        return extractKeySentences(from: text, maxSentences: 3)
+    }
+
+    private func stripHTML(_ html: String) -> String {
+        var text = html
+            .replacingOccurrences(of: "<br>", with: "\n")
+            .replacingOccurrences(of: "<br/>", with: "\n")
+            .replacingOccurrences(of: "<br />", with: "\n")
+            .replacingOccurrences(of: "</p>", with: "\n")
+            .replacingOccurrences(of: "</div>", with: "\n")
+
+        while let range = text.range(of: "<[^>]+>", options: .regularExpression) {
+            text.removeSubrange(range)
+        }
+
+        text = text
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+
+        text = text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func extractKeySentences(from text: String, maxSentences: Int) -> String {
+        let sentenceEndings = CharacterSet(charactersIn: ".!?")
+        var sentences: [String] = []
+        var currentSentence = ""
+
+        for char in text {
+            currentSentence.append(char)
+            if let scalar = char.unicodeScalars.first, sentenceEndings.contains(scalar) {
+                let trimmed = currentSentence.trimmingCharacters(in: .whitespaces)
+                if trimmed.count > 20 {
+                    sentences.append(trimmed)
+                }
+                currentSentence = ""
+            }
+        }
+
+        let selectedSentences = Array(sentences.prefix(maxSentences))
+
+        if selectedSentences.isEmpty {
+            return String(text.prefix(200)) + (text.count > 200 ? "..." : "")
+        }
+
+        return selectedSentences.joined(separator: " ")
+    }
+}
+
 // MARK: - Email Detail Footer
 
 struct EmailDetailFooter: View {
@@ -338,6 +514,7 @@ class EmailDetailViewModel: ObservableObject {
 
     @Published var messages: [EmailDetail] = []
     @Published var expandedMessageIds: Set<String> = []
+    @Published var summaryExpanded: Bool = true
     @Published var isLoading = false
     @Published var error: Error?
 
@@ -351,6 +528,14 @@ class EmailDetailViewModel: ObservableObject {
 
     var isUnread: Bool {
         messages.contains { $0.isUnread }
+    }
+
+    var autoSummarizeEnabled: Bool {
+        if let data = UserDefaults.standard.data(forKey: "appSettings"),
+           let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            return settings.autoSummarize
+        }
+        return true // Default to enabled
     }
 
     init(threadId: String) {
