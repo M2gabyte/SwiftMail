@@ -217,7 +217,7 @@ final class BackgroundSyncManager {
             options: []
         )
 
-        await UNUserNotificationCenter.current().setNotificationCategories([emailCategory])
+        UNUserNotificationCenter.current().setNotificationCategories([emailCategory])
     }
 }
 

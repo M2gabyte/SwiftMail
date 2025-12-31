@@ -41,8 +41,9 @@ final class EmailCacheManager: ObservableObject {
 
         for email in emails {
             // Check if already exists
+            let emailId = email.id
             let descriptor = FetchDescriptor<Email>(
-                predicate: #Predicate { $0.id == email.id }
+                predicate: #Predicate { $0.id == emailId }
             )
 
             if let existing = try? context.fetch(descriptor).first {
@@ -141,8 +142,9 @@ final class EmailCacheManager: ObservableObject {
     func updateEmail(_ email: Email) {
         guard let context = modelContext else { return }
 
+        let emailId = email.id
         let descriptor = FetchDescriptor<Email>(
-            predicate: #Predicate { $0.id == email.id }
+            predicate: #Predicate { $0.id == emailId }
         )
 
         if let cached = try? context.fetch(descriptor).first {
@@ -163,8 +165,9 @@ final class EmailCacheManager: ObservableObject {
     func deleteEmail(_ email: Email) {
         guard let context = modelContext else { return }
 
+        let emailId = email.id
         let descriptor = FetchDescriptor<Email>(
-            predicate: #Predicate { $0.id == email.id }
+            predicate: #Predicate { $0.id == emailId }
         )
 
         if let cached = try? context.fetch(descriptor).first {
@@ -200,8 +203,9 @@ final class EmailCacheManager: ObservableObject {
     func cacheEmailDetail(_ detail: EmailDetail) {
         guard let context = modelContext else { return }
 
+        let detailId = detail.id
         let descriptor = FetchDescriptor<EmailDetail>(
-            predicate: #Predicate { $0.id == detail.id }
+            predicate: #Predicate { $0.id == detailId }
         )
 
         if let existing = try? context.fetch(descriptor).first {
@@ -232,11 +236,11 @@ final class EmailCacheManager: ObservableObject {
 
     // MARK: - Load Cached Email Detail
 
-    func loadCachedEmailDetail(id: String) -> EmailDetail? {
+    func loadCachedEmailDetail(id emailId: String) -> EmailDetail? {
         guard let context = modelContext else { return nil }
 
         let descriptor = FetchDescriptor<EmailDetail>(
-            predicate: #Predicate { $0.id == id }
+            predicate: #Predicate { $0.id == emailId }
         )
 
         return try? context.fetch(descriptor).first

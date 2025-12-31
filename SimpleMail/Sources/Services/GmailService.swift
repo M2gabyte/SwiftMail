@@ -45,59 +45,55 @@ enum Base64URL {
 
 // MARK: - MIME Message Builder (Result Builder Pattern)
 
+/// Result builder for type-safe MIME header construction
 @resultBuilder
-struct MIMEBuilder {
-    static func buildBlock(_ components: MIMEComponent...) -> [MIMEComponent] {
-        components
+struct MIMEHeaderBuilder {
+    /// Combine multiple header arrays into one
+    static func buildBlock(_ components: [MIMEHeader]...) -> [MIMEHeader] {
+        components.flatMap { $0 }
     }
 
-    static func buildOptional(_ component: [MIMEComponent]?) -> [MIMEComponent] {
+    /// Handle optional headers (if statements without else)
+    static func buildOptional(_ component: [MIMEHeader]?) -> [MIMEHeader] {
         component ?? []
     }
 
-    static func buildEither(first component: [MIMEComponent]) -> [MIMEComponent] {
+    /// Handle if-else first branch
+    static func buildEither(first component: [MIMEHeader]) -> [MIMEHeader] {
         component
     }
 
-    static func buildEither(second component: [MIMEComponent]) -> [MIMEComponent] {
+    /// Handle if-else second branch
+    static func buildEither(second component: [MIMEHeader]) -> [MIMEHeader] {
         component
     }
 
-    static func buildArray(_ components: [[MIMEComponent]]) -> [MIMEComponent] {
+    /// Handle for-in loops
+    static func buildArray(_ components: [[MIMEHeader]]) -> [MIMEHeader] {
         components.flatMap { $0 }
     }
+
+    /// Convert single header to array
+    static func buildExpression(_ expression: MIMEHeader) -> [MIMEHeader] {
+        [expression]
+    }
+
+    /// Convert optional header to array
+    static func buildExpression(_ expression: MIMEHeader?) -> [MIMEHeader] {
+        expression.map { [$0] } ?? []
+    }
 }
 
-protocol MIMEComponent {
-    func render() -> String
-}
-
-struct MIMEHeader: MIMEComponent {
+/// A single MIME header (name: value)
+struct MIMEHeader: Sendable {
     let name: String
     let value: String
 
-    func render() -> String {
-        "\(name): \(value)"
-    }
+    var rendered: String { "\(name): \(value)" }
 }
 
-struct MIMEBody: MIMEComponent {
-    let content: String
-    let contentType: String
-    let charset: String
-
-    init(_ content: String, contentType: String = "text/plain", charset: String = "UTF-8") {
-        self.content = content
-        self.contentType = contentType
-        self.charset = charset
-    }
-
-    func render() -> String {
-        content
-    }
-}
-
-struct MIMEMessage {
+/// Type-safe MIME message construction
+struct MIMEMessage: Sendable {
     let to: [String]
     let cc: [String]
     let bcc: [String]
@@ -127,8 +123,9 @@ struct MIMEMessage {
         self.references = references
     }
 
-    @MIMEBuilder
-    private var headers: [MIMEComponent] {
+    /// Build headers using result builder for clean syntax
+    @MIMEHeaderBuilder
+    private var headers: [MIMEHeader] {
         MIMEHeader(name: "To", value: to.joined(separator: ", "))
 
         if !cc.isEmpty {
@@ -142,12 +139,12 @@ struct MIMEMessage {
         MIMEHeader(name: "Subject", value: subject)
         MIMEHeader(name: "MIME-Version", value: "1.0")
 
-        if let inReplyTo = inReplyTo {
-            MIMEHeader(name: "In-Reply-To", value: inReplyTo)
+        if let reply = inReplyTo {
+            MIMEHeader(name: "In-Reply-To", value: reply)
         }
 
-        if let references = references {
-            MIMEHeader(name: "References", value: references)
+        if let refs = references {
+            MIMEHeader(name: "References", value: refs)
         }
     }
 
@@ -160,18 +157,18 @@ struct MIMEMessage {
     }
 
     private func buildPlainText() -> String {
-        var result = headers.map { $0.render() }
-        result.append("Content-Type: text/plain; charset=\"UTF-8\"")
-        return result.joined(separator: "\r\n") + "\r\n\r\n" + body
+        var lines = headers.map(\.rendered)
+        lines.append("Content-Type: text/plain; charset=\"UTF-8\"")
+        return lines.joined(separator: "\r\n") + "\r\n\r\n" + body
     }
 
     private func buildMultipart(html: String) -> String {
         let boundary = "boundary_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
 
-        var result = headers.map { $0.render() }
-        result.append("Content-Type: multipart/alternative; boundary=\"\(boundary)\"")
+        var lines = headers.map(\.rendered)
+        lines.append("Content-Type: multipart/alternative; boundary=\"\(boundary)\"")
 
-        let headerSection = result.joined(separator: "\r\n")
+        let headerSection = lines.joined(separator: "\r\n")
 
         let plainPart = """
         --\(boundary)\r
@@ -193,7 +190,7 @@ struct MIMEMessage {
         return headerSection + "\r\n\r\n" + plainPart + "\r\n" + htmlPart
     }
 
-    /// Encode the message for Gmail API
+    /// Encode the message for Gmail API (URL-safe Base64)
     func encoded() -> String {
         guard let data = build().data(using: .utf8) else {
             return ""
@@ -204,7 +201,11 @@ struct MIMEMessage {
 
 // MARK: - Gmail API Protocol (for testability)
 
-protocol GmailAPIProvider: Sendable {
+/// Protocol for Gmail API operations - enables mocking for unit tests
+/// Note: SwiftData @Model types are not Sendable, so we use @preconcurrency
+/// to suppress warnings until full migration to DTOs
+@preconcurrency
+protocol GmailAPIProvider {
     func fetchInbox(query: String?, maxResults: Int, pageToken: String?, labelIds: [String]) async throws -> (emails: [Email], nextPageToken: String?)
     func fetchThread(threadId: String) async throws -> [EmailDetail]
     func sendEmail(to: [String], cc: [String], bcc: [String], subject: String, body: String, bodyHtml: String?, inReplyTo: String?, references: String?, threadId: String?) async throws -> String

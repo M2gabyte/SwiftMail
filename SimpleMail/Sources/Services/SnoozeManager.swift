@@ -21,10 +21,7 @@ final class SnoozeManager {
         startSnoozeCheck()
     }
 
-    deinit {
-        checkTimer?.invalidate()
-        checkTimer = nil
-    }
+    // Note: Singleton never deinits, timer lives with app lifecycle
 
     // MARK: - Configuration
 
@@ -212,7 +209,7 @@ final class SnoozeManager {
 import SwiftUI
 
 struct SnoozedEmailsView: View {
-    @ObservedObject var snoozeManager = SnoozeManager.shared
+    var snoozeManager: SnoozeManager { SnoozeManager.shared }
 
     var body: some View {
         List {

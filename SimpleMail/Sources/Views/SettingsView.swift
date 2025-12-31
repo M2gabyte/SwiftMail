@@ -541,15 +541,15 @@ class VacationResponderViewModel: ObservableObject {
 
     func loadSettings() async {
         isLoading = true
-        defer { isLoading = false }
         // TODO: Load from Gmail API when vacation settings endpoint is added
+        isLoading = false
     }
 
     func saveSettings() async {
         isSaving = true
-        defer { isSaving = false }
         // TODO: Save to Gmail API when vacation settings endpoint is added
         HapticFeedback.success()
+        isSaving = false
     }
 }
 
@@ -842,8 +842,8 @@ class FiltersManagementViewModel: ObservableObject {
 
     func loadFilters() async {
         isLoading = true
-        defer { isLoading = false }
         // TODO: Load filters from Gmail API
+        isLoading = false
     }
 
     func createFilter(_ filter: EmailFilter) async {
