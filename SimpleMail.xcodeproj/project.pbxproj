@@ -23,6 +23,10 @@
 		A1000014 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000014 /* AuthService.swift */; };
 		A1000015 /* BackgroundSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000015 /* BackgroundSync.swift */; };
 		A1000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000016 /* Assets.xcassets */; };
+		A1000019 /* EmailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000019 /* EmailCache.swift */; };
+		A1000020 /* SnoozeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020 /* SnoozeManager.swift */; };
+		A1000021 /* AttachmentViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000021 /* AttachmentViewer.swift */; };
+		A1000022 /* BatchOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000022 /* BatchOperations.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +49,10 @@
 		B1000016 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B1000017 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B1000018 /* SimpleMail.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SimpleMail.entitlements; sourceTree = "<group>"; };
+		B1000019 /* EmailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailCache.swift; sourceTree = "<group>"; };
+		B1000020 /* SnoozeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozeManager.swift; sourceTree = "<group>"; };
+		B1000021 /* AttachmentViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentViewer.swift; sourceTree = "<group>"; };
+		B1000022 /* BatchOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchOperations.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,6 +117,8 @@
 				B1000009 /* SnoozePickerSheet.swift */,
 				B1000010 /* SearchView.swift */,
 				B1000011 /* SettingsView.swift */,
+				B1000021 /* AttachmentViewer.swift */,
+				B1000022 /* BatchOperations.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -135,6 +145,8 @@
 				B1000013 /* GmailService.swift */,
 				B1000014 /* AuthService.swift */,
 				B1000015 /* BackgroundSync.swift */,
+				B1000019 /* EmailCache.swift */,
+				B1000020 /* SnoozeManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -223,6 +235,10 @@
 				A1000013 /* GmailService.swift in Sources */,
 				A1000014 /* AuthService.swift in Sources */,
 				A1000015 /* BackgroundSync.swift in Sources */,
+				A1000019 /* EmailCache.swift in Sources */,
+				A1000020 /* SnoozeManager.swift in Sources */,
+				A1000021 /* AttachmentViewer.swift in Sources */,
+				A1000022 /* BatchOperations.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
