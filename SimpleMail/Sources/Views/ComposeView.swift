@@ -36,6 +36,7 @@ struct ComposeView: View {
                     RecipientField(
                         label: "To",
                         recipients: $viewModel.to,
+                        pendingInput: $viewModel.pendingToInput,
                         isFocused: focusedField == .to
                     )
                     .focused($focusedField, equals: .to)
@@ -46,6 +47,7 @@ struct ComposeView: View {
                         RecipientField(
                             label: "Cc",
                             recipients: $viewModel.cc,
+                            pendingInput: $viewModel.pendingCcInput,
                             isFocused: focusedField == .cc
                         )
                         .focused($focusedField, equals: .cc)
@@ -55,6 +57,7 @@ struct ComposeView: View {
                         RecipientField(
                             label: "Bcc",
                             recipients: $viewModel.bcc,
+                            pendingInput: $viewModel.pendingBccInput,
                             isFocused: focusedField == .bcc
                         )
                         .focused($focusedField, equals: .bcc)
@@ -143,6 +146,9 @@ struct ComposeView: View {
     }
 
     private func send() {
+        // Auto-add any pending input in recipient fields
+        viewModel.finalizeRecipients()
+
         Task {
             let success = await viewModel.send()
             if success {
@@ -157,9 +163,8 @@ struct ComposeView: View {
 struct RecipientField: View {
     let label: String
     @Binding var recipients: [String]
+    @Binding var pendingInput: String
     let isFocused: Bool
-
-    @State private var inputText = ""
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -175,7 +180,7 @@ struct RecipientField: View {
                     }
                 }
 
-                TextField("", text: $inputText)
+                TextField("", text: $pendingInput)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.emailAddress)
                     .autocorrectionDisabled()
@@ -183,9 +188,9 @@ struct RecipientField: View {
                     .onSubmit {
                         addRecipient()
                     }
-                    .onChange(of: inputText) { _, newValue in
+                    .onChange(of: pendingInput) { _, newValue in
                         if newValue.hasSuffix(" ") || newValue.hasSuffix(",") {
-                            inputText = String(newValue.dropLast())
+                            pendingInput = String(newValue.dropLast())
                             addRecipient()
                         }
                     }
@@ -196,10 +201,10 @@ struct RecipientField: View {
     }
 
     private func addRecipient() {
-        let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = pendingInput.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty && trimmed.contains("@") {
             recipients.append(trimmed)
-            inputText = ""
+            pendingInput = ""
         }
     }
 }
@@ -308,6 +313,11 @@ class ComposeViewModel: ObservableObject {
     @Published var subject: String = ""
     @Published var body: String = ""
 
+    // Pending input in recipient text fields
+    @Published var pendingToInput: String = ""
+    @Published var pendingCcInput: String = ""
+    @Published var pendingBccInput: String = ""
+
     @Published var showCcBcc = false
     @Published var showAttachmentPicker = false
     @Published var showDiscardAlert = false
@@ -323,7 +333,23 @@ class ComposeViewModel: ObservableObject {
     }
 
     var canSend: Bool {
-        !to.isEmpty && (!subject.isEmpty || !body.isEmpty)
+        let hasRecipient = !to.isEmpty || pendingToInput.contains("@")
+        return hasRecipient && (!subject.isEmpty || !body.isEmpty)
+    }
+
+    /// Adds any pending text in recipient fields to the recipient arrays
+    func finalizeRecipients() {
+        addPendingRecipient(&pendingToInput, to: &to)
+        addPendingRecipient(&pendingCcInput, to: &cc)
+        addPendingRecipient(&pendingBccInput, to: &bcc)
+    }
+
+    private func addPendingRecipient(_ pending: inout String, to recipients: inout [String]) {
+        let trimmed = pending.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && trimmed.contains("@") {
+            recipients.append(trimmed)
+            pending = ""
+        }
     }
 
     init(mode: ComposeMode) {
