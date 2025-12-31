@@ -10,12 +10,14 @@ SimpleMail is a native iOS email client built with SwiftUI and SwiftData, design
 |-----------|------------|
 | UI Framework | SwiftUI (iOS 17+) |
 | Data Persistence | SwiftData |
-| State Management | @Observable, @StateObject, @Published |
+| State Management | @Observable macro (iOS 17+) |
 | Networking | URLSession + async/await |
 | Authentication | OAuth 2.0 with PKCE via ASWebAuthenticationSession |
 | Background Tasks | BGTaskScheduler |
 | Notifications | UNUserNotificationCenter |
 | Security | Keychain Services |
+| Logging | OSLog (unified logging) |
+| Concurrency | Swift actors + structured concurrency |
 
 ## Project Structure
 
@@ -90,11 +92,49 @@ Store tokens in Keychain
 
 ### 2. Gmail Service (GmailService.swift)
 
-**Actor-based thread safety:**
+**Actor-based thread safety with protocol abstraction:**
 ```swift
-actor GmailService {
+// Protocol for testability/mocking
+protocol GmailAPIProvider: Sendable {
+    func fetchInbox(...) async throws -> (emails: [Email], nextPageToken: String?)
+    func sendEmail(...) async throws -> String
+    // ... other methods
+}
+
+actor GmailService: GmailAPIProvider {
     static let shared = GmailService()
     // All methods are thread-safe
+}
+```
+
+**Type-Safe MIME Builder (Result Builder Pattern):**
+```swift
+@resultBuilder
+struct MIMEBuilder { ... }
+
+struct MIMEMessage {
+    @MIMEBuilder
+    private var headers: [MIMEComponent] {
+        MIMEHeader(name: "To", value: to.joined(separator: ", "))
+        if !cc.isEmpty {
+            MIMEHeader(name: "Cc", value: cc.joined(separator: ", "))
+        }
+        MIMEHeader(name: "Subject", value: subject)
+        MIMEHeader(name: "MIME-Version", value: "1.0")
+    }
+
+    func encoded() -> String {
+        Base64URL.encode(build().data(using: .utf8)!)
+    }
+}
+```
+
+**Base64URL Utilities:**
+```swift
+enum Base64URL {
+    static func encode(_ data: Data) -> String
+    static func decode(_ encoded: String) -> String?
+    static func decodeToData(_ encoded: String) -> Data?
 }
 ```
 
@@ -148,14 +188,29 @@ final class SnoozedEmail {
 
 ### 4. Inbox View Model (InboxViewModel.swift)
 
-**State Management:**
+**State Management with @Observable (iOS 17+):**
 ```swift
 @MainActor
-class InboxViewModel: ObservableObject {
-    @Published var emails: [Email] = []
-    @Published var scope: InboxScope = .all
-    @Published var activeFilter: InboxFilter?
-    @Published var currentMailbox: Mailbox = .inbox
+@Observable
+final class InboxViewModel {
+    // No @Published needed - automatic observation
+    var emails: [Email] = []
+    var scope: InboxScope = .all
+    var activeFilter: InboxFilter? = nil
+    var currentMailbox: Mailbox = .inbox
+    var isLoading = false
+    var error: Error?
+}
+```
+
+**Usage in Views:**
+```swift
+struct InboxView: View {
+    @State private var viewModel = InboxViewModel()  // Not @StateObject
+
+    var body: some View {
+        List(viewModel.emails) { email in ... }
+    }
 }
 ```
 
@@ -363,24 +418,84 @@ kSecAttrAccessibleAfterFirstUnlock
 
 ## Performance Optimizations
 
-### List Performance
+### List Performance (120fps target)
 
 - `LazyVStack` for large email lists
 - Reusable `EmailRow` components
 - Batch API requests (3 concurrent)
 - Pagination (50 emails per page)
 
+**Cached DateFormatters (Critical for scroll performance):**
+```swift
+private enum DateFormatters {
+    static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    static let calendar = Calendar.current
+
+    // Single call per cell - no allocations
+    static func formatEmailDate(_ date: Date) -> String {
+        if calendar.isDateInToday(date) {
+            return timeFormatter.string(from: date)
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+        return dateFormatter.string(from: date)
+    }
+}
+```
+
 ### Memory Management
 
 - SwiftData auto-cleanup
 - Attachment cache eviction
 - WebView reuse in threads
+- Timer invalidation in `deinit`
 
 ### Network
 
 - Request deduplication
 - Token caching (1-hour expiry)
 - Offline-first with cache
+
+## Logging & Debugging
+
+**OSLog Integration:**
+```swift
+import OSLog
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "GmailService")
+
+// Usage
+logger.info("Fetching inbox: labels=\(labelIds), max=\(maxResults)")
+logger.error("Failed to decode attachment data")
+logger.warning("Rate limited on \(url.path)")
+```
+
+**Log Categories:**
+| Category | Purpose |
+|----------|---------|
+| `GmailService` | API calls, responses, errors |
+| `InboxViewModel` | State changes, filtering |
+| `SnoozeManager` | Snooze scheduling, notifications |
+| `AuthService` | OAuth flow, token refresh |
+| `BackgroundSync` | Background task execution |
+
+**Viewing Logs:**
+```bash
+# Console.app or:
+log stream --predicate 'subsystem == "com.simplemail.app"' --level debug
+```
 
 ## Background Capabilities
 
@@ -413,6 +528,27 @@ kSecAttrAccessibleAfterFirstUnlock
 - Email filtering logic
 - Date grouping
 - PKCE code generation
+- MIME message building
+- Base64URL encoding/decoding
+
+**Protocol-Based Mocking:**
+```swift
+// Mock implementation for tests
+final class MockGmailService: GmailAPIProvider {
+    var mockEmails: [Email] = []
+    var shouldFail = false
+
+    func fetchInbox(...) async throws -> (emails: [Email], nextPageToken: String?) {
+        if shouldFail { throw GmailError.serverError(500) }
+        return (mockEmails, nil)
+    }
+}
+
+// Usage in tests
+let mockService = MockGmailService()
+mockService.mockEmails = [testEmail1, testEmail2]
+let viewModel = InboxViewModel(gmailService: mockService)
+```
 
 ### Integration Tests
 - OAuth flow (mock)
@@ -459,4 +595,8 @@ kSecAttrAccessibleAfterFirstUnlock
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.0*
+*Architecture version: 1.1*
+
+**Changelog:**
+- v1.1: Added @Observable migration, MIME Result Builder, Base64URL utilities, OSLog integration, protocol-based testing
+- v1.0: Initial architecture documentation
