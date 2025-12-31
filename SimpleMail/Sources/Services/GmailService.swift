@@ -1029,8 +1029,12 @@ actor GmailService: GmailAPIProvider {
         for part in parts {
             // Check if this part matches the preferred MIME type
             if let mimeType = part.mimeType?.lowercased(), mimeType == preferredMimeType {
-                if let data = part.body?.data {
-                    return decodeBase64URL(data)
+                // Only return if data exists and is non-empty
+                if let data = part.body?.data, !data.isEmpty {
+                    let decoded = decodeBase64URL(data)
+                    if !decoded.isEmpty {
+                        return decoded
+                    }
                 }
             }
 
