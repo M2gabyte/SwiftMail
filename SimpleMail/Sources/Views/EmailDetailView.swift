@@ -408,16 +408,41 @@ struct EmailSummaryView: View {
 
     private func stripHTML(_ html: String) -> String {
         var text = html
+
+        // Remove style blocks (including content)
+        while let styleStart = text.range(of: "<style", options: .caseInsensitive),
+              let styleEnd = text.range(of: "</style>", options: .caseInsensitive, range: styleStart.upperBound..<text.endIndex) {
+            text.removeSubrange(styleStart.lowerBound..<styleEnd.upperBound)
+        }
+
+        // Remove script blocks
+        while let scriptStart = text.range(of: "<script", options: .caseInsensitive),
+              let scriptEnd = text.range(of: "</script>", options: .caseInsensitive, range: scriptStart.upperBound..<text.endIndex) {
+            text.removeSubrange(scriptStart.lowerBound..<scriptEnd.upperBound)
+        }
+
+        // Remove head section
+        if let headStart = text.range(of: "<head", options: .caseInsensitive),
+           let headEnd = text.range(of: "</head>", options: .caseInsensitive, range: headStart.upperBound..<text.endIndex) {
+            text.removeSubrange(headStart.lowerBound..<headEnd.upperBound)
+        }
+
+        // Convert line breaks
+        text = text
             .replacingOccurrences(of: "<br>", with: "\n")
             .replacingOccurrences(of: "<br/>", with: "\n")
             .replacingOccurrences(of: "<br />", with: "\n")
             .replacingOccurrences(of: "</p>", with: "\n")
             .replacingOccurrences(of: "</div>", with: "\n")
+            .replacingOccurrences(of: "</tr>", with: "\n")
+            .replacingOccurrences(of: "</li>", with: "\n")
 
+        // Remove all remaining HTML tags
         while let range = text.range(of: "<[^>]+>", options: .regularExpression) {
             text.removeSubrange(range)
         }
 
+        // Decode HTML entities
         text = text
             .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&amp;", with: "&")
@@ -425,7 +450,10 @@ struct EmailSummaryView: View {
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&#x27;", with: "'")
+            .replacingOccurrences(of: "&#160;", with: " ")
 
+        // Clean up whitespace
         text = text
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
