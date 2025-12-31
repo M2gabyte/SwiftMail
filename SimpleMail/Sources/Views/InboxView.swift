@@ -8,6 +8,7 @@ struct InboxView: View {
     @State private var viewModel = InboxViewModel()
     @State private var showingSearch = false
     @State private var showingCompose = false
+    @State private var listDensity: ListDensity = .comfortable
 
     var body: some View {
         NavigationStack {
@@ -25,6 +26,7 @@ struct InboxView: View {
                     isLoading: viewModel.isLoading,
                     isLoadingMore: viewModel.isLoadingMore,
                     hasMoreEmails: viewModel.hasMoreEmails,
+                    listDensity: listDensity,
                     onTap: { email in viewModel.openEmail(email) },
                     onArchive: { email in viewModel.archiveEmail(email) },
                     onToggleRead: { email in viewModel.toggleRead(email) },
@@ -77,6 +79,19 @@ struct InboxView: View {
                     .padding(.bottom, 16)
                 }
             }
+            .onAppear {
+                loadSettings()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+                loadSettings()
+            }
+        }
+    }
+
+    private func loadSettings() {
+        if let data = UserDefaults.standard.data(forKey: "appSettings"),
+           let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            listDensity = settings.listDensity
         }
     }
 }
@@ -256,6 +271,7 @@ struct EmailListView: View {
     let isLoading: Bool
     let isLoadingMore: Bool
     let hasMoreEmails: Bool
+    let listDensity: ListDensity
     let onTap: (Email) -> Void
     let onArchive: (Email) -> Void
     let onToggleRead: (Email) -> Void
@@ -267,7 +283,7 @@ struct EmailListView: View {
             ForEach(sections) { section in
                 Section {
                     ForEach(section.emails) { email in
-                        EmailRow(email: email)
+                        EmailRow(email: email, isCompact: listDensity == .compact)
                             .listRowBackground(Color(.systemBackground))
                             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -399,21 +415,24 @@ private enum DateFormatters {
 
 struct EmailRow: View {
     let email: Email
+    var isCompact: Bool = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            // Avatar
-            AvatarView(
-                initials: email.senderInitials,
-                email: email.senderEmail
-            )
-            .frame(width: 36, height: 36)
+        HStack(spacing: isCompact ? 8 : 10) {
+            // Avatar (hidden in compact mode)
+            if !isCompact {
+                AvatarView(
+                    initials: email.senderInitials,
+                    email: email.senderEmail
+                )
+                .frame(width: 36, height: 36)
+            }
 
             // Content
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: isCompact ? 1 : 2) {
                 HStack {
                     Text(email.senderName)
-                        .font(.subheadline)
+                        .font(isCompact ? .caption : .subheadline)
                         .fontWeight(email.isUnread ? .semibold : .regular)
                         .lineLimit(1)
 
@@ -431,14 +450,16 @@ struct EmailRow: View {
                 }
 
                 Text(email.subject)
-                    .font(.caption)
+                    .font(isCompact ? .caption2 : .caption)
                     .fontWeight(email.isUnread ? .medium : .regular)
                     .lineLimit(1)
 
-                Text(email.snippet)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if !isCompact {
+                    Text(email.snippet)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
 
             // Unread indicator
@@ -448,7 +469,7 @@ struct EmailRow: View {
                     .frame(width: 6, height: 6)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, isCompact ? 0 : 2)
         .contentShape(Rectangle())
     }
 }

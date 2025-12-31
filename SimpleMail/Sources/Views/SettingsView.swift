@@ -70,11 +70,13 @@ struct SettingsView: View {
                 // Display Section
                 Section {
                     Toggle("Show Avatars", isOn: $viewModel.settings.showAvatars)
+                        .onChange(of: viewModel.settings.showAvatars) { _, _ in viewModel.saveSettings() }
 
                     Picker("List Density", selection: $viewModel.settings.listDensity) {
                         Text("Comfortable").tag(ListDensity.comfortable)
                         Text("Compact").tag(ListDensity.compact)
                     }
+                    .onChange(of: viewModel.settings.listDensity) { _, _ in viewModel.saveSettings() }
 
                     Picker("Theme", selection: $themeManager.currentTheme) {
                         Text("System").tag(AppTheme.system)
@@ -83,26 +85,34 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("Display")
+                } footer: {
+                    Text("Compact mode hides avatars and email snippets for a denser list.")
                 }
 
                 // Notifications Section
                 Section {
-                    Toggle("Push Notifications", isOn: $viewModel.settings.notificationsEnabled)
+                    Toggle("Enable Notifications", isOn: $viewModel.settings.notificationsEnabled)
                         .onChange(of: viewModel.settings.notificationsEnabled) { _, newValue in
                             if newValue {
                                 Task {
                                     await viewModel.requestNotificationPermission()
                                 }
                             }
+                            viewModel.saveSettings()
                         }
 
                     if viewModel.settings.notificationsEnabled {
                         Toggle("New Emails", isOn: $viewModel.settings.notifyNewEmails)
+                            .onChange(of: viewModel.settings.notifyNewEmails) { _, _ in viewModel.saveSettings() }
                         Toggle("Needs Reply", isOn: $viewModel.settings.notifyNeedsReply)
+                            .onChange(of: viewModel.settings.notifyNeedsReply) { _, _ in viewModel.saveSettings() }
                         Toggle("VIP Senders", isOn: $viewModel.settings.notifyVIPSenders)
+                            .onChange(of: viewModel.settings.notifyVIPSenders) { _, _ in viewModel.saveSettings() }
                     }
                 } header: {
                     Text("Notifications")
+                } footer: {
+                    Text("Receive notifications when new emails arrive during background sync.")
                 }
 
                 // Privacy Section
