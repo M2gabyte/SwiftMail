@@ -696,9 +696,9 @@ actor GmailService: GmailAPIProvider {
         }
     }
 
-    // MARK: - Parsing
+    // MARK: - Parsing (nonisolated - no actor state access)
 
-    private func parseEmail(from message: MessageResponse) -> Email {
+    private nonisolated func parseEmail(from message: MessageResponse) -> Email {
         var from = ""
         var subject = ""
         var date = Date()
@@ -741,7 +741,7 @@ actor GmailService: GmailAPIProvider {
         return email
     }
 
-    private func parseEmailDetail(from message: MessageResponse) -> EmailDetail {
+    private nonisolated func parseEmailDetail(from message: MessageResponse) -> EmailDetail {
         var from = ""
         var to: [String] = []
         var cc: [String] = []
@@ -778,31 +778,36 @@ actor GmailService: GmailAPIProvider {
         )
     }
 
-    private func parseAddressList(_ value: String) -> [String] {
+    private nonisolated func parseAddressList(_ value: String) -> [String] {
         value.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
     }
 
-    private func parseDate(_ dateString: String) -> Date? {
+    // Cached date formatters for parsing (thread-safe static allocation)
+    private static let dateFormatters: [DateFormatter] = {
         let formats = [
             "EEE, d MMM yyyy HH:mm:ss Z",
             "d MMM yyyy HH:mm:ss Z",
             "EEE, d MMM yyyy HH:mm:ss z",
             "yyyy-MM-dd'T'HH:mm:ssZ"
         ]
-
-        for format in formats {
+        return formats.map { format in
             let formatter = DateFormatter()
             formatter.dateFormat = format
             formatter.locale = Locale(identifier: "en_US_POSIX")
+            return formatter
+        }
+    }()
+
+    private nonisolated func parseDate(_ dateString: String) -> Date? {
+        for formatter in Self.dateFormatters {
             if let date = formatter.date(from: dateString) {
                 return date
             }
         }
-
         return nil
     }
 
-    private func hasAttachments(_ payload: Payload?) -> Bool {
+    private nonisolated func hasAttachments(_ payload: Payload?) -> Bool {
         guard let parts = payload?.parts else { return false }
         return parts.contains { part in
             if let filename = part.filename, !filename.isEmpty {
@@ -815,7 +820,7 @@ actor GmailService: GmailAPIProvider {
         }
     }
 
-    private func extractBody(from payload: Payload?) -> String {
+    private nonisolated func extractBody(from payload: Payload?) -> String {
         guard let payload = payload else { return "" }
 
         // Try to find HTML or plain text body
@@ -855,11 +860,11 @@ actor GmailService: GmailAPIProvider {
         return ""
     }
 
-    private func findPart(_ parts: [Part], mimeType: String) -> Part? {
+    private nonisolated func findPart(_ parts: [Part], mimeType: String) -> Part? {
         parts.first { $0.mimeType?.lowercased() == mimeType.lowercased() }
     }
 
-    private func decodeBase64URL(_ encoded: String) -> String {
+    private nonisolated func decodeBase64URL(_ encoded: String) -> String {
         Base64URL.decode(encoded) ?? ""
     }
 }

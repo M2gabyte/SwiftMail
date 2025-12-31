@@ -1,6 +1,66 @@
 import Foundation
 import SwiftData
 
+// MARK: - Sendable DTOs for Cross-Actor Data Transfer
+
+/// Lightweight, Sendable representation of an email for passing across actor boundaries
+struct EmailDTO: Sendable, Identifiable, Hashable {
+    let id: String
+    let threadId: String
+    let snippet: String
+    let subject: String
+    let from: String
+    let date: Date
+    var isUnread: Bool
+    var isStarred: Bool
+    let hasAttachments: Bool
+    let labelIds: [String]
+    let messagesCount: Int
+    let accountEmail: String?
+    let listUnsubscribe: String?
+    let listId: String?
+    let precedence: String?
+    let autoSubmitted: String?
+
+    var senderEmail: String {
+        EmailParser.extractSenderEmail(from: from)
+    }
+
+    var senderName: String {
+        EmailParser.extractSenderName(from: from)
+    }
+
+    var senderInitials: String {
+        let name = senderName
+        let words = name.split(separator: " ")
+        if words.count >= 2 {
+            return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+}
+
+/// Lightweight, Sendable representation of email details
+struct EmailDetailDTO: Sendable, Identifiable, Hashable {
+    let id: String
+    let threadId: String
+    let snippet: String
+    let subject: String
+    let from: String
+    let date: Date
+    let isUnread: Bool
+    let isStarred: Bool
+    let hasAttachments: Bool
+    let labelIds: [String]
+    let body: String
+    let to: [String]
+    let cc: [String]
+
+    var senderName: String {
+        EmailParser.extractSenderName(from: from)
+    }
+}
+
 // MARK: - Core Email Model
 
 @Model
@@ -181,9 +241,9 @@ extension Email {
     }
 }
 
-// MARK: - Email Parser
+// MARK: - Email Parser (Sendable - stateless)
 
-enum EmailParser {
+enum EmailParser: Sendable {
     static func extractSenderEmail(from: String) -> String {
         if let match = from.range(of: "<([^>]+)>", options: .regularExpression) {
             let email = from[match].dropFirst().dropLast()
@@ -211,5 +271,72 @@ enum EmailParser {
             return String(from.split(separator: "@").first ?? Substring(from))
         }
         return from.trimmingCharacters(in: .whitespaces)
+    }
+}
+
+// MARK: - Model to DTO Conversions
+
+extension Email {
+    /// Convert to Sendable DTO for cross-actor transfer
+    func toDTO() -> EmailDTO {
+        EmailDTO(
+            id: id,
+            threadId: threadId,
+            snippet: snippet,
+            subject: subject,
+            from: from,
+            date: date,
+            isUnread: isUnread,
+            isStarred: isStarred,
+            hasAttachments: hasAttachments,
+            labelIds: labelIds,
+            messagesCount: messagesCount,
+            accountEmail: accountEmail,
+            listUnsubscribe: listUnsubscribe,
+            listId: listId,
+            precedence: precedence,
+            autoSubmitted: autoSubmitted
+        )
+    }
+
+    /// Update model from DTO
+    func update(from dto: EmailDTO) {
+        isUnread = dto.isUnread
+        isStarred = dto.isStarred
+    }
+}
+
+extension EmailDetail {
+    /// Convert to Sendable DTO for cross-actor transfer
+    func toDTO() -> EmailDetailDTO {
+        EmailDetailDTO(
+            id: id,
+            threadId: threadId,
+            snippet: snippet,
+            subject: subject,
+            from: from,
+            date: date,
+            isUnread: isUnread,
+            isStarred: isStarred,
+            hasAttachments: hasAttachments,
+            labelIds: labelIds,
+            body: body,
+            to: to,
+            cc: cc
+        )
+    }
+}
+
+// MARK: - Array Extensions for Bulk Conversion
+
+extension Array where Element == Email {
+    func toDTOs() -> [EmailDTO] {
+        map { $0.toDTO() }
+    }
+}
+
+extension Array where Element == EmailDetail {
+    func toDTOs() -> [EmailDetailDTO] {
+        map { $0.toDTO() }
     }
 }

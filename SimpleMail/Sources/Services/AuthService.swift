@@ -13,7 +13,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     @Published var currentAccount: Account?
     @Published var accounts: [Account] = []
 
-    private let keychain = KeychainService.shared
+    private let keychain = KeychainServiceSync.shared
     private let clientId = "328102220939-s1mjoq2mpsc1dh4c3kkudq3npmg8vusb.apps.googleusercontent.com"
     private let redirectUri = "com.googleusercontent.apps.328102220939-s1mjoq2mpsc1dh4c3kkudq3npmg8vusb:/oauth2callback"
 
@@ -359,41 +359,194 @@ enum AuthError: LocalizedError {
     }
 }
 
-// MARK: - Keychain Service
+// MARK: - Keychain Service (Actor for Thread Safety)
 
-final class KeychainService {
+import OSLog
+
+private let keychainLogger = Logger(subsystem: "com.simplemail.app", category: "Keychain")
+
+/// Thread-safe keychain wrapper using Swift actor
+actor KeychainService {
     static let shared = KeychainService()
+
+    private let service = "com.simplemail.app"
+
     private init() {}
 
-    func save(key: String, data: Data) {
+    // MARK: - Keychain Errors
+
+    enum KeychainError: LocalizedError {
+        case saveFailed(OSStatus)
+        case readFailed(OSStatus)
+        case deleteFailed(OSStatus)
+        case dataConversionFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .saveFailed(let status):
+                return "Failed to save to keychain: \(status)"
+            case .readFailed(let status):
+                return "Failed to read from keychain: \(status)"
+            case .deleteFailed(let status):
+                return "Failed to delete from keychain: \(status)"
+            case .dataConversionFailed:
+                return "Failed to convert data"
+            }
+        }
+    }
+
+    // MARK: - Save
+
+    /// Save data to keychain (thread-safe via actor)
+    func save(key: String, data: Data) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
 
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
+        // Delete existing item first
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+
+        guard status == errSecSuccess else {
+            keychainLogger.error("Save failed for key '\(key)': \(status)")
+            throw KeychainError.saveFailed(status)
+        }
+
+        keychainLogger.debug("Saved data for key '\(key)'")
     }
 
+    /// Save Codable object to keychain
+    func save<T: Encodable>(key: String, value: T) throws {
+        let data = try JSONEncoder().encode(value)
+        try save(key: key, data: data)
+    }
+
+    // MARK: - Read
+
+    /// Read data from keychain (thread-safe via actor)
     func read(key: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key,
-            kSecReturnData as String: true
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
 
         var result: AnyObject?
-        SecItemCopyMatching(query as CFDictionary, &result)
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess else {
+            if status != errSecItemNotFound {
+                keychainLogger.warning("Read failed for key '\(key)': \(status)")
+            }
+            return nil
+        }
+
         return result as? Data
     }
 
+    /// Read and decode Codable object from keychain
+    func read<T: Decodable>(key: String, as type: T.Type) -> T? {
+        guard let data = read(key: key) else { return nil }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            keychainLogger.error("Decode failed for key '\(key)': \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    // MARK: - Delete
+
+    /// Delete item from keychain (thread-safe via actor)
     func delete(key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key
         ]
-        SecItemDelete(query as CFDictionary)
+
+        let status = SecItemDelete(query as CFDictionary)
+
+        if status != errSecSuccess && status != errSecItemNotFound {
+            keychainLogger.warning("Delete failed for key '\(key)': \(status)")
+        } else {
+            keychainLogger.debug("Deleted key '\(key)'")
+        }
+    }
+
+    // MARK: - Check Existence
+
+    /// Check if key exists in keychain
+    func exists(key: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: false
+        ]
+
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+
+    // MARK: - Clear All
+
+    /// Delete all items for this service
+    func clearAll() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        keychainLogger.info("Cleared all keychain items: \(status)")
+    }
+}
+
+// MARK: - Synchronous Keychain Wrapper (for MainActor contexts)
+
+/// Synchronous wrapper for KeychainService for use in @MainActor contexts
+/// Use sparingly - prefer async access when possible
+final class KeychainServiceSync {
+    static let shared = KeychainServiceSync()
+    private init() {}
+
+    func save(key: String, data: Data) {
+        Task {
+            try? await KeychainService.shared.save(key: key, data: data)
+        }
+    }
+
+    func read(key: String) -> Data? {
+        // For synchronous read, we need to use the underlying Security APIs directly
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.simplemail.app",
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return status == errSecSuccess ? result as? Data : nil
+    }
+
+    func delete(key: String) {
+        Task {
+            await KeychainService.shared.delete(key: key)
+        }
     }
 }

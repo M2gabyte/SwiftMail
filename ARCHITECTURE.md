@@ -592,11 +592,78 @@ let viewModel = InboxViewModel(gmailService: mockService)
 3. Add Google OAuth client to Google Cloud Console
 4. Enable Gmail API in Google Cloud Console
 
+## Swift Concurrency Patterns
+
+### Sendable DTOs for Cross-Actor Transfer
+
+SwiftData `@Model` types cannot be `Sendable`. Use lightweight DTOs for safe data transfer:
+
+```swift
+/// Lightweight, Sendable representation of an email
+struct EmailDTO: Sendable, Identifiable, Hashable {
+    let id: String
+    let threadId: String
+    let subject: String
+    // ... all value-type properties
+
+    var senderEmail: String {
+        EmailParser.extractSenderEmail(from: from)
+    }
+}
+
+// Conversion from SwiftData model
+extension Email {
+    func toDTO() -> EmailDTO {
+        EmailDTO(id: id, threadId: threadId, ...)
+    }
+}
+```
+
+### Actor-Based Keychain Service
+
+Thread-safe keychain access using Swift actors:
+
+```swift
+actor KeychainService {
+    static let shared = KeychainService()
+
+    func save(key: String, data: Data) throws
+    func read(key: String) -> Data?
+    func delete(key: String)
+    func exists(key: String) -> Bool
+    func clearAll()
+}
+
+// Synchronous wrapper for @MainActor contexts
+final class KeychainServiceSync {
+    static let shared = KeychainServiceSync()
+    func save(key: String, data: Data)
+    func read(key: String) -> Data?
+}
+```
+
+### Nonisolated Methods for Performance
+
+Parser methods don't access actor state, avoiding unnecessary hops:
+
+```swift
+actor GmailService {
+    // Parsing doesn't need actor isolation
+    private nonisolated func parseEmail(from message: MessageResponse) -> Email
+    private nonisolated func parseDate(_ dateString: String) -> Date?
+    private nonisolated func extractBody(from payload: Payload?) -> String
+
+    // Static cached formatters for performance
+    private static let dateFormatters: [DateFormatter] = { ... }()
+}
+```
+
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.1*
+*Architecture version: 1.2*
 
 **Changelog:**
+- v1.2: Added Sendable DTOs, actor-based Keychain, nonisolated optimizations
 - v1.1: Added @Observable migration, MIME Result Builder, Base64URL utilities, OSLog integration, protocol-based testing
 - v1.0: Initial architecture documentation
