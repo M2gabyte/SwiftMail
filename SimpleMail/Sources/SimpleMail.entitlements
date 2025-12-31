@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Keychain Access for Token Storage -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.simplemail.app</string>
+	</array>
+
+	<!-- Associated Domains for Universal Links (optional) -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:simplemail.app</string>
+	</array>
+
+	<!-- Push Notifications -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- App Groups for sharing data with extensions (future) -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.simplemail.app</string>
+	</array>
+</dict>
+</plist>

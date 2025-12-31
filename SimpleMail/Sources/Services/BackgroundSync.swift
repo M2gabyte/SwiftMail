@@ -1,0 +1,281 @@
+import Foundation
+import BackgroundTasks
+import UserNotifications
+
+// MARK: - Background Sync Manager
+
+final class BackgroundSyncManager {
+    static let shared = BackgroundSyncManager()
+
+    private let syncTaskIdentifier = "com.simplemail.app.sync"
+    private let notificationTaskIdentifier = "com.simplemail.app.notification"
+
+    private init() {}
+
+    // MARK: - Registration
+
+    func registerBackgroundTasks() {
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: syncTaskIdentifier,
+            using: nil
+        ) { task in
+            self.handleSyncTask(task as! BGAppRefreshTask)
+        }
+
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: notificationTaskIdentifier,
+            using: nil
+        ) { task in
+            self.handleNotificationTask(task as! BGProcessingTask)
+        }
+    }
+
+    // MARK: - Schedule Tasks
+
+    func scheduleBackgroundSync() {
+        let request = BGAppRefreshTaskRequest(identifier: syncTaskIdentifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
+
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            print("[BackgroundSync] Scheduled sync task")
+        } catch {
+            print("[BackgroundSync] Failed to schedule sync: \(error)")
+        }
+    }
+
+    func scheduleNotificationCheck() {
+        let request = BGProcessingTaskRequest(identifier: notificationTaskIdentifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 5 * 60) // 5 minutes
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
+
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            print("[BackgroundSync] Scheduled notification check")
+        } catch {
+            print("[BackgroundSync] Failed to schedule notification check: \(error)")
+        }
+    }
+
+    // MARK: - Handle Tasks
+
+    private func handleSyncTask(_ task: BGAppRefreshTask) {
+        scheduleBackgroundSync() // Schedule next sync
+
+        let syncTask = Task {
+            do {
+                try await performSync()
+                task.setTaskCompleted(success: true)
+            } catch {
+                print("[BackgroundSync] Sync failed: \(error)")
+                task.setTaskCompleted(success: false)
+            }
+        }
+
+        task.expirationHandler = {
+            syncTask.cancel()
+        }
+    }
+
+    private func handleNotificationTask(_ task: BGProcessingTask) {
+        scheduleNotificationCheck() // Schedule next check
+
+        let notificationTask = Task {
+            do {
+                try await checkForNewEmails()
+                task.setTaskCompleted(success: true)
+            } catch {
+                print("[BackgroundSync] Notification check failed: \(error)")
+                task.setTaskCompleted(success: false)
+            }
+        }
+
+        task.expirationHandler = {
+            notificationTask.cancel()
+        }
+    }
+
+    // MARK: - Sync Logic
+
+    private func performSync() async throws {
+        guard await AuthService.shared.isAuthenticated else {
+            return
+        }
+
+        // Fetch latest emails
+        let (emails, _) = try await GmailService.shared.fetchInbox(maxResults: 50)
+
+        // Update local cache (SwiftData)
+        // This would normally save to the database
+
+        print("[BackgroundSync] Synced \(emails.count) emails")
+    }
+
+    private func checkForNewEmails() async throws {
+        guard await AuthService.shared.isAuthenticated else {
+            return
+        }
+
+        // Check for new unread emails
+        let (emails, _) = try await GmailService.shared.fetchInbox(
+            query: "is:unread",
+            maxResults: 10
+        )
+
+        let newEmails = emails.filter { email in
+            // Check if we've already notified for this email
+            !UserDefaults.standard.bool(forKey: "notified_\(email.id)")
+        }
+
+        for email in newEmails {
+            await sendNotification(for: email)
+            UserDefaults.standard.set(true, forKey: "notified_\(email.id)")
+        }
+    }
+
+    // MARK: - Notifications
+
+    private func sendNotification(for email: Email) async {
+        let content = UNMutableNotificationContent()
+        content.title = email.senderName
+        content.subtitle = email.subject
+        content.body = email.snippet
+        content.sound = .default
+        content.badge = 1
+
+        // Add category for actions
+        content.categoryIdentifier = "EMAIL"
+
+        // Add user info for handling taps
+        content.userInfo = [
+            "emailId": email.id,
+            "threadId": email.threadId
+        ]
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "email_\(email.id)",
+            content: content,
+            trigger: trigger
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            print("[BackgroundSync] Sent notification for: \(email.subject)")
+        } catch {
+            print("[BackgroundSync] Failed to send notification: \(error)")
+        }
+    }
+
+    // MARK: - Notification Setup
+
+    func requestNotificationPermission() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+
+        do {
+            let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+
+            if granted {
+                await setupNotificationCategories()
+            }
+
+            return granted
+        } catch {
+            print("[BackgroundSync] Notification permission error: \(error)")
+            return false
+        }
+    }
+
+    private func setupNotificationCategories() async {
+        let archiveAction = UNNotificationAction(
+            identifier: "ARCHIVE",
+            title: "Archive",
+            options: []
+        )
+
+        let replyAction = UNNotificationAction(
+            identifier: "REPLY",
+            title: "Reply",
+            options: [.foreground]
+        )
+
+        let markReadAction = UNNotificationAction(
+            identifier: "MARK_READ",
+            title: "Mark as Read",
+            options: []
+        )
+
+        let emailCategory = UNNotificationCategory(
+            identifier: "EMAIL",
+            actions: [archiveAction, replyAction, markReadAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        await UNUserNotificationCenter.current().setNotificationCategories([emailCategory])
+    }
+}
+
+// MARK: - Notification Handler
+
+final class NotificationHandler: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = NotificationHandler()
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Show notification even when app is in foreground
+        completionHandler([.banner, .sound, .badge])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+
+        guard let emailId = userInfo["emailId"] as? String else {
+            completionHandler()
+            return
+        }
+
+        Task {
+            switch response.actionIdentifier {
+            case "ARCHIVE":
+                try? await GmailService.shared.archive(messageId: emailId)
+
+            case "MARK_READ":
+                try? await GmailService.shared.markAsRead(messageId: emailId)
+
+            case "REPLY":
+                // This would navigate to compose screen
+                // Handled by the app delegate or scene delegate
+                break
+
+            case UNNotificationDefaultActionIdentifier:
+                // Tap on notification - navigate to email
+                // Post notification to open email detail
+                NotificationCenter.default.post(
+                    name: .openEmail,
+                    object: nil,
+                    userInfo: userInfo
+                )
+
+            default:
+                break
+            }
+
+            completionHandler()
+        }
+    }
+}
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let openEmail = Notification.Name("openEmail")
+}
