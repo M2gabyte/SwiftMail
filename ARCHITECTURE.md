@@ -368,12 +368,19 @@ ContentView
 **EmailDetailView:**
 - Thread view with expandable messages
 - WebView for HTML email body with dynamic height calculation
-- AI summary card for long emails (with boilerplate filtering)
+- AI summary card with Apple Intelligence (iOS 26+) and extractive fallback
 - Attachment previews with QuickLook
 - Action footer (reply, reply all, forward, archive)
 - Tab bar hidden for full-screen experience
 - Action toolbar positioned at bottom (replaces tab bar)
 - Block sender, unsubscribe, report spam actions in overflow menu
+
+**Email HTML Rendering Pipeline:**
+- Quoted-printable decode + HTML entity normalization before summarization
+- Hidden/preheader content removal to avoid summary noise
+- HTMLSanitizer strips scripts/iframes/handlers/meta refresh
+- Remote images blocked via `data-blocked-src` and CSS
+- WebView height updates via JS + Resize/Mutation observers
 
 **ComposeView:**
 - FlowLayout for recipient chips
@@ -808,6 +815,7 @@ log stream --predicate 'subsystem == "com.simplemail.app"' --level debug
 - MIME message building
 - Base64URL encoding/decoding
 - HTMLSanitizer security functions
+- Summary text normalization (quoted-printable decode + entity cleanup)
 
 **Protocol-Based Mocking:**
 ```swift
@@ -886,7 +894,7 @@ xcodebuild test -project SimpleMail.xcodeproj -scheme SimpleMail \
 ## Future Enhancements
 
 ### Planned Features
-- [x] Apple Intelligence summarization (extractive fallback implemented)
+- [x] Apple Intelligence summarization (iOS 26+ with extractive fallback)
 - [x] Email signature formatting (bold, italic, links)
 - [ ] Smart reply suggestions
 - [ ] Undo send (30-second window)
