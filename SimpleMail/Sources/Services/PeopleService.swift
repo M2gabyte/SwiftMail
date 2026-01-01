@@ -15,8 +15,8 @@ actor PeopleService {
     private let requestTimeout: TimeInterval = 15
 
     /// Cached contacts for faster autocomplete
-    private var cachedContacts: [Contact] = []
-    private var lastCacheTime: Date?
+    private var cachedContactsByAccount: [String: [Contact]] = [:]
+    private var lastCacheTimeByAccount: [String: Date] = [:]
     private let cacheExpiryInterval: TimeInterval = 300 // 5 minutes
 
     // MARK: - Contact Model
@@ -65,16 +65,25 @@ actor PeopleService {
         return refreshedAccount.accessToken
     }
 
+    private func currentAccountKey() async -> String? {
+        await AuthService.shared.currentAccount?.email.lowercased()
+    }
+
     // MARK: - Fetch Contacts
 
     /// Fetches all contacts with email addresses from Google People API
     func fetchContacts(forceRefresh: Bool = false) async throws -> [Contact] {
+        guard let accountKey = await currentAccountKey() else {
+            throw PeopleError.notAuthenticated
+        }
+
         // Check cache
         if !forceRefresh,
-           let lastCache = lastCacheTime,
+           let lastCache = lastCacheTimeByAccount[accountKey],
            Date().timeIntervalSince(lastCache) < cacheExpiryInterval,
-           !cachedContacts.isEmpty {
-            return cachedContacts
+           let cached = cachedContactsByAccount[accountKey],
+           !cached.isEmpty {
+            return cached
         }
 
         logger.info("Fetching contacts from People API")
@@ -99,12 +108,13 @@ actor PeopleService {
         let uniqueContacts = Array(Set(allContacts))
 
         // Sort by name
-        cachedContacts = uniqueContacts.sorted { $0.displayName.lowercased() < $1.displayName.lowercased() }
-        lastCacheTime = Date()
+        let sorted = uniqueContacts.sorted { $0.displayName.lowercased() < $1.displayName.lowercased() }
+        cachedContactsByAccount[accountKey] = sorted
+        lastCacheTimeByAccount[accountKey] = Date()
 
-        logger.info("Cached \(self.cachedContacts.count) contacts")
+        logger.info("Cached \(sorted.count) contacts")
 
-        return cachedContacts
+        return sorted
     }
 
     private func fetchContactsPage(token: String, pageToken: String?) async throws -> (contacts: [Contact], nextPageToken: String?) {
@@ -154,8 +164,12 @@ actor PeopleService {
             return []
         }
 
+        guard let accountKey = await currentAccountKey() else {
+            return []
+        }
+
         // If cache is empty, try to fetch contacts
-        if cachedContacts.isEmpty {
+        if cachedContactsByAccount[accountKey]?.isEmpty ?? true {
             do {
                 _ = try await fetchContacts()
             } catch {
@@ -165,7 +179,8 @@ actor PeopleService {
         }
 
         // Search in cached contacts
-        return cachedContacts.filter { contact in
+        let cached = cachedContactsByAccount[accountKey] ?? []
+        return cached.filter { contact in
             contact.name.lowercased().contains(lowercasedQuery) ||
             contact.email.lowercased().contains(lowercasedQuery)
         }

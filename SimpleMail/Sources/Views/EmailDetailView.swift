@@ -71,10 +71,8 @@ struct EmailDetailView: View {
             }
         }
         .toolbar {
-            ToolbarItemGroup(placement: .bottomBar) {
-                Spacer()
-
-                // Reply Menu
+            ToolbarItem(placement: .bottomBar) {
+                // Reply Menu - Far Left
                 Menu {
                     Button(action: { showingReplySheet = true }) {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
@@ -87,24 +85,23 @@ struct EmailDetailView: View {
                     }
                 } label: {
                     Image(systemName: "arrowshape.turn.up.left")
-                        .font(.title2)
                 }
+            }
 
+            ToolbarItem(placement: .bottomBar) {
                 Spacer()
-                    .frame(width: 32)
+            }
 
-                // Archive
-                Button(action: {
+            ToolbarItem(placement: .bottomBar) {
+                // Archive - Far Right
+                Button {
                     Task {
                         await viewModel.archive()
                         dismiss()
                     }
-                }) {
+                } label: {
                     Image(systemName: "archivebox")
-                        .font(.title2)
                 }
-
-                Spacer()
             }
         }
         .sheet(isPresented: $showingReplySheet) {

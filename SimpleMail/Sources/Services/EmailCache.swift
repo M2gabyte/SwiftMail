@@ -39,6 +39,9 @@ final class EmailCacheManager: ObservableObject {
             return
         }
 
+        let fetchedIds = Set(emails.map { $0.id })
+        let oldestFetchedDate = emails.map(\.date).min()
+
         for email in emails {
             // Check if already exists
             let emailId = email.id
@@ -84,6 +87,11 @@ final class EmailCacheManager: ObservableObject {
         } catch {
             print("[EmailCache] Failed to cache emails: \(error)")
         }
+
+        // Cleanup: remove cached inbox emails that no longer exist in the latest fetch window.
+        if let oldestDate = oldestFetchedDate, !fetchedIds.isEmpty {
+            removeStaleInboxEmails(fetchedIds: fetchedIds, since: oldestDate)
+        }
     }
 
     // MARK: - Load Cached Emails
@@ -98,11 +106,20 @@ final class EmailCacheManager: ObservableObject {
         )
         descriptor.fetchLimit = limit
 
-        // Filter by label if needed
-        if !labelIds.isEmpty {
-            let labelId = labelIds[0]
+        // Filter by label or archive rules if needed
+        switch mailbox {
+        case .archive:
             descriptor.predicate = #Predicate { email in
-                email.labelIds.contains(labelId)
+                !email.labelIds.contains("INBOX") &&
+                !email.labelIds.contains("TRASH") &&
+                !email.labelIds.contains("SPAM")
+            }
+        default:
+            if !labelIds.isEmpty {
+                let labelId = labelIds[0]
+                descriptor.predicate = #Predicate { email in
+                    email.labelIds.contains(labelId)
+                }
             }
         }
 
@@ -178,6 +195,30 @@ final class EmailCacheManager: ObservableObject {
                 updateCacheStats()
             } catch {
                 print("[EmailCache] Failed to delete email: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Cleanup Helpers
+
+    private func removeStaleInboxEmails(fetchedIds: Set<String>, since oldestDate: Date) {
+        guard let context = modelContext else { return }
+
+        let descriptor = FetchDescriptor<Email>(
+            predicate: #Predicate { email in
+                email.labelIds.contains("INBOX") && email.date >= oldestDate
+            }
+        )
+
+        if let cached = try? context.fetch(descriptor) {
+            for email in cached where !fetchedIds.contains(email.id) {
+                context.delete(email)
+            }
+            do {
+                try context.save()
+                updateCacheStats()
+            } catch {
+                print("[EmailCache] Failed to remove stale inbox emails: \(error)")
             }
         }
     }

@@ -159,7 +159,9 @@ struct MIMEMessage: Sendable {
     private func buildPlainText() -> String {
         var lines = headers.map(\.rendered)
         lines.append("Content-Type: text/plain; charset=\"UTF-8\"")
-        return lines.joined(separator: "\r\n") + "\r\n\r\n" + body
+        lines.append("Content-Transfer-Encoding: base64")
+        let encodedBody = Data(body.utf8).base64EncodedString()
+        return lines.joined(separator: "\r\n") + "\r\n\r\n" + encodedBody
     }
 
     private func buildMultipart(html: String) -> String {
@@ -170,24 +172,28 @@ struct MIMEMessage: Sendable {
 
         let headerSection = lines.joined(separator: "\r\n")
 
+        let plainEncoded = Data(body.utf8).base64EncodedString()
+        let htmlEncoded = Data(html.utf8).base64EncodedString()
+
         let plainPart = """
         --\(boundary)\r
         Content-Type: text/plain; charset="UTF-8"\r
-        Content-Transfer-Encoding: quoted-printable\r
+        Content-Transfer-Encoding: base64\r
         \r
-        \(body)
+        \(plainEncoded)\r
         """
 
         let htmlPart = """
         --\(boundary)\r
         Content-Type: text/html; charset="UTF-8"\r
-        Content-Transfer-Encoding: quoted-printable\r
+        Content-Transfer-Encoding: base64\r
         \r
-        \(html)\r
+        \(htmlEncoded)\r
         --\(boundary)--
         """
 
-        return headerSection + "\r\n\r\n" + plainPart + "\r\n" + htmlPart
+        return headerSection + "\r\n\r\n" + plainPart.replacingOccurrences(of: "\r", with: "\r\n") +
+        "\r\n" + htmlPart.replacingOccurrences(of: "\r", with: "\r\n")
     }
 
     /// Encode the message for Gmail API (URL-safe Base64)

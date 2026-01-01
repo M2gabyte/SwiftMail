@@ -73,16 +73,20 @@ final class InboxViewModel {
 
         do {
             let labelIds = labelIdsForMailbox(currentMailbox)
+            let query = mailboxQuery(for: currentMailbox)
             let (fetchedEmails, pageToken) = try await GmailService.shared.fetchInbox(
+                query: query,
                 maxResults: 50,
                 labelIds: labelIds
             )
-            self.emails = fetchedEmails
+            self.emails = dedupeByThread(fetchedEmails)
             self.nextPageToken = pageToken
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")
             self.error = error
+            #if DEBUG
             loadMockData()
+            #endif
         }
     }
 
@@ -107,14 +111,16 @@ final class InboxViewModel {
 
         do {
             let labelIds = labelIdsForMailbox(currentMailbox)
+            let query = mailboxQuery(for: currentMailbox)
             let (moreEmails, newPageToken) = try await GmailService.shared.fetchInbox(
+                query: query,
                 maxResults: 50,
                 pageToken: pageToken,
                 labelIds: labelIds
             )
 
-            let existingIds = Set(emails.map { $0.id })
-            let uniqueNewEmails = moreEmails.filter { !existingIds.contains($0.id) }
+            let existingThreadIds = Set(emails.map { $0.threadId })
+            let uniqueNewEmails = moreEmails.filter { !existingThreadIds.contains($0.threadId) }
             emails.append(contentsOf: uniqueNewEmails)
             nextPageToken = newPageToken
             updateFilterCounts()
@@ -129,11 +135,33 @@ final class InboxViewModel {
         switch mailbox {
         case .inbox: return ["INBOX"]
         case .sent: return ["SENT"]
-        case .archive: return [] // All Mail minus inbox
+        case .archive: return []
         case .trash: return ["TRASH"]
         case .drafts: return ["DRAFT"]
         case .starred: return ["STARRED"]
         }
+    }
+
+    private func mailboxQuery(for mailbox: Mailbox) -> String? {
+        switch mailbox {
+        case .archive:
+            return "-in:inbox -in:trash -in:spam"
+        default:
+            return nil
+        }
+    }
+
+    private func dedupeByThread(_ emails: [Email]) -> [Email] {
+        var seen = Set<String>()
+        var deduped: [Email] = []
+        for email in emails {
+            if seen.contains(email.threadId) {
+                continue
+            }
+            seen.insert(email.threadId)
+            deduped.append(email)
+        }
+        return deduped
     }
 
     // MARK: - Filter Counts (Simplified - no actor calls)
