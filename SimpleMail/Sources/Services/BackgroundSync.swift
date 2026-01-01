@@ -23,14 +23,24 @@ final class BackgroundSyncManager {
             forTaskWithIdentifier: syncTaskIdentifier,
             using: nil
         ) { task in
-            self.handleSyncTask(task as! BGAppRefreshTask)
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                logger.error("Unexpected task type for sync task")
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleSyncTask(refreshTask)
         }
 
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: notificationTaskIdentifier,
             using: nil
         ) { task in
-            self.handleNotificationTask(task as! BGProcessingTask)
+            guard let processingTask = task as? BGProcessingTask else {
+                logger.error("Unexpected task type for notification task")
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleNotificationTask(processingTask)
         }
     }
 
@@ -38,7 +48,7 @@ final class BackgroundSyncManager {
 
     func scheduleBackgroundSync() {
         let request = BGAppRefreshTaskRequest(identifier: syncTaskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
+        request.earliestBeginDate = Date(timeIntervalSinceNow: TimeoutConfig.backgroundSyncInterval)
 
         do {
             try BGTaskScheduler.shared.submit(request)
@@ -50,7 +60,7 @@ final class BackgroundSyncManager {
 
     func scheduleNotificationCheck() {
         let request = BGProcessingTaskRequest(identifier: notificationTaskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 5 * 60) // 5 minutes
+        request.earliestBeginDate = Date(timeIntervalSinceNow: TimeoutConfig.notificationCheckInterval)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
 
@@ -283,10 +293,18 @@ final class NotificationHandler: NSObject, UNUserNotificationCenterDelegate {
         Task {
             switch response.actionIdentifier {
             case "ARCHIVE":
-                try? await GmailService.shared.archive(messageId: emailId)
+                do {
+                    try await GmailService.shared.archive(messageId: emailId)
+                } catch {
+                    logger.error("Failed to archive from notification: \(error.localizedDescription)")
+                }
 
             case "MARK_READ":
-                try? await GmailService.shared.markAsRead(messageId: emailId)
+                do {
+                    try await GmailService.shared.markAsRead(messageId: emailId)
+                } catch {
+                    logger.error("Failed to mark as read from notification: \(error.localizedDescription)")
+                }
 
             case "REPLY":
                 // This would navigate to compose screen

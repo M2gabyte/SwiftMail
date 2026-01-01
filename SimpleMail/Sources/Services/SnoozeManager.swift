@@ -135,8 +135,8 @@ final class SnoozeManager {
     // MARK: - Check Expired Snoozes
 
     private func startSnoozeCheck() {
-        // Check every minute
-        checkTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        // Check periodically for expired snoozes
+        checkTimer = Timer.scheduledTimer(withTimeInterval: TimeoutConfig.snoozePollInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.checkExpiredSnoozes()
             }

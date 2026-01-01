@@ -12,12 +12,12 @@ actor PeopleService {
     static let shared = PeopleService()
 
     private let baseURL = "https://people.googleapis.com/v1"
-    private let requestTimeout: TimeInterval = 15
+    private let requestTimeout: TimeInterval = TimeoutConfig.peopleAPI
 
     /// Cached contacts for faster autocomplete
     private var cachedContactsByAccount: [String: [Contact]] = [:]
     private var lastCacheTimeByAccount: [String: Date] = [:]
-    private let cacheExpiryInterval: TimeInterval = 300 // 5 minutes
+    private let cacheExpiryInterval: TimeInterval = TimeoutConfig.contactCacheExpiry
 
     // MARK: - Contact Model
 
@@ -342,7 +342,7 @@ actor PeopleService {
         switch httpResponse.statusCode {
         case 200:
             do {
-                return try JSONDecoder().decode(T.self, from: data)
+                return try JSONCoding.decoder.decode(T.self, from: data)
             } catch {
                 logger.error("JSON decode error for \(T.self): \(error.localizedDescription)")
                 throw PeopleError.invalidResponse

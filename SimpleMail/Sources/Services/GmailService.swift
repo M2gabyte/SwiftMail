@@ -693,7 +693,7 @@ actor GmailService: GmailAPIProvider {
             throw GmailError.sendFailed
         }
 
-        let sendResponse = try JSONDecoder().decode(MessageRef.self, from: data)
+        let sendResponse = try JSONCoding.decoder.decode(MessageRef.self, from: data)
         logger.info("Email sent successfully: \(sendResponse.id)")
         return sendResponse.id
     }
@@ -755,7 +755,7 @@ actor GmailService: GmailAPIProvider {
             throw GmailError.actionFailed
         }
 
-        let draftResponse = try JSONDecoder().decode(DraftResponse.self, from: data)
+        let draftResponse = try JSONCoding.decoder.decode(DraftResponse.self, from: data)
         logger.info("Draft saved: \(draftResponse.id)")
         return draftResponse.id
     }
@@ -848,7 +848,7 @@ actor GmailService: GmailAPIProvider {
         switch httpResponse.statusCode {
         case 200:
             do {
-                return try JSONDecoder().decode(T.self, from: data)
+                return try JSONCoding.decoder.decode(T.self, from: data)
             } catch {
                 logger.error("JSON decode error for \(T.self): \(error.localizedDescription)")
                 throw GmailError.invalidResponse

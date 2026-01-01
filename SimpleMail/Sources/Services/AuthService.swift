@@ -19,6 +19,9 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
 
     private var codeVerifier: String?
 
+    /// Tracks in-progress token refresh tasks to prevent concurrent refreshes for same account
+    private var refreshTasks: [String: Task<Account, Error>] = [:]
+
     // MARK: - Account Model
 
     struct Account: Identifiable, Codable, Equatable {
@@ -90,7 +93,9 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
         self.codeVerifier = verifier
 
         // Build authorization URL
-        var components = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
+        guard var components = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth") else {
+            throw AuthError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "redirect_uri", value: redirectUri),
@@ -150,7 +155,10 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
             throw AuthError.noCodeVerifier
         }
 
-        var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+        guard let tokenURL = URL(string: "https://oauth2.googleapis.com/token") else {
+            throw AuthError.invalidURL
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
@@ -171,7 +179,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
             throw AuthError.tokenExchangeFailed
         }
 
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+        let tokenResponse = try JSONCoding.decoder.decode(TokenResponse.self, from: data)
 
         // Fetch user info
         let userInfo = try await fetchUserInfo(accessToken: tokenResponse.accessToken)
@@ -211,7 +219,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
             throw AuthError.userInfoFetchFailed(httpResponse.statusCode)
         }
 
-        return try JSONDecoder().decode(UserInfo.self, from: data)
+        return try JSONCoding.decoder.decode(UserInfo.self, from: data)
     }
 
     // MARK: - Token Refresh
@@ -221,7 +229,36 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
             return account
         }
 
-        var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+        // Check if there's already a refresh in progress for this account
+        if let existingTask = refreshTasks[account.id] {
+            return try await existingTask.value
+        }
+
+        // Create new refresh task and store it
+        let refreshTask = Task<Account, Error> { [weak self] in
+            guard let self = self else { throw AuthError.tokenRefreshFailed }
+
+            defer {
+                // Clean up the task reference when done
+                Task { @MainActor in
+                    self.refreshTasks.removeValue(forKey: account.id)
+                }
+            }
+
+            return try await self.performTokenRefresh(for: account, refreshToken: refreshToken)
+        }
+
+        refreshTasks[account.id] = refreshTask
+
+        return try await refreshTask.value
+    }
+
+    /// Performs the actual token refresh network call
+    private func performTokenRefresh(for account: Account, refreshToken: String) async throws -> Account {
+        guard let tokenURL = URL(string: "https://oauth2.googleapis.com/token") else {
+            throw AuthError.invalidURL
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
@@ -239,7 +276,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
             throw AuthError.tokenRefreshFailed
         }
 
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+        let tokenResponse = try JSONCoding.decoder.decode(TokenResponse.self, from: data)
 
         var updatedAccount = account
         updatedAccount.accessToken = tokenResponse.accessToken
@@ -297,7 +334,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
 
     private func loadAccounts() {
         guard let data = keychain.read(key: "accounts"),
-              let savedAccounts = try? JSONDecoder().decode([Account].self, from: data) else {
+              let savedAccounts = try? JSONCoding.decoder.decode([Account].self, from: data) else {
             return
         }
         accounts = savedAccounts
@@ -306,7 +343,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     }
 
     private func saveAccounts() {
-        guard let data = try? JSONEncoder().encode(accounts) else { return }
+        guard let data = try? JSONCoding.encoder.encode(accounts) else { return }
         keychain.save(key: "accounts", data: data)
     }
 
@@ -456,7 +493,7 @@ actor KeychainService {
 
     /// Save Codable object to keychain
     func save<T: Encodable>(key: String, value: T) throws {
-        let data = try JSONEncoder().encode(value)
+        let data = try JSONCoding.encoder.encode(value)
         try save(key: key, data: data)
     }
 
@@ -489,7 +526,7 @@ actor KeychainService {
     func read<T: Decodable>(key: String, as type: T.Type) -> T? {
         guard let data = read(key: key) else { return nil }
         do {
-            return try JSONDecoder().decode(type, from: data)
+            return try JSONCoding.decoder.decode(type, from: data)
         } catch {
             keychainLogger.error("Decode failed for key '\(key)': \(error.localizedDescription)")
             return nil

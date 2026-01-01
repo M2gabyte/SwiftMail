@@ -1,5 +1,8 @@
 import SwiftUI
 import WebKit
+import OSLog
+
+private let detailLogger = Logger(subsystem: "com.simplemail.app", category: "EmailDetail")
 
 // MARK: - Email Detail View
 
@@ -736,7 +739,11 @@ class EmailDetailViewModel: ObservableObject {
 
             // Mark as read
             for message in messages where message.isUnread {
-                try? await GmailService.shared.markAsRead(messageId: message.id)
+                do {
+                    try await GmailService.shared.markAsRead(messageId: message.id)
+                } catch {
+                    detailLogger.error("Failed to mark message as read: \(error.localizedDescription)")
+                }
             }
         } catch {
             self.error = error
@@ -787,13 +794,21 @@ class EmailDetailViewModel: ObservableObject {
 
     func archive() async {
         for message in messages {
-            try? await GmailService.shared.archive(messageId: message.id)
+            do {
+                try await GmailService.shared.archive(messageId: message.id)
+            } catch {
+                detailLogger.error("Failed to archive message: \(error.localizedDescription)")
+            }
         }
     }
 
     func trash() async {
         for message in messages {
-            try? await GmailService.shared.trash(messageId: message.id)
+            do {
+                try await GmailService.shared.trash(messageId: message.id)
+            } catch {
+                detailLogger.error("Failed to trash message: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -857,7 +872,11 @@ class EmailDetailViewModel: ObservableObject {
 
     func reportSpam() async {
         for message in messages {
-            try? await GmailService.shared.reportSpam(messageId: message.id)
+            do {
+                try await GmailService.shared.reportSpam(messageId: message.id)
+            } catch {
+                detailLogger.error("Failed to report spam: \(error.localizedDescription)")
+            }
         }
         HapticFeedback.success()
     }

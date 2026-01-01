@@ -600,7 +600,7 @@ struct SignaturePreview: View {
         var result = AttributedString(text)
 
         // Parse bold: **text**
-        let boldPattern = /\*\*(.+?)\*\*/
+        let boldPattern = #/\*\*(.+?)\*\*/#
         if let match = text.firstMatch(of: boldPattern) {
             let boldText = String(match.1)
             if let range = result.range(of: "**\(boldText)**") {
@@ -609,7 +609,7 @@ struct SignaturePreview: View {
         }
 
         // Parse italic: _text_
-        let italicPattern = /_(.+?)_/
+        let italicPattern = #/_(.+?)_/#
         if let match = text.firstMatch(of: italicPattern) {
             let italicText = String(match.1)
             if let range = result.range(of: "_\(italicText)_") {
@@ -618,7 +618,7 @@ struct SignaturePreview: View {
         }
 
         // Parse links: [text](url)
-        let linkPattern = /\[(.+?)\]\((.+?)\)/
+        let linkPattern = #/\[(.+?)\]\((.+?)\)/#
         if let match = text.firstMatch(of: linkPattern) {
             let linkText = String(match.1)
             let linkURL = String(match.2)
@@ -627,8 +627,8 @@ struct SignaturePreview: View {
                let url = URL(string: linkURL) {
                 var linkAttr = AttributedString(linkText)
                 linkAttr.link = url
-                linkAttr.foregroundColor = .blue
-                linkAttr.underlineStyle = .single
+                linkAttr.foregroundColor = Color.blue
+                linkAttr.underlineStyle = Text.LineStyle.single
                 result.replaceSubrange(range, with: linkAttr)
             }
         }

@@ -502,7 +502,11 @@ final class InboxViewModel {
                 updateFilterCounts()
             }
             Task {
-                try? await GmailService.shared.markAsRead(messageId: email.id)
+                do {
+                    try await GmailService.shared.markAsRead(messageId: email.id)
+                } catch {
+                    logger.error("Failed to mark email as read: \(error.localizedDescription)")
+                }
             }
         }
     }
