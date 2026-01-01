@@ -121,7 +121,9 @@ struct SettingsView: View {
                 // Privacy Section
                 Section {
                     Toggle("Require Face ID", isOn: $viewModel.settings.biometricLock)
+                        .onChange(of: viewModel.settings.biometricLock) { _, _ in viewModel.saveSettings() }
                     Toggle("Block Remote Images", isOn: $viewModel.settings.blockRemoteImages)
+                        .onChange(of: viewModel.settings.blockRemoteImages) { _, _ in viewModel.saveSettings() }
                 } header: {
                     Text("Privacy & Security")
                 }
@@ -138,7 +140,9 @@ struct SettingsView: View {
                 // Smart Features Section
                 Section {
                     Toggle("Auto-Summarize Long Emails", isOn: $viewModel.settings.autoSummarize)
+                        .onChange(of: viewModel.settings.autoSummarize) { _, _ in viewModel.saveSettings() }
                     Toggle("Smart Reply Suggestions", isOn: $viewModel.settings.smartReplies)
+                        .onChange(of: viewModel.settings.smartReplies) { _, _ in viewModel.saveSettings() }
 
                     NavigationLink("VIP Senders") {
                         VIPSendersView(accountEmail: viewModel.currentAccount?.email)

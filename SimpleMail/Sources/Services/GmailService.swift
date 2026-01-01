@@ -246,9 +246,7 @@ actor GmailService: GmailAPIProvider {
     }
 
     private func getAccessToken(for account: AuthService.Account) async throws -> String {
-        let refreshedAccount = try await MainActor.run {
-            try await AuthService.shared.refreshTokenIfNeeded(for: account)
-        }
+        let refreshedAccount = try await AuthService.shared.refreshTokenIfNeeded(for: account)
         return refreshedAccount.accessToken
     }
 
@@ -457,16 +455,9 @@ actor GmailService: GmailAPIProvider {
 
         guard let messages = thread.messages else { return [] }
 
-        // Parse all messages and fetch body attachments if needed
+        // Parse all messages and fetch body attachments in parallel
         let accountEmail = await MainActor.run { AuthService.shared.currentAccount?.email.lowercased() }
-        var emailDetails: [EmailDetailDTO] = []
-        for message in messages {
-            var emailDetail = parseEmailDetail(from: message, accountEmail: accountEmail)
-            emailDetail = try await fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
-            emailDetails.append(emailDetail)
-        }
-
-        return emailDetails
+        return try await fetchThreadMessages(messages: messages, token: token, accountEmail: accountEmail)
     }
 
     func fetchThread(threadId: String, account: AuthService.Account) async throws -> [EmailDetailDTO] {
@@ -479,15 +470,36 @@ actor GmailService: GmailAPIProvider {
 
         guard let messages = thread.messages else { return [] }
 
-        var emailDetails: [EmailDetailDTO] = []
         let accountEmail = account.email.lowercased()
-        for message in messages {
-            var emailDetail = parseEmailDetail(from: message, accountEmail: accountEmail)
-            emailDetail = try await fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
-            emailDetails.append(emailDetail)
-        }
+        return try await fetchThreadMessages(messages: messages, token: token, accountEmail: accountEmail)
+    }
 
-        return emailDetails
+    /// Fetch and parse thread messages in parallel
+    private func fetchThreadMessages(
+        messages: [MessageResponse],
+        token: String,
+        accountEmail: String?
+    ) async throws -> [EmailDetailDTO] {
+        // Use TaskGroup to fetch body attachments in parallel
+        let indexedMessages = messages.enumerated().map { ($0.offset, $0.element) }
+
+        return try await withThrowingTaskGroup(of: (Int, EmailDetailDTO).self) { group in
+            for (index, message) in indexedMessages {
+                group.addTask {
+                    var emailDetail = self.parseEmailDetail(from: message, accountEmail: accountEmail)
+                    emailDetail = try await self.fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
+                    return (index, emailDetail)
+                }
+            }
+
+            var results: [(Int, EmailDetailDTO)] = []
+            for try await result in group {
+                results.append(result)
+            }
+
+            // Sort by original order to preserve thread chronology
+            return results.sorted { $0.0 < $1.0 }.map { $0.1 }
+        }
     }
 
     // MARK: - Fetch Body Attachment If Needed

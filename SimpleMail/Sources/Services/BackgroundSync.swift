@@ -337,9 +337,10 @@ final class NotificationHandler: NSObject, UNUserNotificationCenterDelegate {
         }
 
         let accountEmail = (userInfo["accountEmail"] as? String)?.lowercased()
-        let account = AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
 
-        Task {
+        Task { @MainActor in
+            let account = AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
+
             switch response.actionIdentifier {
             case "ARCHIVE":
                 do {

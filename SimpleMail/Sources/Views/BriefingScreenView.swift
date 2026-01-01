@@ -329,15 +329,31 @@ class BriefingViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        // TODO: Fetch real emails from Gmail
-        // For now, use mock data
-        let mockEmails = createMockEmails()
+        // Fetch real emails from Gmail
+        do {
+            let (emailDTOs, _) = try await GmailService.shared.fetchInbox(
+                query: nil,
+                maxResults: 100,
+                labelIds: ["INBOX"]
+            )
+            let emails = emailDTOs.map(Email.init(dto:))
 
-        briefing = await engine.buildBriefing(
-            emails: mockEmails,
-            snoozedEmails: [],
-            userEmail: "user@example.com"
-        )
+            // Get snoozed emails
+            let snoozedEmails = SnoozeManager.shared.snoozedEmails
+
+            // Get user email for filtering
+            let userEmail = AuthService.shared.currentAccount?.email ?? ""
+
+            briefing = await engine.buildBriefing(
+                emails: emails,
+                snoozedEmails: snoozedEmails,
+                userEmail: userEmail
+            )
+        } catch {
+            briefingLogger.error("Failed to load briefing emails: \(error.localizedDescription)")
+            // Show empty briefing on error instead of mock data
+            briefing = .empty
+        }
     }
 
     func openItem(_ item: BriefingItem) {
@@ -350,45 +366,6 @@ class BriefingViewModel: ObservableObject {
 
     func performBulkAction(for section: BriefingSection) {
         briefingLogger.debug("Bulk action for: \(section.title)")
-    }
-
-    private func createMockEmails() -> [Email] {
-        let calendar = Calendar.current
-        let now = Date()
-
-        return [
-            Email(
-                id: "1", threadId: "t1",
-                snippet: "Hey! Quick question - do you have time to chat about the project this week?",
-                subject: "Quick question about the project",
-                from: "Chelsea Hart <chelsea@gmail.com>",
-                date: now, isUnread: true
-            ),
-            Email(
-                id: "2", threadId: "t2",
-                snippet: "Your order has shipped. Track your package.",
-                subject: "Your Amazon order has shipped",
-                from: "Amazon <ship-confirm@amazon.com>",
-                date: calendar.date(byAdding: .hour, value: -2, to: now)!,
-                isUnread: true, labelIds: ["CATEGORY_UPDATES"]
-            ),
-            Email(
-                id: "3", threadId: "t3",
-                snippet: "Reminder: The report is due tomorrow. Please submit by EOD.",
-                subject: "Deadline: Report due tomorrow",
-                from: "Mark Johnson <mark@company.com>",
-                date: calendar.date(byAdding: .hour, value: -5, to: now)!,
-                isUnread: true
-            ),
-            Email(
-                id: "4", threadId: "t4",
-                snippet: "50% off everything this weekend only!",
-                subject: "Weekend Sale - 50% Off!",
-                from: "Nordstrom <newsletter@nordstrom.com>",
-                date: calendar.date(byAdding: .day, value: -1, to: now)!,
-                isUnread: true, labelIds: ["CATEGORY_PROMOTIONS"]
-            )
-        ]
     }
 }
 

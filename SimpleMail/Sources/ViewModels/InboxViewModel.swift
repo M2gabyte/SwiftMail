@@ -142,9 +142,7 @@ final class InboxViewModel {
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")
             self.error = error
-            #if DEBUG
-            loadMockData()
-            #endif
+            // Do NOT load mock data - show empty state with error instead
         }
     }
 
@@ -744,97 +742,4 @@ final class InboxViewModel {
         // Handled by navigation in InboxView
     }
 
-    // MARK: - Mock Data
-
-    private func loadMockData() {
-        let calendar = Calendar.current
-
-        emails = [
-            Email(
-                id: "1",
-                threadId: "t1",
-                snippet: "Hey! Just wanted to check in about the project. Do you have time to chat this week?",
-                subject: "Quick question about the project",
-                from: "Chelsea Hart <chelsea.hart@gmail.com>",
-                date: Date(),
-                isUnread: true,
-                labelIds: []
-            ),
-            Email(
-                id: "2",
-                threadId: "t2",
-                snippet: "Your order has shipped! Track your package with the link below.",
-                subject: "Your Amazon order has shipped",
-                from: "Amazon <ship-confirm@amazon.com>",
-                date: calendar.date(byAdding: .hour, value: -3, to: Date())!,
-                isUnread: true,
-                hasAttachments: false,
-                labelIds: ["CATEGORY_UPDATES"]
-            ),
-            Email(
-                id: "3",
-                threadId: "t3",
-                snippet: "Don't miss our biggest sale of the year! Up to 50% off everything.",
-                subject: "Black Friday Sale - 50% Off!",
-                from: "Nordstrom <newsletter@nordstrom.com>",
-                date: calendar.date(byAdding: .hour, value: -5, to: Date())!,
-                isUnread: false,
-                labelIds: ["CATEGORY_PROMOTIONS"],
-                listUnsubscribe: "<mailto:unsubscribe@nordstrom.com>"
-            ),
-            Email(
-                id: "4",
-                threadId: "t4",
-                snippet: "The deadline for the quarterly report is tomorrow. Please make sure to submit your sections by EOD.",
-                subject: "Reminder: Quarterly report due tomorrow",
-                from: "Mark Johnson <mark.johnson@company.com>",
-                date: calendar.date(byAdding: .day, value: -1, to: Date())!,
-                isUnread: true,
-                labelIds: []
-            ),
-            Email(
-                id: "5",
-                threadId: "t5",
-                snippet: "Thank you for your payment of $150.00. Your receipt is attached.",
-                subject: "Payment Receipt - Invoice #12345",
-                from: "Stripe <receipts@stripe.com>",
-                date: calendar.date(byAdding: .day, value: -1, to: Date())!,
-                isUnread: false,
-                hasAttachments: true,
-                labelIds: ["CATEGORY_UPDATES"]
-            ),
-            Email(
-                id: "6",
-                threadId: "t6",
-                snippet: "What do you think about grabbing dinner this weekend? Let me know!",
-                subject: "Dinner plans?",
-                from: "Sarah Miller <sarah.m@icloud.com>",
-                date: calendar.date(byAdding: .day, value: -2, to: Date())!,
-                isUnread: true,
-                labelIds: []
-            ),
-            Email(
-                id: "7",
-                threadId: "t7",
-                snippet: "Your weekly digest of the top tech news stories.",
-                subject: "TechCrunch Daily - December 30, 2025",
-                from: "TechCrunch <newsletter@techcrunch.com>",
-                date: calendar.date(byAdding: .day, value: -3, to: Date())!,
-                isUnread: false,
-                labelIds: ["CATEGORY_PROMOTIONS"],
-                listUnsubscribe: "<https://techcrunch.com/unsubscribe>"
-            ),
-            Email(
-                id: "8",
-                threadId: "t8",
-                snippet: "Your flight to San Francisco has been confirmed. Please find your itinerary attached.",
-                subject: "Flight Confirmation - SFO Jan 15",
-                from: "United Airlines <noreply@united.com>",
-                date: calendar.date(byAdding: .day, value: -4, to: Date())!,
-                isUnread: false,
-                hasAttachments: true,
-                labelIds: ["CATEGORY_UPDATES"]
-            )
-        ]
-    }
 }

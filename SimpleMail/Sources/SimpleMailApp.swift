@@ -95,33 +95,104 @@ struct ContentView: View {
     @State private var showingSignIn = true
 
     var body: some View {
-        ZStack {
-            Group {
-                if authService.isAuthenticated {
-                    MainTabView()
-                        .transition(.opacity)
-                } else {
-                    SignInView()
+        // Check configuration first
+        if let configError = Config.validate() {
+            ConfigurationErrorView(error: configError)
+        } else {
+            ZStack {
+                Group {
+                    if authService.isAuthenticated {
+                        MainTabView()
+                            .transition(.opacity)
+                    } else {
+                        SignInView()
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.3), value: authService.isAuthenticated)
+
+                // Biometric Lock Screen
+                if biometricManager.isLocked && authService.isAuthenticated {
+                    LockScreenView()
                         .transition(.opacity)
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: authService.isAuthenticated)
-
-            // Biometric Lock Screen
-            if biometricManager.isLocked && authService.isAuthenticated {
-                LockScreenView()
-                    .transition(.opacity)
+            .preferredColorScheme(themeManager.colorScheme)
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .background {
+                    biometricManager.lockIfNeeded()
+                } else if newPhase == .active && biometricManager.isLocked {
+                    Task {
+                        await biometricManager.authenticate()
+                    }
+                }
             }
         }
-        .preferredColorScheme(themeManager.colorScheme)
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background {
-                biometricManager.lockIfNeeded()
-            } else if newPhase == .active && biometricManager.isLocked {
-                Task {
-                    await biometricManager.authenticate()
+    }
+}
+
+// MARK: - Configuration Error View
+
+struct ConfigurationErrorView: View {
+    let error: ConfigurationError
+
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                Spacer()
+
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.orange)
+
+                Text("Configuration Error")
+                    .font(.title)
+                    .fontWeight(.bold)
+
+                Text(error.localizedDescription)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                if let suggestion = error.recoverySuggestion {
+                    Text(suggestion)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
                 }
+
+                Spacer()
+
+                VStack(spacing: 12) {
+                    Text("Error Code: CONFIG_\(errorCode)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .monospaced()
+
+                    if let supportURL = URL(string: "mailto:support@simplemail.app?subject=Configuration%20Error%20CONFIG_\(errorCode)") {
+                        Link("Contact Support", destination: supportURL)
+                            .font(.headline)
+                            .foregroundStyle(.blue)
+                    }
+                }
+                .padding(.bottom, 40)
             }
+        }
+    }
+
+    private var errorCode: String {
+        switch error {
+        case .missingClientId:
+            return "001"
+        case .missingRedirectUri:
+            return "002"
+        case .multipleErrors:
+            return "999"
         }
     }
 }
