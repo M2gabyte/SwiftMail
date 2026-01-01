@@ -41,6 +41,30 @@ struct EmailDetailView: View {
                         .padding(.top, 8)
                     }
 
+                    // Action Badges Row (Unsubscribe, Block, Spam)
+                    EmailActionBadgesView(
+                        canUnsubscribe: viewModel.canUnsubscribe,
+                        senderName: viewModel.senderName ?? "sender",
+                        isReply: viewModel.subject.lowercased().hasPrefix("re:"),
+                        onUnsubscribe: {
+                            Task { await viewModel.unsubscribe() }
+                        },
+                        onBlockSender: {
+                            Task {
+                                await viewModel.blockSender()
+                                NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
+                                dismiss()
+                            }
+                        },
+                        onReportSpam: {
+                            Task {
+                                await viewModel.reportSpam()
+                                NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
+                                dismiss()
+                            }
+                        }
+                    )
+
                     ForEach(viewModel.messages) { message in
                         EmailMessageCard(
                             message: message,
@@ -669,6 +693,104 @@ struct EmailSummaryView: View {
     }
 }
 
+// MARK: - Email Action Badges View (Unsubscribe, Block, Spam)
+
+struct EmailActionBadgesView: View {
+    let canUnsubscribe: Bool
+    let senderName: String
+    let isReply: Bool
+    let onUnsubscribe: () -> Void
+    let onBlockSender: () -> Void
+    let onReportSpam: () -> Void
+
+    @State private var showBlockConfirm = false
+    @State private var showSpamConfirm = false
+
+    var body: some View {
+        // Only show if there are actions to display
+        if canUnsubscribe || !isReply {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    // Unsubscribe button
+                    if canUnsubscribe {
+                        Button(action: onUnsubscribe) {
+                            Text("Unsubscribe")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // Block Sender button
+                    Button {
+                        showBlockConfirm = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "hand.raised")
+                                .font(.caption2)
+                            Text("Block")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundStyle(.red.opacity(0.8))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // Report Spam button (only for non-replies, like React version)
+                    if !isReply {
+                        Button {
+                            showSpamConfirm = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.shield")
+                                    .font(.caption2)
+                                Text("Spam")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
+                            .foregroundStyle(.orange.opacity(0.9))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+            }
+            .alert("Block \(senderName)?", isPresented: $showBlockConfirm) {
+                Button("Cancel", role: .cancel) { }
+                Button("Block", role: .destructive, action: onBlockSender)
+            } message: {
+                Text("Future emails from this sender will be moved to Trash.")
+            }
+            .alert("Report as Spam?", isPresented: $showSpamConfirm) {
+                Button("Cancel", role: .cancel) { }
+                Button("Report Spam", role: .destructive, action: onReportSpam)
+            } message: {
+                Text("This email will be moved to your spam folder.")
+            }
+        }
+    }
+}
+
 // MARK: - Email Detail ViewModel
 
 @MainActor
@@ -701,6 +823,11 @@ class EmailDetailViewModel: ObservableObject {
     var senderEmail: String? {
         guard let from = messages.last?.from else { return nil }
         return EmailParser.extractSenderEmail(from: from)
+    }
+
+    var senderName: String? {
+        guard let from = messages.last?.from else { return nil }
+        return EmailParser.extractSenderName(from: from)
     }
 
     var isVIPSender: Bool {
