@@ -461,7 +461,7 @@ ContentView
 
 **InboxView:**
 - Single List with scrollable header block (greeting → scope segmented control → triage pills)
-- Native .searchable field activated by bottom toolbar search button
+- Full-screen SearchSheet activated by bottom toolbar search button (hidden until tapped)
 - Mailbox switching via navigation title menu (.toolbarTitleMenu)
 - Top trailing gear opens Settings (sheet)
 - Bottom toolbar (search + compose) for thumb access
@@ -1156,9 +1156,15 @@ actor GmailService {
 ---
 
 *Last updated: January 2026*
-*Architecture version: 2.2*
+*Architecture version: 2.3*
 
 **Changelog:**
+- v2.3:
+  - **Search UI Refactor:**
+    - Replaced inline `.searchable` bar with full-screen `SearchSheet`
+    - Search is now completely hidden until user taps the search button (cleaner inbox UI)
+    - SearchSheet combines cached + API results for fast initial display with comprehensive follow-up
+    - Removed deprecated BriefingScreenView and standalone SearchView components
 - v2.2:
   - **Email Rendering Fixes:**
     - Fixed remote images not loading - WKWebView requires baseURL for cross-origin resources
