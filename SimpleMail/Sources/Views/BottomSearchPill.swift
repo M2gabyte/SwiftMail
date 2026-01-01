@@ -6,6 +6,7 @@ struct BottomSearchPill: View {
     var onSubmit: (() -> Void)?
 
     @StateObject private var speechRecognizer = SpeechRecognizer()
+    @State private var showVoiceError = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -14,15 +15,24 @@ struct BottomSearchPill: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
 
-                TextField("Search", text: $text)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-                    .focused($focused)
-                    .onSubmit {
-                        onSubmit?()
-                    }
+                if speechRecognizer.isListening {
+                    Text("Listening...")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    TextField("Search", text: $text)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.search)
+                        .focused($focused)
+                        .onSubmit {
+                            onSubmit?()
+                        }
+                        .accessibilityLabel("Search emails")
+                }
 
                 // Voice or Clear button
                 if speechRecognizer.isListening {
@@ -32,9 +42,10 @@ struct BottomSearchPill: View {
                         Image(systemName: "waveform")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(.red)
-                            .symbolEffect(.pulse)
+                            .symbolEffect(.variableColor.iterative)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Stop listening")
                 } else if !text.isEmpty {
                     Button {
                         let generator = UIImpactFeedbackGenerator(style: .light)
@@ -47,9 +58,10 @@ struct BottomSearchPill: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
                     .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("Clear search")
                 } else {
                     Button {
-                        let generator = UIImpactFeedbackGenerator(style: .light)
+                        let generator = UIImpactFeedbackGenerator(style: .medium)
                         generator.impactOccurred()
                         speechRecognizer.startListening()
                         focused = true
@@ -59,16 +71,26 @@ struct BottomSearchPill: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("Voice search")
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(.thinMaterial, in: Capsule())
+            .background(
+                Capsule()
+                    .fill(.thinMaterial)
+                    .overlay(
+                        speechRecognizer.isListening ?
+                        Capsule().strokeBorder(Color.red.opacity(0.5), lineWidth: 2) : nil
+                    )
+            )
             .contentShape(Capsule())
             .onTapGesture { focused = true }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Search")
 
             // Cancel button when focused or has text
-            if focused || !text.isEmpty {
+            if focused || !text.isEmpty || speechRecognizer.isListening {
                 Button {
                     let generator = UIImpactFeedbackGenerator(style: .light)
                     generator.impactOccurred()
@@ -82,6 +104,7 @@ struct BottomSearchPill: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.primary)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
+                .accessibilityLabel("Cancel search")
             }
         }
         .animation(.easeInOut(duration: 0.2), value: focused)
@@ -91,6 +114,18 @@ struct BottomSearchPill: View {
             if !newValue.isEmpty {
                 text = newValue
             }
+        }
+        .onChange(of: speechRecognizer.error) { _, newValue in
+            if newValue != nil {
+                showVoiceError = true
+            }
+        }
+        .alert("Voice Search", isPresented: $showVoiceError) {
+            Button("OK") {
+                speechRecognizer.error = nil
+            }
+        } message: {
+            Text(speechRecognizer.error ?? "Unable to access microphone. Please check Settings > Privacy > Microphone.")
         }
     }
 }

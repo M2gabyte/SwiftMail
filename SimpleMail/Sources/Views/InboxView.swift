@@ -11,6 +11,7 @@ struct InboxView: View {
     @State private var listDensity: ListDensity = .comfortable
     @State private var showingSettings = false
     @State private var searchText = ""
+    @State private var debouncedSearchText = ""
     @FocusState private var searchFocused: Bool
     @StateObject private var searchHistory = SearchHistoryManager.shared
 
@@ -19,9 +20,9 @@ struct InboxView: View {
         searchFocused || !searchText.isEmpty
     }
 
-    /// Filtered sections based on search text with smart filter support
+    /// Filtered sections based on debounced search text with smart filter support
     private var filteredSections: [EmailSection] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return viewModel.emailSections }
 
         // Parse smart filters
@@ -46,7 +47,7 @@ struct InboxView: View {
 
     /// Terms to highlight in search results
     private var highlightTerms: [String] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return [] }
         return SearchFilter.parse(query).highlightTerms
     }
@@ -92,8 +93,8 @@ struct InboxView: View {
                 )
             }
 
-            if !searchText.isEmpty && filteredSections.isEmpty {
-                ContentUnavailableView.search(text: searchText)
+            if !debouncedSearchText.isEmpty && filteredSections.isEmpty {
+                ContentUnavailableView.search(text: debouncedSearchText)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
@@ -291,6 +292,15 @@ struct InboxView: View {
         }
         .refreshable {
             await viewModel.refresh()
+        }
+        .task(id: searchText) {
+            // Debounce search - wait 300ms before applying filter
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+                debouncedSearchText = searchText
+            } catch {
+                // Task cancelled, ignore
+            }
         }
         .overlay(alignment: .bottom) {
             if viewModel.showingUndoToast {
