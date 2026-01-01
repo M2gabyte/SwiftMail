@@ -1,4 +1,8 @@
 import SwiftUI
+import UIKit
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 // MARK: - Compose Mode
 
@@ -18,6 +22,8 @@ struct ComposeView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: ComposeViewModel
     @FocusState private var focusedField: Field?
+    @StateObject private var richTextContext = RichTextContext()
+    @State private var showingAIDraft = false
 
     enum Field: Hashable {
         case to, cc, bcc, subject, body
@@ -79,13 +85,16 @@ struct ComposeView: View {
 
                     Divider().padding(.leading)
 
-                    // Body
+                    // Body (rich text)
                     ZStack(alignment: .topLeading) {
-                        TextEditor(text: $viewModel.body)
-                            .frame(minHeight: 300)
-                            .focused($focusedField, equals: .body)
+                        RichTextEditor(
+                            attributedText: $viewModel.bodyAttributed,
+                            context: richTextContext
+                        )
+                        .frame(minHeight: 300)
+                        .focused($focusedField, equals: .body)
 
-                        if viewModel.body.isEmpty {
+                        if viewModel.bodyAttributed.string.isEmpty {
                             Text("Write your message…")
                                 .foregroundStyle(.secondary)
                                 .padding(.top, 8)
@@ -111,6 +120,10 @@ struct ComposeView: View {
                 }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button(action: { showingAIDraft = true }) {
+                        Image(systemName: "sparkles")
+                    }
+
                     Button(action: { viewModel.showCcBcc.toggle() }) {
                         Image(systemName: viewModel.showCcBcc ? "chevron.up" : "chevron.down")
                     }
@@ -142,7 +155,35 @@ struct ComposeView: View {
             .overlay {
                 if viewModel.isSending {
                     SendingOverlay()
+                } else if viewModel.isGeneratingDraft {
+                    StatusOverlay(title: "Drafting...")
                 }
+            }
+            .safeAreaInset(edge: .bottom) {
+                RichTextToolbar(context: richTextContext)
+            }
+            .sheet(isPresented: $showingAIDraft) {
+                AIDraftSheet { prompt, tone, length, includeSubject in
+                    Task {
+                        await viewModel.applyAIDraft(
+                            prompt: prompt,
+                            tone: tone,
+                            length: length,
+                            includeSubject: includeSubject
+                        )
+                    }
+                }
+            }
+            .alert(
+                "AI Draft Error",
+                isPresented: Binding(
+                    get: { viewModel.aiDraftError != nil },
+                    set: { if !$0 { viewModel.aiDraftError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.aiDraftError ?? "Unable to generate draft.")
             }
         }
     }
@@ -402,6 +443,330 @@ struct FlowLayout: Layout {
     }
 }
 
+// MARK: - Rich Text Toolbar
+
+struct RichTextToolbar: View {
+    @ObservedObject var context: RichTextContext
+    @State private var showingLinkPrompt = false
+    @State private var linkURL = ""
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Divider()
+            HStack(spacing: 18) {
+                Button(action: { context.toggleBold() }) {
+                    Image(systemName: "bold")
+                }
+                Button(action: { context.toggleItalic() }) {
+                    Image(systemName: "italic")
+                }
+                Button(action: { context.toggleUnderline() }) {
+                    Image(systemName: "underline")
+                }
+                Button(action: { context.insertBulletList() }) {
+                    Image(systemName: "list.bullet")
+                }
+                Button(action: { showingLinkPrompt = true }) {
+                    Image(systemName: "link")
+                }
+                Spacer()
+                Button(action: { context.toggleFontSize() }) {
+                    Image(systemName: "textformat.size")
+                }
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+        .background(.ultraThinMaterial)
+        .alert("Add Link", isPresented: $showingLinkPrompt) {
+            TextField("https://example.com", text: $linkURL)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+            Button("Cancel", role: .cancel) {
+                linkURL = ""
+            }
+            Button("Add") {
+                if let url = URL(string: linkURL.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    context.applyLink(url)
+                }
+                linkURL = ""
+            }
+        } message: {
+            Text("Add a link to the selected text.")
+        }
+    }
+}
+
+// MARK: - AI Draft Sheet
+
+enum AIDraftTone: String, CaseIterable, Identifiable {
+    case professional = "Professional"
+    case friendly = "Friendly"
+    case direct = "Direct"
+
+    var id: String { rawValue }
+}
+
+enum AIDraftLength: String, CaseIterable, Identifiable {
+    case short = "Short"
+    case medium = "Medium"
+    case detailed = "Detailed"
+
+    var id: String { rawValue }
+}
+
+struct AIDraftResult {
+    let subject: String
+    let body: String
+}
+
+struct AIDraftSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var prompt = ""
+    @State private var tone: AIDraftTone = .professional
+    @State private var length: AIDraftLength = .medium
+    @State private var includeSubject = true
+
+    let onGenerate: (String, AIDraftTone, AIDraftLength, Bool) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("What do you want to say?") {
+                    TextEditor(text: $prompt)
+                        .frame(minHeight: 140)
+                }
+
+                Section("Tone") {
+                    Picker("Tone", selection: $tone) {
+                        ForEach(AIDraftTone.allCases) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("Length") {
+                    Picker("Length", selection: $length) {
+                        ForEach(AIDraftLength.allCases) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section {
+                    Toggle("Suggest subject line", isOn: $includeSubject)
+                }
+            }
+            .navigationTitle("AI Draft")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Generate") {
+                        onGenerate(prompt, tone, length, includeSubject)
+                        dismiss()
+                    }
+                    .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Rich Text Editor
+
+final class RichTextContext: ObservableObject {
+    @Published var selectedRange: NSRange = NSRange(location: 0, length: 0)
+    weak var textView: UITextView?
+    var onTextChange: ((NSAttributedString) -> Void)?
+
+    func toggleBold() { toggleTrait(.traitBold) }
+    func toggleItalic() { toggleTrait(.traitItalic) }
+
+    func toggleUnderline() {
+        applyAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue)
+    }
+
+    func applyLink(_ url: URL) {
+        applyAttribute(.link, value: url)
+    }
+
+    func toggleFontSize() {
+        guard let textView = textView else { return }
+        let mutable = NSMutableAttributedString(attributedString: textView.attributedText)
+        let range = textView.selectedRange
+
+        let styles: [UIFont.TextStyle] = [.body, .headline, .title3]
+
+        if range.length > 0 {
+            mutable.enumerateAttribute(.font, in: range, options: []) { value, range, _ in
+                let currentFont = (value as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+                let nextStyle = nextStyleFor(font: currentFont, styles: styles)
+                let nextFont = UIFont.preferredFont(forTextStyle: nextStyle)
+                mutable.addAttribute(.font, value: nextFont, range: range)
+            }
+            textView.attributedText = mutable
+            textView.selectedRange = range
+            onTextChange?(mutable)
+        } else {
+            let currentFont = currentFont(from: textView)
+            let nextStyle = nextStyleFor(font: currentFont, styles: styles)
+            let nextFont = UIFont.preferredFont(forTextStyle: nextStyle)
+            textView.typingAttributes[.font] = nextFont
+        }
+    }
+
+    func clearFormatting() {
+        guard let textView = textView else { return }
+        let font = UIFont.preferredFont(forTextStyle: .body)
+        let mutable = NSMutableAttributedString(string: textView.text ?? "", attributes: [.font: font])
+        textView.attributedText = mutable
+        textView.typingAttributes = [.font: font]
+        onTextChange?(mutable)
+    }
+
+    func insertBulletList() {
+        guard let textView = textView else { return }
+        let mutable = NSMutableAttributedString(attributedString: textView.attributedText)
+        let full = mutable.string as NSString
+        var range = textView.selectedRange
+        if range.length == 0 {
+            range = full.lineRange(for: NSRange(location: range.location, length: 0))
+        } else {
+            range = full.paragraphRange(for: range)
+        }
+
+        var index = range.location
+        while index < range.location + range.length {
+            let lineRange = full.lineRange(for: NSRange(location: index, length: 0))
+            let lineText = full.substring(with: lineRange)
+            if !lineText.hasPrefix("• ") {
+                mutable.insert(NSAttributedString(string: "• "), at: lineRange.location)
+                range.length += 2
+            }
+            index = lineRange.location + lineRange.length + 2
+        }
+
+        textView.attributedText = mutable
+        textView.selectedRange = NSRange(location: range.location + range.length, length: 0)
+        onTextChange?(mutable)
+    }
+
+    private func toggleTrait(_ trait: UIFontDescriptor.SymbolicTraits) {
+        guard let textView = textView else { return }
+        let mutable = NSMutableAttributedString(attributedString: textView.attributedText)
+        let range = textView.selectedRange
+        let font = currentFont(from: textView)
+
+        if range.length > 0 {
+            mutable.enumerateAttribute(.font, in: range, options: []) { value, range, _ in
+                let baseFont = (value as? UIFont) ?? font
+                let newFont = toggledFont(baseFont, trait: trait)
+                mutable.addAttribute(.font, value: newFont, range: range)
+            }
+            textView.attributedText = mutable
+            textView.selectedRange = range
+            onTextChange?(mutable)
+        } else {
+            let newFont = toggledFont(font, trait: trait)
+            textView.typingAttributes[.font] = newFont
+        }
+    }
+
+    private func applyAttribute(_ key: NSAttributedString.Key, value: Any) {
+        guard let textView = textView else { return }
+        let mutable = NSMutableAttributedString(attributedString: textView.attributedText)
+        let range = textView.selectedRange
+        if range.length > 0 {
+            mutable.addAttribute(key, value: value, range: range)
+            textView.attributedText = mutable
+            textView.selectedRange = range
+            onTextChange?(mutable)
+        } else {
+            textView.typingAttributes[key] = value
+        }
+    }
+
+    private func currentFont(from textView: UITextView) -> UIFont {
+        if let font = textView.typingAttributes[.font] as? UIFont {
+            return font
+        }
+        return UIFont.preferredFont(forTextStyle: .body)
+    }
+
+    private func nextStyleFor(font: UIFont, styles: [UIFont.TextStyle]) -> UIFont.TextStyle {
+        let currentStyle = styles.first { UIFont.preferredFont(forTextStyle: $0).fontName == font.fontName } ?? .body
+        if let index = styles.firstIndex(of: currentStyle) {
+            let nextIndex = (index + 1) % styles.count
+            return styles[nextIndex]
+        }
+        return .body
+    }
+
+    private func toggledFont(_ font: UIFont, trait: UIFontDescriptor.SymbolicTraits) -> UIFont {
+        var traits = font.fontDescriptor.symbolicTraits
+        if traits.contains(trait) {
+            traits.remove(trait)
+        } else {
+            traits.insert(trait)
+        }
+        if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
+            return UIFont(descriptor: descriptor, size: font.pointSize)
+        }
+        return font
+    }
+}
+
+struct RichTextEditor: UIViewRepresentable {
+    @Binding var attributedText: NSAttributedString
+    @ObservedObject var context: RichTextContext
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.font = UIFont.preferredFont(forTextStyle: .body)
+        textView.backgroundColor = .clear
+        textView.isScrollEnabled = false
+        textView.delegate = context.coordinator
+        textView.textContainerInset = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
+        self.context.textView = textView
+        self.context.onTextChange = { updated in
+            self.attributedText = updated
+        }
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        if !textView.attributedText.isEqual(attributedText) {
+            textView.attributedText = attributedText
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UITextViewDelegate {
+        let parent: RichTextEditor
+
+        init(_ parent: RichTextEditor) {
+            self.parent = parent
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            parent.attributedText = textView.attributedText
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            parent.context.selectedRange = textView.selectedRange
+        }
+    }
+}
+
 // MARK: - Sending Overlay
 
 struct SendingOverlay: View {
@@ -423,6 +788,27 @@ struct SendingOverlay: View {
     }
 }
 
+struct StatusOverlay: View {
+    let title: String
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                ProgressView()
+                    .scaleEffect(1.5)
+                Text(title)
+                    .font(.headline)
+            }
+            .padding(32)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+}
+
 // MARK: - Compose ViewModel
 
 @MainActor
@@ -431,7 +817,7 @@ class ComposeViewModel: ObservableObject {
     @Published var cc: [String] = []
     @Published var bcc: [String] = []
     @Published var subject: String = ""
-    @Published var body: String = ""
+    @Published var bodyAttributed: NSAttributedString = ComposeViewModel.attributedBody(from: "")
 
     // Pending input in recipient text fields
     @Published var pendingToInput: String = ""
@@ -442,6 +828,8 @@ class ComposeViewModel: ObservableObject {
     @Published var showAttachmentPicker = false
     @Published var showDiscardAlert = false
     @Published var isSending = false
+    @Published var isGeneratingDraft = false
+    @Published var aiDraftError: String?
     @Published var error: Error?
 
     private var replyToMessageId: String?
@@ -449,12 +837,12 @@ class ComposeViewModel: ObservableObject {
     private var draftId: String?
 
     var hasContent: Bool {
-        !to.isEmpty || !subject.isEmpty || !body.isEmpty
+        !to.isEmpty || !subject.isEmpty || !bodyAttributed.string.isEmpty
     }
 
     var canSend: Bool {
         let hasRecipient = !to.isEmpty || pendingToInput.contains("@")
-        return hasRecipient && (!subject.isEmpty || !body.isEmpty)
+        return hasRecipient && (!subject.isEmpty || !bodyAttributed.string.isEmpty)
     }
 
     /// Adds any pending text in recipient fields to the recipient arrays
@@ -499,7 +887,7 @@ class ComposeViewModel: ObservableObject {
             let senderEmail = EmailParser.extractSenderEmail(from: email.from)
             to = [senderEmail]
             subject = email.subject.hasPrefix("Re:") ? email.subject : "Re: \(email.subject)"
-            body = buildQuotedReply(email)
+            bodyAttributed = Self.attributedBody(from: buildQuotedReply(email))
             replyThreadId = threadId
             replyToMessageId = email.id
 
@@ -508,19 +896,19 @@ class ComposeViewModel: ObservableObject {
             to = [senderEmail]
             cc = email.cc
             subject = email.subject.hasPrefix("Re:") ? email.subject : "Re: \(email.subject)"
-            body = buildQuotedReply(email)
+            bodyAttributed = Self.attributedBody(from: buildQuotedReply(email))
             replyThreadId = threadId
             replyToMessageId = email.id
 
         case .forward(let email):
             subject = email.subject.hasPrefix("Fwd:") ? email.subject : "Fwd: \(email.subject)"
-            body = buildForwardedMessage(email)
+            bodyAttributed = Self.attributedBody(from: buildForwardedMessage(email))
 
         case .draft(let id, let toAddrs, let subj, let bodyText):
             draftId = id
             to = toAddrs
             subject = subj
-            body = bodyText
+            bodyAttributed = Self.attributedBody(from: bodyText)
         }
     }
 
@@ -534,7 +922,8 @@ class ComposeViewModel: ObservableObject {
                 cc: cc,
                 bcc: bcc,
                 subject: subject,
-                body: body,
+                body: plainBody(),
+                bodyHtml: htmlBody(),
                 inReplyTo: replyToMessageId,
                 threadId: replyThreadId
             )
@@ -560,11 +949,28 @@ class ComposeViewModel: ObservableObject {
             _ = try await GmailService.shared.saveDraft(
                 to: to,
                 subject: subject,
-                body: body,
+                body: plainBody(),
                 existingDraftId: draftId
             )
         } catch {
             self.error = error
+        }
+    }
+
+    @MainActor
+    func applyAIDraft(prompt: String, tone: AIDraftTone, length: AIDraftLength, includeSubject: Bool) async {
+        isGeneratingDraft = true
+        aiDraftError = nil
+        defer { isGeneratingDraft = false }
+
+        do {
+            let draft = try await generateAIDraft(prompt: prompt, tone: tone, length: length)
+            if includeSubject, !draft.subject.isEmpty {
+                subject = draft.subject
+            }
+            bodyAttributed = Self.attributedBody(from: draft.body)
+        } catch {
+            aiDraftError = "Apple Intelligence is unavailable right now."
         }
     }
 
@@ -593,6 +999,75 @@ class ComposeViewModel: ObservableObject {
 
         \(email.body)
         """
+    }
+
+    private func plainBody() -> String {
+        bodyAttributed.string
+    }
+
+    private func htmlBody() -> String? {
+        let range = NSRange(location: 0, length: bodyAttributed.length)
+        let documentAttributes: [NSAttributedString.DocumentAttributeKey: Any] = [
+            .documentType: NSAttributedString.DocumentType.html
+        ]
+        if let data = try? bodyAttributed.data(from: range, documentAttributes: documentAttributes),
+           let html = String(data: data, encoding: .utf8) {
+            return html
+        }
+        return nil
+    }
+
+    private static func attributedBody(from text: String) -> NSAttributedString {
+        let font = UIFont.preferredFont(forTextStyle: .body)
+        return NSAttributedString(string: text, attributes: [.font: font])
+    }
+
+    private func generateAIDraft(prompt: String, tone: AIDraftTone, length: AIDraftLength) async throws -> AIDraftResult {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            let session = LanguageModelSession()
+            let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            let toneValue = tone.rawValue
+            let lengthValue = length.rawValue
+            let instruction = """
+            You are writing an email draft. Tone: \(toneValue). Length: \(lengthValue).
+            Output exactly:
+            Subject: <subject line>
+            Body:
+            <email body>
+
+            Prompt:
+            \(trimmed)
+            """
+            let response = try await session.respond(to: instruction)
+            let text = String(describing: response.content)
+            return parseAIDraft(text)
+        }
+        #endif
+        throw DraftError.unavailable
+    }
+
+    private func parseAIDraft(_ text: String) -> AIDraftResult {
+        let cleaned = text
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var subject = ""
+        var body = cleaned
+
+        if let subjectRange = cleaned.range(of: "Subject:", options: .caseInsensitive),
+           let bodyRange = cleaned.range(of: "Body:", options: .caseInsensitive) {
+            subject = cleaned[subjectRange.upperBound..<bodyRange.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            body = cleaned[bodyRange.upperBound...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return AIDraftResult(subject: subject, body: body)
+    }
+
+    private enum DraftError: Error {
+        case unavailable
     }
 }
 

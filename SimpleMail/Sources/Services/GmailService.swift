@@ -1155,7 +1155,10 @@ actor GmailService: GmailAPIProvider {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = requestTimeout
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Use retry logic for transient network failures
+        let (data, response) = try await NetworkRetry.withRetry(maxAttempts: 3) {
+            try await URLSession.shared.data(for: request)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             logger.error("Invalid response type from \(url.path)")

@@ -103,7 +103,14 @@ final class InboxViewModel {
         }
     }
 
-    // Note: blockedSendersObserver is automatically removed when the token is deallocated
+    deinit {
+        if let observer = blockedSendersObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = accountChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     // MARK: - Load Real Emails
 

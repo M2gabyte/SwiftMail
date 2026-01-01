@@ -58,10 +58,15 @@ struct InboxView: View {
                             Image(systemName: "magnifyingglass")
                         }
                         .accessibilityIdentifier("searchButton")
+                        .accessibilityLabel("Search emails")
+                        .accessibilityHint("Opens email search")
+
                         Button(action: { showingCompose = true }) {
                             Image(systemName: "square.and.pencil")
                         }
                         .accessibilityIdentifier("composeButton")
+                        .accessibilityLabel("Compose new email")
+                        .accessibilityHint("Opens email composer")
                     }
                 }
             }
@@ -86,6 +91,18 @@ struct InboxView: View {
                     .padding(.bottom, 16)
                 }
             }
+            .overlay(alignment: .top) {
+                if let error = viewModel.error {
+                    ErrorBanner(
+                        error: error,
+                        onDismiss: { viewModel.error = nil },
+                        onRetry: { Task { await viewModel.loadEmails() } }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 8)
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.error != nil)
             .onAppear {
                 loadSettings()
             }

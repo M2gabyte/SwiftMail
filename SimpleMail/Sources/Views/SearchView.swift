@@ -299,11 +299,12 @@ class SearchViewModel: ObservableObject {
     private var accountEmail: String? { AuthService.shared.currentAccount?.email }
     private var searchTask: Task<Void, Never>?
     private let debounceInterval: TimeInterval = 0.3
+    private var accountChangeObserver: NSObjectProtocol?
 
     init() {
         loadRecentSearches()
 
-        NotificationCenter.default.addObserver(
+        accountChangeObserver = NotificationCenter.default.addObserver(
             forName: .accountDidChange,
             object: nil,
             queue: .main
@@ -311,6 +312,13 @@ class SearchViewModel: ObservableObject {
             Task { @MainActor in
                 self?.loadRecentSearches()
             }
+        }
+    }
+
+    deinit {
+        searchTask?.cancel()
+        if let observer = accountChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 

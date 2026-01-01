@@ -332,6 +332,7 @@ class SettingsViewModel: ObservableObject {
     private let settingsKeyBase = "appSettings"
     private let gmailSyncKeyBase = "lastGmailSettingsSync"
     private var accountEmail: String? { currentAccount?.email.lowercased() }
+    private var accountChangeObserver: NSObjectProtocol?
 
     init() {
         currentAccount = AuthService.shared.currentAccount
@@ -339,7 +340,7 @@ class SettingsViewModel: ObservableObject {
         lastGmailSettingsSync = AccountDefaults.date(for: gmailSyncKeyBase, accountEmail: accountEmail)
         calculateCacheSize()
 
-        NotificationCenter.default.addObserver(
+        accountChangeObserver = NotificationCenter.default.addObserver(
             forName: .accountDidChange,
             object: nil,
             queue: .main
@@ -351,6 +352,12 @@ class SettingsViewModel: ObservableObject {
                 self.lastGmailSettingsSync = AccountDefaults.date(for: self.gmailSyncKeyBase, accountEmail: self.accountEmail)
                 self.calculateCacheSize()
             }
+        }
+    }
+
+    deinit {
+        if let observer = accountChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 
