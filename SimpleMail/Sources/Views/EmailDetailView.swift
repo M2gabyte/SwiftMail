@@ -285,26 +285,38 @@ struct EmailBodyView: View {
     @State private var contentHeight: CGFloat = 200
     @State private var showImages = false
 
+    private var hasImages: Bool {
+        let lowered = html.lowercased()
+        return lowered.contains("<img") || lowered.contains("background-image")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            EmailBodyWebView(html: html, contentHeight: $contentHeight, blockImages: !showImages)
-                .frame(height: contentHeight)
-
-            // Show "Load Images" button if images are blocked
-            if !showImages && html.lowercased().contains("<img") {
+            // Show "Load Images" button at TOP if images are blocked
+            if !showImages && hasImages {
                 Button {
                     showImages = true
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "photo")
-                        Text("Load Images")
+                    HStack(spacing: 6) {
+                        Image(systemName: "photo.fill")
+                        Text("Load Remote Images")
                     }
-                    .font(.caption)
-                    .foregroundStyle(.blue)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.blue)
+                    .clipShape(Capsule())
                 }
                 .padding(.horizontal, 16)
+                .padding(.bottom, 8)
             }
+
+            EmailBodyWebView(html: html, contentHeight: $contentHeight, blockImages: !showImages)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: contentHeight)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -567,7 +579,8 @@ struct EmailBodyWebView: UIViewRepresentable {
                 }
                 /* Constrain images and tables to viewport */
                 img { max-width: 100% !important; height: auto !important; }
-                table { max-width: 100% !important; }
+                table { max-width: 100% !important; width: 100% !important; }
+                td, th { max-width: 100% !important; }
                 a { color: #007AFF; }
                 /* Collapse empty elements that create whitespace */
                 div:empty, span:empty, td:empty, p:empty {

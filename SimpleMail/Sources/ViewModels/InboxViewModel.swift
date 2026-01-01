@@ -73,6 +73,11 @@ final class InboxViewModel {
         emailSections.last?.emails.last?.id
     }
 
+    @discardableResult
+    private func animate(_ animation: Animation? = .default, _ body: () -> Void) -> Void {
+        withAnimation(animation, body)
+    }
+
     // MARK: - Init
 
     init() {
@@ -445,7 +450,7 @@ final class InboxViewModel {
         pendingArchive = PendingArchive(email: email, index: index)
 
         // Optimistic update - remove from list immediately
-        _ = withAnimation(.easeOut(duration: 0.25)) {
+        animate(.easeOut(duration: 0.25)) {
             emails.remove(at: index)
         }
         updateFilterCounts()
@@ -453,7 +458,7 @@ final class InboxViewModel {
 
         // Show undo toast
         undoToastMessage = "Email Archived"
-        _ = withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
             showingUndoToast = true
         }
 
@@ -481,7 +486,7 @@ final class InboxViewModel {
         // Restore the email at its original position
         guard let pending = pendingArchive else { return }
 
-        _ = withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
             // Insert at original index, clamped to valid range
             let insertIndex = min(pending.index, emails.count)
             emails.insert(pending.email, at: insertIndex)
@@ -495,7 +500,7 @@ final class InboxViewModel {
 
     private func finalizeArchive(_ email: Email) {
         // Hide toast
-        _ = withAnimation(.easeOut(duration: 0.2)) {
+        animate(.easeOut(duration: 0.2)) {
             showingUndoToast = false
         }
         pendingArchive = nil
@@ -521,7 +526,7 @@ final class InboxViewModel {
     }
 
     func trashEmail(_ email: Email) {
-        withAnimation {
+        animate {
             emails.removeAll { $0.id == email.id }
         }
         updateFilterCounts()
@@ -579,7 +584,7 @@ final class InboxViewModel {
 
     func snoozeEmail(_ email: Email, until date: Date) {
         // Archive the email optimistically
-        withAnimation {
+        animate {
             emails.removeAll { $0.id == email.id }
         }
         updateFilterCounts()
@@ -662,7 +667,7 @@ final class InboxViewModel {
     }
 
     func reportSpam(_ email: Email) {
-        withAnimation {
+        animate {
             emails.removeAll { $0.id == email.id }
         }
         updateFilterCounts()

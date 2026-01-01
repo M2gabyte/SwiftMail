@@ -21,7 +21,7 @@ final class EmailCacheManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.updateCacheStats()
             }
         }

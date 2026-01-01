@@ -44,158 +44,47 @@ struct ComposeView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    if viewModel.isRecoveredDraft {
-                        RecoveredDraftBanner()
-                            .padding(.horizontal)
-                            .padding(.top, 6)
-                    }
-                    // Recipients
-                    RecipientField(
-                        label: "To",
-                        recipients: $viewModel.to,
-                        pendingInput: $viewModel.pendingToInput,
-                        isFocused: focusedField == .to
-                    )
-                    .focused($focusedField, equals: .to)
+        composeRoot
+    }
 
-                    Divider().padding(.leading)
+    private var composeRoot: some View {
+        let content = applyToolbar(to: applyNavigation(to: composeContent))
+        let base = NavigationStack { content }
+        let overlays = applyOverlays(to: base)
+        let sheets = applySheets(to: overlays)
+        return applyObservers(to: sheets)
+    }
 
-                    if viewModel.showCcBcc {
-                        RecipientField(
-                            label: "Cc",
-                            recipients: $viewModel.cc,
-                            pendingInput: $viewModel.pendingCcInput,
-                            isFocused: focusedField == .cc
-                        )
-                        .focused($focusedField, equals: .cc)
-
-                        Divider().padding(.leading)
-
-                        RecipientField(
-                            label: "Bcc",
-                            recipients: $viewModel.bcc,
-                            pendingInput: $viewModel.pendingBccInput,
-                            isFocused: focusedField == .bcc
-                        )
-                        .focused($focusedField, equals: .bcc)
-
-                        Divider().padding(.leading)
-                    }
-
-                    // Subject
-                    HStack {
-                        Text("Subject")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 60, alignment: .leading)
-
-                        TextField("", text: $viewModel.subject)
-                            .textInputAutocapitalization(.sentences)
-                            .focused($focusedField, equals: .subject)
-                    }
-                    .padding()
-
-                    Divider().padding(.leading)
-
-                    if !viewModel.attachments.isEmpty {
-                        AttachmentPreviewRow(
-                            attachments: viewModel.attachments,
-                            onRemove: { attachment in
-                                viewModel.removeAttachment(attachment)
-                            }
-                        )
-                        .padding(.horizontal)
-                        Divider().padding(.leading)
-                    }
-
-                    // Body (rich text)
-                    ZStack(alignment: .topLeading) {
-                        RichTextEditor(
-                            attributedText: $viewModel.bodyAttributed,
-                            context: richTextContext
-                        )
-                        .frame(minHeight: 300)
-                        .focused($focusedField, equals: .body)
-
-                        if viewModel.bodyAttributed.string.isEmpty {
-                            Text("Write your message…")
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 8)
-                                .padding(.leading, 6)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-            }
+    private func applyNavigation<V: View>(to view: V) -> some View {
+        view
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("composeView")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        if viewModel.hasContent {
-                            viewModel.showDiscardAlert = true
-                        } else {
-                            dismiss()
-                        }
-                    }
-                    .accessibilityIdentifier("cancelCompose")
-                }
-
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button(action: { showingAIDraft = true }) {
-                        Image(systemName: "sparkles")
-                    }
-
-                    Button(action: { showingTemplates = true }) {
-                        Image(systemName: "doc.on.doc")
-                    }
-
-                    Button(action: { viewModel.showCcBcc.toggle() }) {
-                        Image(systemName: viewModel.showCcBcc ? "chevron.up" : "chevron.down")
-                    }
-
-                    Button(action: { viewModel.showAttachmentPicker = true }) {
-                        Image(systemName: "paperclip")
-                    }
-
-                    Button(action: { showingScheduleSheet = true }) {
-                        Image(systemName: "clock")
-                    }
-                    .disabled(!viewModel.canSend)
-
-                    Button(action: send) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.title2)
-                    }
-                    .disabled(!viewModel.canSend)
-                    .accessibilityIdentifier("sendButton")
-                }
-            }
-            .alert("Discard Draft?", isPresented: $viewModel.showDiscardAlert) {
-                Button("Discard", role: .destructive) {
-                    dismiss()
-                }
-                Button("Save Draft") {
-                    Task {
-                        await viewModel.saveDraft()
-                        dismiss()
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            }
-            .overlay {
-                if viewModel.isSending {
-                    SendingOverlay()
-                } else if viewModel.isGeneratingDraft {
-                    StatusOverlay(title: "Drafting...")
-                }
-            }
             .safeAreaInset(edge: .bottom) {
                 RichTextToolbar(context: richTextContext)
             }
+    }
+
+    private func applyToolbar<V: View>(to view: V) -> some View {
+        view.toolbar { composeToolbar }
+    }
+
+    private func applyOverlays<V: View>(to view: V) -> some View {
+        view
+            .overlay { composeOverlay }
+            .overlay(alignment: Alignment.bottom) {
+                if viewModel.showUndoSend {
+                    UndoSendToast(
+                        onUndo: { viewModel.undoSend() }
+                    )
+                    .padding(.bottom, 56)
+                    .transition(.move(edge: Edge.bottom).combined(with: .opacity))
+                }
+            }
+    }
+
+    private func applySheets<V: View>(to view: V) -> some View {
+        view
             .sheet(isPresented: $showingAIDraft) {
                 AIDraftSheet { prompt, tone, length, includeSubject in
                     Task {
@@ -252,7 +141,7 @@ struct ComposeView: View {
                 Button("Photo Library") { showingPhotoPicker = true }
                 Button("Files") { showingFileImporter = true }
             }
-            .photosPicker(isPresented: $showingPhotoPicker, selection: $selectedPhotos, matching: .images)
+            .photosPicker(isPresented: $showingPhotoPicker, selection: $selectedPhotos)
             .onChange(of: selectedPhotos) { _, newItems in
                 Task {
                     for item in newItems {
@@ -269,7 +158,7 @@ struct ComposeView: View {
             }
             .fileImporter(
                 isPresented: $showingFileImporter,
-                allowedContentTypes: [.data],
+                allowedContentTypes: [UTType.data],
                 allowsMultipleSelection: true
             ) { result in
                 switch result {
@@ -287,6 +176,22 @@ struct ComposeView: View {
                     break
                 }
             }
+            .alert("Discard Draft?", isPresented: $viewModel.showDiscardAlert) {
+                Button("Discard", role: .destructive) {
+                    dismiss()
+                }
+                Button("Save Draft") {
+                    Task {
+                        await viewModel.saveDraft()
+                        dismiss()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+    }
+
+    private func applyObservers<V: View>(to view: V) -> some View {
+        view
             .onChange(of: viewModel.showAttachmentPicker) { _, newValue in
                 if newValue {
                     showingAttachmentOptions = true
@@ -297,15 +202,6 @@ struct ComposeView: View {
                 if newValue {
                     dismiss()
                     viewModel.didSend = false
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if viewModel.showUndoSend {
-                    UndoSendToast(
-                        onUndo: { viewModel.undoSend() }
-                    )
-                    .padding(.bottom, 56)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .onChange(of: viewModel.subject) { _, _ in
@@ -323,6 +219,145 @@ struct ComposeView: View {
             .onChange(of: viewModel.bcc) { _, _ in
                 viewModel.scheduleAutoSave()
             }
+    }
+
+    private var composeContent: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                if viewModel.isRecoveredDraft {
+                    RecoveredDraftBanner()
+                        .padding(.horizontal)
+                        .padding(.top, 6)
+                }
+                // Recipients
+                RecipientField(
+                    label: "To",
+                    recipients: $viewModel.to,
+                    pendingInput: $viewModel.pendingToInput,
+                    isFocused: focusedField == .to
+                )
+                .focused($focusedField, equals: .to)
+
+                Divider().padding(.leading)
+
+                if viewModel.showCcBcc {
+                    RecipientField(
+                        label: "Cc",
+                        recipients: $viewModel.cc,
+                        pendingInput: $viewModel.pendingCcInput,
+                        isFocused: focusedField == .cc
+                    )
+                    .focused($focusedField, equals: .cc)
+
+                    Divider().padding(.leading)
+
+                    RecipientField(
+                        label: "Bcc",
+                        recipients: $viewModel.bcc,
+                        pendingInput: $viewModel.pendingBccInput,
+                        isFocused: focusedField == .bcc
+                    )
+                    .focused($focusedField, equals: .bcc)
+
+                    Divider().padding(.leading)
+                }
+
+                // Subject
+                HStack {
+                    Text("Subject")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 60, alignment: .leading)
+
+                    TextField("", text: $viewModel.subject)
+                        .textInputAutocapitalization(.sentences)
+                        .focused($focusedField, equals: .subject)
+                }
+                .padding()
+
+                Divider().padding(.leading)
+
+                if !viewModel.attachments.isEmpty {
+                    AttachmentPreviewRow(
+                        attachments: viewModel.attachments,
+                        onRemove: { attachment in
+                            viewModel.removeAttachment(attachment)
+                        }
+                    )
+                    .padding(.horizontal)
+                    Divider().padding(.leading)
+                }
+
+                // Body (rich text)
+                ZStack(alignment: .topLeading) {
+                    RichTextEditor(
+                        attributedText: $viewModel.bodyAttributed,
+                        context: richTextContext
+                    )
+                    .frame(minHeight: 300)
+                    .focused($focusedField, equals: .body)
+
+                    if viewModel.bodyAttributed.string.isEmpty {
+                        Text("Write your message…")
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 8)
+                            .padding(.leading, 6)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var composeToolbar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button("Cancel") {
+                if viewModel.hasContent {
+                    viewModel.showDiscardAlert = true
+                } else {
+                    dismiss()
+                }
+            }
+            .accessibilityIdentifier("cancelCompose")
+        }
+
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button(action: { showingAIDraft = true }) {
+                Image(systemName: "sparkles")
+            }
+
+            Button(action: { showingTemplates = true }) {
+                Image(systemName: "doc.on.doc")
+            }
+
+            Button(action: { viewModel.showCcBcc.toggle() }) {
+                Image(systemName: viewModel.showCcBcc ? "chevron.up" : "chevron.down")
+            }
+
+            Button(action: { viewModel.showAttachmentPicker = true }) {
+                Image(systemName: "paperclip")
+            }
+
+            Button(action: { showingScheduleSheet = true }) {
+                Image(systemName: "clock")
+            }
+            .disabled(!viewModel.canSend)
+
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title2)
+            }
+            .disabled(!viewModel.canSend)
+            .accessibilityIdentifier("sendButton")
+        }
+    }
+
+    @ViewBuilder
+    private var composeOverlay: some View {
+        if viewModel.isSending {
+            SendingOverlay()
+        } else if viewModel.isGeneratingDraft {
+            StatusOverlay(title: "Drafting...")
         }
     }
 
@@ -818,7 +853,8 @@ enum AIDraftLength: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct AIDraftResult {
+struct AIDraftResult: Identifiable {
+    let id = UUID()
     let subject: String
     let body: String
 }
