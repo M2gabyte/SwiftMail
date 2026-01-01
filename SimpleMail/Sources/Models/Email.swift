@@ -56,6 +56,7 @@ struct EmailDetailDTO: Sendable, Identifiable, Hashable {
     let to: [String]
     let cc: [String]
     let listUnsubscribe: String?
+    let accountEmail: String?
 
     var senderName: String {
         EmailParser.extractSenderName(from: from)
@@ -140,6 +141,7 @@ final class EmailDetail: Identifiable {
     var to: [String]
     var cc: [String]
     var listUnsubscribe: String?
+    var accountEmail: String?
 
     init(
         id: String,
@@ -155,7 +157,8 @@ final class EmailDetail: Identifiable {
         body: String = "",
         to: [String] = [],
         cc: [String] = [],
-        listUnsubscribe: String? = nil
+        listUnsubscribe: String? = nil,
+        accountEmail: String? = nil
     ) {
         self.id = id
         self.threadId = threadId
@@ -171,6 +174,7 @@ final class EmailDetail: Identifiable {
         self.to = to
         self.cc = cc
         self.listUnsubscribe = listUnsubscribe
+        self.accountEmail = accountEmail
     }
 }
 
@@ -185,6 +189,7 @@ final class SnoozedEmail: Identifiable {
     var from: String
     var date: Date
     var snoozeUntil: Date
+    var accountEmail: String?  // Account scoping to prevent data bleed
 
     init(
         id: String,
@@ -193,7 +198,8 @@ final class SnoozedEmail: Identifiable {
         snippet: String,
         from: String,
         date: Date,
-        snoozeUntil: Date
+        snoozeUntil: Date,
+        accountEmail: String? = nil
     ) {
         self.id = id
         self.threadId = threadId
@@ -202,6 +208,7 @@ final class SnoozedEmail: Identifiable {
         self.from = from
         self.date = date
         self.snoozeUntil = snoozeUntil
+        self.accountEmail = accountEmail
     }
 }
 
@@ -281,6 +288,27 @@ enum EmailParser: Sendable {
 // MARK: - Model to DTO Conversions
 
 extension Email {
+    convenience init(dto: EmailDTO) {
+        self.init(
+            id: dto.id,
+            threadId: dto.threadId,
+            snippet: dto.snippet,
+            subject: dto.subject,
+            from: dto.from,
+            date: dto.date,
+            isUnread: dto.isUnread,
+            isStarred: dto.isStarred,
+            hasAttachments: dto.hasAttachments,
+            labelIds: dto.labelIds,
+            messagesCount: dto.messagesCount,
+            accountEmail: dto.accountEmail,
+            listUnsubscribe: dto.listUnsubscribe,
+            listId: dto.listId,
+            precedence: dto.precedence,
+            autoSubmitted: dto.autoSubmitted
+        )
+    }
+
     /// Convert to Sendable DTO for cross-actor transfer
     func toDTO() -> EmailDTO {
         EmailDTO(
@@ -311,6 +339,26 @@ extension Email {
 }
 
 extension EmailDetail {
+    convenience init(dto: EmailDetailDTO) {
+        self.init(
+            id: dto.id,
+            threadId: dto.threadId,
+            snippet: dto.snippet,
+            subject: dto.subject,
+            from: dto.from,
+            date: dto.date,
+            isUnread: dto.isUnread,
+            isStarred: dto.isStarred,
+            hasAttachments: dto.hasAttachments,
+            labelIds: dto.labelIds,
+            body: dto.body,
+            to: dto.to,
+            cc: dto.cc,
+            listUnsubscribe: dto.listUnsubscribe
+        )
+        self.accountEmail = dto.accountEmail
+    }
+
     /// Convert to Sendable DTO for cross-actor transfer
     func toDTO() -> EmailDetailDTO {
         EmailDetailDTO(
@@ -327,7 +375,8 @@ extension EmailDetail {
             body: body,
             to: to,
             cc: cc,
-            listUnsubscribe: listUnsubscribe
+            listUnsubscribe: listUnsubscribe,
+            accountEmail: accountEmail
         )
     }
 }

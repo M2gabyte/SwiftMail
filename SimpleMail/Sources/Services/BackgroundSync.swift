@@ -131,10 +131,6 @@ final class BackgroundSyncManager {
             return
         }
 
-        // Load settings
-        let settings = loadSettings()
-        guard settings.notificationsEnabled else { return }
-
         // Prune old notification keys periodically
         pruneNotificationKeys()
 
@@ -144,29 +140,32 @@ final class BackgroundSyncManager {
             maxResults: 10
         )
 
-        let vipSenders = Set(UserDefaults.standard.stringArray(forKey: "vipSenders") ?? [])
-
         let newEmails = emails.filter { email in
             // Check if we've already notified for this email
-            !UserDefaults.standard.bool(forKey: "notified_\(email.id)")
+            !AccountDefaults.bool(for: "notified_\(email.id)", accountEmail: email.accountEmail)
         }
 
         for email in newEmails {
+            let accountEmail = email.accountEmail
+            let settings = loadSettings(accountEmail: accountEmail)
+            guard settings.notificationsEnabled else { continue }
+
+            let vipSenders = Set(AccountDefaults.stringArray(for: "vipSenders", accountEmail: accountEmail))
             let isVIP = vipSenders.contains(email.senderEmail.lowercased())
 
             // Check notification preferences
             if isVIP && settings.notifyVIPSenders {
                 await sendNotification(for: email, isVIP: true)
-                UserDefaults.standard.set(true, forKey: "notified_\(email.id)")
+                AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
             } else if settings.notifyNewEmails {
                 await sendNotification(for: email, isVIP: false)
-                UserDefaults.standard.set(true, forKey: "notified_\(email.id)")
+                AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
             }
         }
     }
 
-    private func loadSettings() -> AppSettings {
-        if let data = UserDefaults.standard.data(forKey: "appSettings"),
+    private func loadSettings(accountEmail: String?) -> AppSettings {
+        if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
            let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
             return settings
         }
@@ -242,7 +241,8 @@ final class BackgroundSyncManager {
         content.userInfo = [
             "emailId": email.id,
             "threadId": email.threadId,
-            "isVIP": isVIP
+            "isVIP": isVIP,
+            "accountEmail": email.accountEmail ?? ""
         ]
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -336,18 +336,29 @@ final class NotificationHandler: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
+        let accountEmail = (userInfo["accountEmail"] as? String)?.lowercased()
+        let account = AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
+
         Task {
             switch response.actionIdentifier {
             case "ARCHIVE":
                 do {
-                    try await GmailService.shared.archive(messageId: emailId)
+                    if let account {
+                        try await GmailService.shared.archive(messageId: emailId, account: account)
+                    } else {
+                        try await GmailService.shared.archive(messageId: emailId)
+                    }
                 } catch {
                     logger.error("Failed to archive from notification: \(error.localizedDescription)")
                 }
 
             case "MARK_READ":
                 do {
-                    try await GmailService.shared.markAsRead(messageId: emailId)
+                    if let account {
+                        try await GmailService.shared.markAsRead(messageId: emailId, account: account)
+                    } else {
+                        try await GmailService.shared.markAsRead(messageId: emailId)
+                    }
                 } catch {
                     logger.error("Failed to mark as read from notification: \(error.localizedDescription)")
                 }

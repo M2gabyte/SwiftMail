@@ -27,6 +27,7 @@ struct InboxView: View {
                     isLoadingMore: viewModel.isLoadingMore,
                     hasMoreEmails: viewModel.hasMoreEmails,
                     listDensity: listDensity,
+                    showAccountBadge: viewModel.currentMailbox == .allInboxes,
                     onTap: { email in viewModel.openEmail(email) },
                     onArchive: { email in viewModel.archiveEmail(email) },
                     onToggleRead: { email in viewModel.toggleRead(email) },
@@ -64,7 +65,7 @@ struct InboxView: View {
             }
             .navigationDestination(isPresented: $viewModel.showingEmailDetail) {
                 if let email = viewModel.selectedEmail {
-                    EmailDetailView(emailId: email.id, threadId: email.threadId)
+                    EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)
                 }
             }
             .sheet(isPresented: $showingSearch) {
@@ -89,11 +90,15 @@ struct InboxView: View {
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
                 loadSettings()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in
+                loadSettings()
+            }
         }
     }
 
     private func loadSettings() {
-        if let data = UserDefaults.standard.data(forKey: "appSettings"),
+        let accountEmail = AuthService.shared.currentAccount?.email
+        if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
            let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
             listDensity = settings.listDensity
         }
@@ -276,6 +281,7 @@ struct EmailListView: View {
     let isLoadingMore: Bool
     let hasMoreEmails: Bool
     let listDensity: ListDensity
+    let showAccountBadge: Bool
     let onTap: (Email) -> Void
     let onArchive: (Email) -> Void
     let onToggleRead: (Email) -> Void
@@ -291,7 +297,11 @@ struct EmailListView: View {
             ForEach(sections) { section in
                 Section {
                     ForEach(section.emails) { email in
-                        EmailRow(email: email, isCompact: listDensity == .compact)
+                        EmailRow(
+                            email: email,
+                            isCompact: listDensity == .compact,
+                            showAccountBadge: showAccountBadge
+                        )
                             .listRowBackground(Color(.systemBackground))
                             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -469,10 +479,18 @@ private enum DateFormatters {
 struct EmailRow: View {
     let email: Email
     var isCompact: Bool = false
+    var showAccountBadge: Bool = false
 
     private var isVIPSender: Bool {
-        let vipSenders = UserDefaults.standard.stringArray(forKey: "vipSenders") ?? []
+        let vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: email.accountEmail)
         return vipSenders.contains(email.senderEmail.lowercased())
+    }
+
+    private var accountLabel: String? {
+        guard showAccountBadge, let accountEmail = email.accountEmail else {
+            return nil
+        }
+        return accountEmail.split(separator: "@").first.map(String.init)
     }
 
     var body: some View {
@@ -498,6 +516,16 @@ struct EmailRow: View {
                         Image(systemName: "star.fill")
                             .font(.caption2)
                             .foregroundStyle(.yellow)
+                    }
+
+                    if let accountLabel = accountLabel {
+                        Text(accountLabel)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(.systemGray6))
+                            .clipShape(Capsule())
                     }
 
                     Spacer()
@@ -563,6 +591,7 @@ struct MailboxDropdown: View {
 }
 
 enum Mailbox: String, CaseIterable {
+    case allInboxes = "All Inboxes"
     case inbox = "Inbox"
     case sent = "Sent"
     case archive = "Archive"
@@ -572,6 +601,7 @@ enum Mailbox: String, CaseIterable {
 
     var icon: String {
         switch self {
+        case .allInboxes: return "tray.full"
         case .inbox: return "tray"
         case .sent: return "paperplane"
         case .archive: return "archivebox"

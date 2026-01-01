@@ -32,6 +32,19 @@ enum Config {
         return uri
     }()
 
+    /// OAuth callback scheme derived from redirect URI (the part before "://")
+    static var googleOAuthCallbackScheme: String {
+        if let schemeEnd = googleRedirectUri.range(of: "://") {
+            return String(googleRedirectUri[..<schemeEnd.lowerBound])
+        }
+        // Fallback: extract scheme from client ID (reversed domain format)
+        let clientIdParts = googleClientId.components(separatedBy: ".apps.googleusercontent.com")
+        if let clientNumber = clientIdParts.first {
+            return "com.googleusercontent.apps.\(clientNumber)"
+        }
+        return googleRedirectUri
+    }
+
     // MARK: - API Configuration
 
     static let gmailAPIBaseURL = "https://gmail.googleapis.com/gmail/v1"

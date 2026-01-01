@@ -9,6 +9,7 @@ private let detailLogger = Logger(subsystem: "com.simplemail.app", category: "Em
 struct EmailDetailView: View {
     let emailId: String
     let threadId: String
+    let accountEmail: String?
 
     @StateObject private var viewModel: EmailDetailViewModel
     @Environment(\.dismiss) private var dismiss
@@ -16,10 +17,11 @@ struct EmailDetailView: View {
     @State private var showingActionSheet = false
     @State private var showingSnoozeSheet = false
 
-    init(emailId: String, threadId: String) {
+    init(emailId: String, threadId: String, accountEmail: String? = nil) {
         self.emailId = emailId
         self.threadId = threadId
-        self._viewModel = StateObject(wrappedValue: EmailDetailViewModel(threadId: threadId))
+        self.accountEmail = accountEmail
+        self._viewModel = StateObject(wrappedValue: EmailDetailViewModel(threadId: threadId, accountEmail: accountEmail))
     }
 
     var body: some View {
@@ -288,25 +290,130 @@ struct EmailMessageCard: View {
 struct EmailBodyView: View {
     let html: String
     @State private var contentHeight: CGFloat = 200
+    @State private var showImages = false
 
     var body: some View {
-        EmailBodyWebView(html: html, contentHeight: $contentHeight)
-            .frame(height: contentHeight)
+        VStack(alignment: .leading, spacing: 8) {
+            EmailBodyWebView(html: html, contentHeight: $contentHeight, blockImages: !showImages)
+                .frame(height: contentHeight)
+
+            // Show "Load Images" button if images are blocked
+            if !showImages && html.lowercased().contains("<img") {
+                Button {
+                    showImages = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "photo")
+                        Text("Load Images")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+}
+
+// MARK: - HTML Sanitizer
+
+enum HTMLSanitizer {
+    /// Remove potentially dangerous HTML elements for security
+    /// Strips script, iframe, object, embed, form, and event handlers
+    static func sanitize(_ html: String) -> String {
+        var result = html
+
+        // Remove script tags and their contents
+        result = result.replacingOccurrences(
+            of: "<script[^>]*>[\\s\\S]*?</script>",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove inline event handlers (onclick, onerror, etc.)
+        result = result.replacingOccurrences(
+            of: "\\son\\w+\\s*=\\s*[\"'][^\"']*[\"']",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove javascript: URLs
+        result = result.replacingOccurrences(
+            of: "javascript\\s*:",
+            with: "blocked:",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        // Remove iframe tags
+        result = result.replacingOccurrences(
+            of: "<iframe[^>]*>[\\s\\S]*?</iframe>",
+            with: "",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "<iframe[^>]*/?>",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove object/embed tags
+        result = result.replacingOccurrences(
+            of: "<object[^>]*>[\\s\\S]*?</object>",
+            with: "",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "<embed[^>]*/?>",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove form tags (prevent phishing forms)
+        result = result.replacingOccurrences(
+            of: "<form[^>]*>",
+            with: "<div class=\"blocked-form\">",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(of: "</form>", with: "</div>")
+
+        return result
+    }
+
+    /// Block remote images by converting img src to data-src
+    static func blockImages(_ html: String) -> String {
+        // Replace src= with data-blocked-src= for remote images
+        var result = html
+
+        // Block http/https images
+        result = result.replacingOccurrences(
+            of: "<img([^>]*)src\\s*=\\s*[\"'](https?://[^\"']+)[\"']",
+            with: "<img$1data-blocked-src=\"$2\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\"",
+            options: .regularExpression
+        )
+
+        return result
     }
 }
 
 struct EmailBodyWebView: UIViewRepresentable {
     let html: String
     @Binding var contentHeight: CGFloat
+    var blockImages: Bool = true
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.dataDetectorTypes = [.link, .phoneNumber, .address]
 
-        // Enable JavaScript for height calculation
+        // JavaScript is needed for height calculation, but HTML is sanitized
+        // to remove malicious scripts, event handlers, and javascript: URLs
         let preferences = WKWebpagePreferences()
         preferences.allowsContentJavaScript = true
         config.defaultWebpagePreferences = preferences
+
+        // Add message handler for height updates
+        let contentController = WKUserContentController()
+        contentController.add(WeakScriptMessageHandler(coordinator: context.coordinator), name: "heightHandler")
+        config.userContentController = contentController
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
@@ -319,10 +426,19 @@ struct EmailBodyWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        // Only reload if HTML changed
-        guard context.coordinator.lastHTML != html else { return }
-        context.coordinator.lastHTML = html
+        // Only reload if HTML or blockImages changed
+        let cacheKey = "\(html)_\(blockImages)"
+        guard context.coordinator.lastHTML != cacheKey else { return }
+        context.coordinator.lastHTML = cacheKey
         context.coordinator.contentHeight = $contentHeight
+
+        // SECURITY: Sanitize HTML to prevent XSS attacks
+        var safeHTML = HTMLSanitizer.sanitize(html)
+
+        // Block remote images to prevent tracking (unless user opted in)
+        if blockImages {
+            safeHTML = HTMLSanitizer.blockImages(safeHTML)
+        }
 
         let styledHTML = """
         <!DOCTYPE html>
@@ -370,29 +486,11 @@ struct EmailBodyWebView: UIViewRepresentable {
                     pre, code { background: #2a2a2a; }
                     blockquote { border-left-color: #555; color: #aaa; }
                 }
+                .blocked-form { border: 1px dashed #ccc; padding: 8px; margin: 8px 0; }
             </style>
         </head>
         <body>
-            \(html)
-            <script>
-                function updateHeight() {
-                    var height = document.body.scrollHeight;
-                    window.webkit.messageHandlers.heightHandler.postMessage(height);
-                }
-                // Update after images load
-                document.addEventListener('DOMContentLoaded', function() {
-                    updateHeight();
-                    var images = document.querySelectorAll('img');
-                    images.forEach(function(img) {
-                        img.onload = updateHeight;
-                        img.onerror = updateHeight;
-                    });
-                    // Final update after a short delay
-                    setTimeout(updateHeight, 500);
-                });
-                // Also update on window load
-                window.onload = updateHeight;
-            </script>
+            \(safeHTML)
         </body>
         </html>
         """
@@ -827,6 +925,7 @@ struct EmailActionBadgesView: View {
 @MainActor
 class EmailDetailViewModel: ObservableObject {
     let threadId: String
+    let accountEmail: String?
 
     @Published var messages: [EmailDetail] = []
     @Published var expandedMessageIds: Set<String> = []
@@ -901,20 +1000,30 @@ class EmailDetailViewModel: ObservableObject {
 
     var isVIPSender: Bool {
         guard let email = senderEmail else { return false }
-        let vipSenders = UserDefaults.standard.stringArray(forKey: "vipSenders") ?? []
+        let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
+        let vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: settingsAccountEmail)
         return vipSenders.contains(email.lowercased())
     }
 
     var autoSummarizeEnabled: Bool {
-        if let data = UserDefaults.standard.data(forKey: "appSettings"),
+        let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
+        if let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail),
            let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
             return settings.autoSummarize
         }
         return true // Default to enabled
     }
 
-    init(threadId: String) {
+    private func accountForThread() -> AuthService.Account? {
+        guard let accountEmail = messages.first?.accountEmail?.lowercased() else {
+            return AuthService.shared.currentAccount
+        }
+        return AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
+    }
+
+    init(threadId: String, accountEmail: String?) {
         self.threadId = threadId
+        self.accountEmail = accountEmail
     }
 
     // Detect tracking pixels in email HTML
@@ -954,7 +1063,13 @@ class EmailDetailViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let messageDTOs = try await GmailService.shared.fetchThread(threadId: threadId)
+            let messageDTOs: [EmailDetailDTO]
+            if let accountEmail = accountEmail?.lowercased(),
+               let account = AuthService.shared.accounts.first(where: { $0.email.lowercased() == accountEmail }) {
+                messageDTOs = try await GmailService.shared.fetchThread(threadId: threadId, account: account)
+            } else {
+                messageDTOs = try await GmailService.shared.fetchThread(threadId: threadId)
+            }
             messages = messageDTOs.map(EmailDetail.init(dto:))
             // Expand the latest message by default
             if let lastId = messages.last?.id {
@@ -978,7 +1093,11 @@ class EmailDetailViewModel: ObservableObject {
             // Mark as read
             for message in messages where message.isUnread {
                 do {
-                    try await GmailService.shared.markAsRead(messageId: message.id)
+                    if let account = accountForThread() {
+                        try await GmailService.shared.markAsRead(messageId: message.id, account: account)
+                    } else {
+                        try await GmailService.shared.markAsRead(messageId: message.id)
+                    }
                 } catch {
                     detailLogger.error("Failed to mark message as read: \(error.localizedDescription)")
                 }
@@ -1034,7 +1153,11 @@ class EmailDetailViewModel: ObservableObject {
         // Use batch API for efficiency (single request vs N requests)
         let messageIds = messages.map(\.id)
         do {
-            try await GmailService.shared.batchArchive(messageIds: messageIds)
+            if let account = accountForThread() {
+                try await GmailService.shared.batchArchive(messageIds: messageIds, account: account)
+            } else {
+                try await GmailService.shared.batchArchive(messageIds: messageIds)
+            }
         } catch {
             detailLogger.error("Failed to archive thread: \(error.localizedDescription)")
             self.error = error
@@ -1045,7 +1168,11 @@ class EmailDetailViewModel: ObservableObject {
         // Use batch API for efficiency
         let messageIds = messages.map(\.id)
         do {
-            try await GmailService.shared.batchTrash(messageIds: messageIds)
+            if let account = accountForThread() {
+                try await GmailService.shared.batchTrash(messageIds: messageIds, account: account)
+            } else {
+                try await GmailService.shared.batchTrash(messageIds: messageIds)
+            }
         } catch {
             detailLogger.error("Failed to trash thread: \(error.localizedDescription)")
             self.error = error
@@ -1056,9 +1183,17 @@ class EmailDetailViewModel: ObservableObject {
         guard let lastMessage = messages.last else { return }
         do {
             if lastMessage.isStarred {
-                try await GmailService.shared.unstar(messageId: lastMessage.id)
+                if let account = accountForThread() {
+                    try await GmailService.shared.unstar(messageId: lastMessage.id, account: account)
+                } else {
+                    try await GmailService.shared.unstar(messageId: lastMessage.id)
+                }
             } else {
-                try await GmailService.shared.star(messageId: lastMessage.id)
+                if let account = accountForThread() {
+                    try await GmailService.shared.star(messageId: lastMessage.id, account: account)
+                } else {
+                    try await GmailService.shared.star(messageId: lastMessage.id)
+                }
             }
             await loadThread()
         } catch {
@@ -1073,10 +1208,18 @@ class EmailDetailViewModel: ObservableObject {
 
         do {
             if !unreadIds.isEmpty {
-                try await GmailService.shared.batchMarkAsRead(messageIds: unreadIds)
+                if let account = accountForThread() {
+                    try await GmailService.shared.batchMarkAsRead(messageIds: unreadIds, account: account)
+                } else {
+                    try await GmailService.shared.batchMarkAsRead(messageIds: unreadIds)
+                }
             }
             if !readIds.isEmpty {
-                try await GmailService.shared.batchMarkAsUnread(messageIds: readIds)
+                if let account = accountForThread() {
+                    try await GmailService.shared.batchMarkAsUnread(messageIds: readIds, account: account)
+                } else {
+                    try await GmailService.shared.batchMarkAsUnread(messageIds: readIds)
+                }
             }
             await loadThread()
         } catch {
@@ -1101,10 +1244,11 @@ class EmailDetailViewModel: ObservableObject {
         guard let email = senderEmail else { return }
 
         // Save to blocked senders list
-        var blockedSenders = UserDefaults.standard.stringArray(forKey: "blockedSenders") ?? []
+        let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
+        var blockedSenders = AccountDefaults.stringArray(for: "blockedSenders", accountEmail: settingsAccountEmail)
         if !blockedSenders.contains(email.lowercased()) {
             blockedSenders.append(email.lowercased())
-            UserDefaults.standard.set(blockedSenders, forKey: "blockedSenders")
+            AccountDefaults.setStringArray(blockedSenders, for: "blockedSenders", accountEmail: settingsAccountEmail)
         }
 
         // Move to trash
@@ -1114,9 +1258,14 @@ class EmailDetailViewModel: ObservableObject {
     }
 
     func reportSpam() async {
+        let account = accountForThread()
         for message in messages {
             do {
-                try await GmailService.shared.reportSpam(messageId: message.id)
+                if let account {
+                    try await GmailService.shared.reportSpam(messageId: message.id, account: account)
+                } else {
+                    try await GmailService.shared.reportSpam(messageId: message.id)
+                }
             } catch {
                 detailLogger.error("Failed to report spam: \(error.localizedDescription)")
             }
@@ -1128,7 +1277,8 @@ class EmailDetailViewModel: ObservableObject {
         guard let email = senderEmail else { return }
         let emailLower = email.lowercased()
 
-        var vipSenders = UserDefaults.standard.stringArray(forKey: "vipSenders") ?? []
+        let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
+        var vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: settingsAccountEmail)
 
         if vipSenders.contains(emailLower) {
             vipSenders.removeAll { $0 == emailLower }
@@ -1138,7 +1288,7 @@ class EmailDetailViewModel: ObservableObject {
             HapticFeedback.success()
         }
 
-        UserDefaults.standard.set(vipSenders, forKey: "vipSenders")
+        AccountDefaults.setStringArray(vipSenders, for: "vipSenders", accountEmail: settingsAccountEmail)
         objectWillChange.send() // Trigger UI update
     }
 }

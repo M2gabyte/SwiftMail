@@ -245,6 +245,13 @@ actor GmailService: GmailAPIProvider {
         return refreshedAccount.accessToken
     }
 
+    private func getAccessToken(for account: AuthService.Account) async throws -> String {
+        let refreshedAccount = try await MainActor.run {
+            try await AuthService.shared.refreshTokenIfNeeded(for: account)
+        }
+        return refreshedAccount.accessToken
+    }
+
     // MARK: - Fetch Inbox
 
     func fetchInbox(
@@ -259,7 +266,7 @@ actor GmailService: GmailAPIProvider {
         guard let account = await AuthService.shared.currentAccount else {
             throw GmailError.notAuthenticated
         }
-        let accountEmail = account.email
+        let accountEmail = account.email.lowercased()
         let refreshedAccount = try await AuthService.shared.refreshTokenIfNeeded(for: account)
         let token = refreshedAccount.accessToken
 
@@ -299,6 +306,63 @@ actor GmailService: GmailAPIProvider {
         }
 
         // Fetch details in batches
+        let emails = try await fetchEmailDetails(
+            messageIds: messageRefs.map(\.id),
+            token: token,
+            accountEmail: accountEmail
+        )
+
+        logger.info("Fetched \(emails.count) emails, hasMore=\(listResponse.nextPageToken != nil)")
+        return (emails, listResponse.nextPageToken)
+    }
+
+    func fetchInbox(
+        for account: AuthService.Account,
+        query: String? = nil,
+        maxResults: Int = 50,
+        pageToken: String? = nil,
+        labelIds: [String] = ["INBOX"]
+    ) async throws -> (emails: [EmailDTO], nextPageToken: String?) {
+        logger.info("Fetching inbox: labels=\(labelIds), max=\(maxResults), page=\(pageToken ?? "first")")
+
+        let accountEmail = account.email.lowercased()
+        let token = try await getAccessToken(for: account)
+
+        guard var components = URLComponents(string: "\(baseURL)/users/me/messages") else {
+            throw GmailError.invalidURL
+        }
+        var queryItems = [
+            URLQueryItem(name: "maxResults", value: String(maxResults))
+        ]
+
+        for labelId in labelIds {
+            queryItems.append(URLQueryItem(name: "labelIds", value: labelId))
+        }
+
+        if let query = query {
+            queryItems.append(URLQueryItem(name: "q", value: query))
+        }
+
+        if let pageToken = pageToken {
+            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+        }
+
+        components.queryItems = queryItems
+
+        guard let url = components.url else {
+            throw GmailError.invalidURL
+        }
+
+        let listResponse: MessageListResponse = try await request(
+            url: url,
+            token: token
+        )
+
+        guard let messageRefs = listResponse.messages, !messageRefs.isEmpty else {
+            logger.info("No emails found")
+            return ([], nil)
+        }
+
         let emails = try await fetchEmailDetails(
             messageIds: messageRefs.map(\.id),
             token: token,
@@ -372,7 +436,8 @@ actor GmailService: GmailAPIProvider {
         }
 
         let message: MessageResponse = try await request(url: url, token: token)
-        var emailDetail = parseEmailDetail(from: message)
+        let accountEmail = await MainActor.run { AuthService.shared.currentAccount?.email.lowercased() }
+        var emailDetail = parseEmailDetail(from: message, accountEmail: accountEmail)
 
         // Fetch body attachment if needed
         emailDetail = try await fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
@@ -393,9 +458,31 @@ actor GmailService: GmailAPIProvider {
         guard let messages = thread.messages else { return [] }
 
         // Parse all messages and fetch body attachments if needed
+        let accountEmail = await MainActor.run { AuthService.shared.currentAccount?.email.lowercased() }
         var emailDetails: [EmailDetailDTO] = []
         for message in messages {
-            var emailDetail = parseEmailDetail(from: message)
+            var emailDetail = parseEmailDetail(from: message, accountEmail: accountEmail)
+            emailDetail = try await fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
+            emailDetails.append(emailDetail)
+        }
+
+        return emailDetails
+    }
+
+    func fetchThread(threadId: String, account: AuthService.Account) async throws -> [EmailDetailDTO] {
+        let token = try await getAccessToken(for: account)
+        guard let url = URL(string: "\(baseURL)/users/me/threads/\(threadId)?format=full") else {
+            throw GmailError.invalidURL
+        }
+
+        let thread: ThreadResponse = try await request(url: url, token: token)
+
+        guard let messages = thread.messages else { return [] }
+
+        var emailDetails: [EmailDetailDTO] = []
+        let accountEmail = account.email.lowercased()
+        for message in messages {
+            var emailDetail = parseEmailDetail(from: message, accountEmail: accountEmail)
             emailDetail = try await fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
             emailDetails.append(emailDetail)
         }
@@ -457,7 +544,8 @@ actor GmailService: GmailAPIProvider {
             body: body,
             to: emailDetail.to,
             cc: emailDetail.cc,
-            listUnsubscribe: emailDetail.listUnsubscribe
+            listUnsubscribe: emailDetail.listUnsubscribe,
+            accountEmail: emailDetail.accountEmail
         )
     }
 
@@ -540,24 +628,48 @@ actor GmailService: GmailAPIProvider {
         try await modifyLabels(messageId: messageId, removeLabels: ["INBOX"])
     }
 
+    func archive(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, removeLabels: ["INBOX"], account: account)
+    }
+
     func unarchive(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, addLabels: ["INBOX"])
+    }
+
+    func unarchive(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["INBOX"], account: account)
     }
 
     func markAsRead(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, removeLabels: ["UNREAD"])
     }
 
+    func markAsRead(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, removeLabels: ["UNREAD"], account: account)
+    }
+
     func markAsUnread(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, addLabels: ["UNREAD"])
+    }
+
+    func markAsUnread(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["UNREAD"], account: account)
     }
 
     func star(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, addLabels: ["STARRED"])
     }
 
+    func star(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["STARRED"], account: account)
+    }
+
     func unstar(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, removeLabels: ["STARRED"])
+    }
+
+    func unstar(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, removeLabels: ["STARRED"], account: account)
     }
 
     func trash(messageId: String) async throws {
@@ -578,8 +690,44 @@ actor GmailService: GmailAPIProvider {
         }
     }
 
+    func trash(messageId: String, account: AuthService.Account) async throws {
+        let token = try await getAccessToken(for: account)
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/trash") else {
+            throw GmailError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = requestTimeout
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw GmailError.actionFailed
+        }
+    }
+
     func untrash(messageId: String) async throws {
         let token = try await getAccessToken()
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/untrash") else {
+            throw GmailError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = requestTimeout
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw GmailError.actionFailed
+        }
+    }
+
+    func untrash(messageId: String, account: AuthService.Account) async throws {
+        let token = try await getAccessToken(for: account)
         guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/untrash") else {
             throw GmailError.invalidURL
         }
@@ -618,6 +766,10 @@ actor GmailService: GmailAPIProvider {
         try await modifyLabels(messageId: messageId, addLabels: ["SPAM"], removeLabels: ["INBOX"])
     }
 
+    func reportSpam(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["SPAM"], removeLabels: ["INBOX"], account: account)
+    }
+
     func unmarkSpam(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, addLabels: ["INBOX"], removeLabels: ["SPAM"])
     }
@@ -636,6 +788,36 @@ actor GmailService: GmailAPIProvider {
         removeLabels: [String] = []
     ) async throws {
         let token = try await getAccessToken()
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/modify") else {
+            throw GmailError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = requestTimeout
+
+        let body: [String: Any] = [
+            "addLabelIds": addLabels,
+            "removeLabelIds": removeLabels
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw GmailError.actionFailed
+        }
+    }
+
+    private func modifyLabels(
+        messageId: String,
+        addLabels: [String] = [],
+        removeLabels: [String] = [],
+        account: AuthService.Account
+    ) async throws {
+        let token = try await getAccessToken(for: account)
         guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/modify") else {
             throw GmailError.invalidURL
         }
@@ -695,9 +877,46 @@ actor GmailService: GmailAPIProvider {
         }
     }
 
+    func batchModifyLabels(
+        messageIds: [String],
+        addLabels: [String] = [],
+        removeLabels: [String] = [],
+        account: AuthService.Account
+    ) async throws {
+        guard !messageIds.isEmpty else { return }
+
+        let token = try await getAccessToken(for: account)
+        guard let url = URL(string: "\(baseURL)/users/me/messages/batchModify") else {
+            throw GmailError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = requestTimeout
+
+        let body: [String: Any] = [
+            "ids": messageIds,
+            "addLabelIds": addLabels,
+            "removeLabelIds": removeLabels
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 else {
+            throw GmailError.actionFailed
+        }
+    }
+
     /// Batch archive (remove INBOX label) for multiple messages
     func batchArchive(messageIds: [String]) async throws {
         try await batchModifyLabels(messageIds: messageIds, removeLabels: ["INBOX"])
+    }
+
+    func batchArchive(messageIds: [String], account: AuthService.Account) async throws {
+        try await batchModifyLabels(messageIds: messageIds, removeLabels: ["INBOX"], account: account)
     }
 
     /// Batch mark as read for multiple messages
@@ -705,14 +924,26 @@ actor GmailService: GmailAPIProvider {
         try await batchModifyLabels(messageIds: messageIds, removeLabels: ["UNREAD"])
     }
 
+    func batchMarkAsRead(messageIds: [String], account: AuthService.Account) async throws {
+        try await batchModifyLabels(messageIds: messageIds, removeLabels: ["UNREAD"], account: account)
+    }
+
     /// Batch mark as unread for multiple messages
     func batchMarkAsUnread(messageIds: [String]) async throws {
         try await batchModifyLabels(messageIds: messageIds, addLabels: ["UNREAD"])
     }
 
+    func batchMarkAsUnread(messageIds: [String], account: AuthService.Account) async throws {
+        try await batchModifyLabels(messageIds: messageIds, addLabels: ["UNREAD"], account: account)
+    }
+
     /// Batch trash for multiple messages
     func batchTrash(messageIds: [String]) async throws {
         try await batchModifyLabels(messageIds: messageIds, addLabels: ["TRASH"], removeLabels: ["INBOX"])
+    }
+
+    func batchTrash(messageIds: [String], account: AuthService.Account) async throws {
+        try await batchModifyLabels(messageIds: messageIds, addLabels: ["TRASH"], removeLabels: ["INBOX"], account: account)
     }
 
     // MARK: - Send Email
@@ -1000,7 +1231,7 @@ actor GmailService: GmailAPIProvider {
         return email
     }
 
-    private nonisolated func parseEmailDetail(from message: MessageResponse) -> EmailDetailDTO {
+    private nonisolated func parseEmailDetail(from message: MessageResponse, accountEmail: String?) -> EmailDetailDTO {
         var from = ""
         var to: [String] = []
         var cc: [String] = []
@@ -1047,7 +1278,8 @@ actor GmailService: GmailAPIProvider {
             body: body,
             to: to,
             cc: cc,
-            listUnsubscribe: listUnsubscribe
+            listUnsubscribe: listUnsubscribe,
+            accountEmail: accountEmail
         )
     }
 

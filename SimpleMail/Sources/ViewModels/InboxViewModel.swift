@@ -10,6 +10,7 @@ private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxVie
 // Notification for when blocked senders list changes
 extension Notification.Name {
     static let blockedSendersDidChange = Notification.Name("blockedSendersDidChange")
+    static let cachesDidClear = Notification.Name("cachesDidClear")
 }
 
 @MainActor
@@ -56,6 +57,7 @@ final class InboxViewModel {
 
     // MARK: - Notification Observer
     @ObservationIgnored private var blockedSendersObserver: NSObjectProtocol?
+    @ObservationIgnored private var accountChangeObserver: NSObjectProtocol?
 
     // MARK: - Computed Properties
 
@@ -86,6 +88,16 @@ final class InboxViewModel {
             }
         }
 
+        accountChangeObserver = NotificationCenter.default.addObserver(
+            forName: .accountDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                await self?.loadEmails()
+            }
+        }
+
         Task {
             await loadEmails()
         }
@@ -104,16 +116,29 @@ final class InboxViewModel {
         }
 
         do {
-            let labelIds = labelIdsForMailbox(currentMailbox)
-            let query = mailboxQuery(for: currentMailbox)
-            let (fetchedEmails, pageToken) = try await GmailService.shared.fetchInbox(
-                query: query,
-                maxResults: 50,
-                labelIds: labelIds
-            )
-            let emailModels = fetchedEmails.map(Email.init(dto:))
-            self.emails = dedupeByThread(emailModels)
-            self.nextPageToken = pageToken
+            if currentMailbox == .allInboxes {
+                let accounts = AuthService.shared.accounts
+                let query = mailboxQuery(for: currentMailbox)
+                let labelIds = labelIdsForMailbox(currentMailbox)
+                let fetchedEmails = try await fetchUnifiedInbox(
+                    accounts: accounts,
+                    query: query,
+                    labelIds: labelIds
+                )
+                self.emails = dedupeByThread(fetchedEmails)
+                self.nextPageToken = nil
+            } else {
+                let labelIds = labelIdsForMailbox(currentMailbox)
+                let query = mailboxQuery(for: currentMailbox)
+                let (fetchedEmails, pageToken) = try await GmailService.shared.fetchInbox(
+                    query: query,
+                    maxResults: 50,
+                    labelIds: labelIds
+                )
+                let emailModels = fetchedEmails.map(Email.init(dto:))
+                self.emails = dedupeByThread(emailModels)
+                self.nextPageToken = pageToken
+            }
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")
             self.error = error
@@ -139,6 +164,10 @@ final class InboxViewModel {
     }
 
     func loadMoreEmails() async {
+        if currentMailbox == .allInboxes {
+            return
+        }
+
         guard let pageToken = nextPageToken, !isLoadingMore else { return }
 
         isLoadingMore = true
@@ -168,6 +197,7 @@ final class InboxViewModel {
 
     private func labelIdsForMailbox(_ mailbox: Mailbox) -> [String] {
         switch mailbox {
+        case .allInboxes: return ["INBOX"]
         case .inbox: return ["INBOX"]
         case .sent: return ["SENT"]
         case .archive: return []
@@ -181,6 +211,8 @@ final class InboxViewModel {
         switch mailbox {
         case .archive:
             return "-in:inbox -in:trash -in:spam"
+        case .allInboxes:
+            return nil
         default:
             return nil
         }
@@ -190,10 +222,12 @@ final class InboxViewModel {
         var seen = Set<String>()
         var deduped: [Email] = []
         for email in emails {
-            if seen.contains(email.threadId) {
+            let accountKey = email.accountEmail?.lowercased() ?? "unknown"
+            let key = "\(accountKey)::\(email.threadId)"
+            if seen.contains(key) {
                 continue
             }
-            seen.insert(email.threadId)
+            seen.insert(key)
             deduped.append(email)
         }
         return deduped
@@ -291,19 +325,24 @@ final class InboxViewModel {
 
     // MARK: - Filtering
 
-    private var blockedSenders: Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: "blockedSenders") ?? [])
+    private func blockedSenders(for accountEmail: String?) -> Set<String> {
+        Set(AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail))
+    }
+
+    private func accountForEmail(_ email: Email) -> AuthService.Account? {
+        if let accountEmail = email.accountEmail?.lowercased() {
+            return AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
+        }
+        return AuthService.shared.currentAccount
     }
 
     private func applyFilters(_ emails: [Email]) -> [Email] {
         var filtered = emails
 
         // Filter out blocked senders first
-        let blocked = blockedSenders
-        if !blocked.isEmpty {
-            filtered = filtered.filter { email in
-                !blocked.contains(email.senderEmail.lowercased())
-            }
+        filtered = filtered.filter { email in
+            let blocked = blockedSenders(for: email.accountEmail)
+            return !blocked.contains(email.senderEmail.lowercased())
         }
 
         // Apply scope filter (People = emails from real humans, not bulk/newsletters)
@@ -456,7 +495,11 @@ final class InboxViewModel {
         // Call Gmail API to actually archive
         Task {
             do {
-                try await GmailService.shared.archive(messageId: email.id)
+                if let account = accountForEmail(email) {
+                    try await GmailService.shared.archive(messageId: email.id, account: account)
+                } else {
+                    try await GmailService.shared.archive(messageId: email.id)
+                }
                 logger.info("Email archived: \(email.id)")
             } catch {
                 // Rollback on failure - reload emails
@@ -476,7 +519,11 @@ final class InboxViewModel {
 
         Task {
             do {
-                try await GmailService.shared.trash(messageId: email.id)
+                if let account = accountForEmail(email) {
+                    try await GmailService.shared.trash(messageId: email.id, account: account)
+                } else {
+                    try await GmailService.shared.trash(messageId: email.id)
+                }
             } catch {
                 self.error = error
                 await loadEmails()
@@ -493,9 +540,17 @@ final class InboxViewModel {
             Task {
                 do {
                     if wasStarred {
-                        try await GmailService.shared.unstar(messageId: email.id)
+                        if let account = accountForEmail(email) {
+                            try await GmailService.shared.unstar(messageId: email.id, account: account)
+                        } else {
+                            try await GmailService.shared.unstar(messageId: email.id)
+                        }
                     } else {
-                        try await GmailService.shared.star(messageId: email.id)
+                        if let account = accountForEmail(email) {
+                            try await GmailService.shared.star(messageId: email.id, account: account)
+                        } else {
+                            try await GmailService.shared.star(messageId: email.id)
+                        }
                     }
                 } catch {
                     // Rollback
@@ -519,7 +574,11 @@ final class InboxViewModel {
         Task {
             do {
                 // Archive via Gmail
-                try await GmailService.shared.archive(messageId: email.id)
+                if let account = accountForEmail(email) {
+                    try await GmailService.shared.archive(messageId: email.id, account: account)
+                } else {
+                    try await GmailService.shared.archive(messageId: email.id)
+                }
 
                 // Save snooze to local database for unsnoozing later
                 await SnoozeManager.shared.snoozeEmail(email, until: date)
@@ -540,9 +599,17 @@ final class InboxViewModel {
             Task {
                 do {
                     if wasUnread {
-                        try await GmailService.shared.markAsRead(messageId: email.id)
+                        if let account = accountForEmail(email) {
+                            try await GmailService.shared.markAsRead(messageId: email.id, account: account)
+                        } else {
+                            try await GmailService.shared.markAsRead(messageId: email.id)
+                        }
                     } else {
-                        try await GmailService.shared.markAsUnread(messageId: email.id)
+                        if let account = accountForEmail(email) {
+                            try await GmailService.shared.markAsUnread(messageId: email.id, account: account)
+                        } else {
+                            try await GmailService.shared.markAsUnread(messageId: email.id)
+                        }
                     }
                 } catch {
                     // Rollback
@@ -560,10 +627,11 @@ final class InboxViewModel {
         let senderEmail = email.senderEmail.lowercased()
 
         // Add to blocked senders list
-        var blockedSenders = UserDefaults.standard.stringArray(forKey: "blockedSenders") ?? []
+        let accountEmail = email.accountEmail ?? AuthService.shared.currentAccount?.email
+        var blockedSenders = AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail)
         if !blockedSenders.contains(senderEmail) {
             blockedSenders.append(senderEmail)
-            UserDefaults.standard.set(blockedSenders, forKey: "blockedSenders")
+            AccountDefaults.setStringArray(blockedSenders, for: "blockedSenders", accountEmail: accountEmail)
         }
 
         // Force re-filter to hide emails from this sender
@@ -583,12 +651,52 @@ final class InboxViewModel {
 
         Task {
             do {
-                try await GmailService.shared.reportSpam(messageId: email.id)
+                if let account = accountForEmail(email) {
+                    try await GmailService.shared.reportSpam(messageId: email.id, account: account)
+                } else {
+                    try await GmailService.shared.reportSpam(messageId: email.id)
+                }
             } catch {
                 self.error = error
                 await loadEmails()
             }
         }
+    }
+
+    // MARK: - Unified Inbox
+
+    private func fetchUnifiedInbox(
+        accounts: [AuthService.Account],
+        query: String?,
+        labelIds: [String]
+    ) async throws -> [Email] {
+        guard !accounts.isEmpty else { return [] }
+
+        var allEmails: [Email] = []
+        await withTaskGroup(of: [Email].self) { group in
+            for account in accounts {
+                group.addTask {
+                    do {
+                        let (emails, _) = try await GmailService.shared.fetchInbox(
+                            for: account,
+                            query: query,
+                            maxResults: 50,
+                            labelIds: labelIds
+                        )
+                        return emails.map(Email.init(dto:))
+                    } catch {
+                        logger.error("Unified inbox fetch failed for \(account.email): \(error.localizedDescription)")
+                        return []
+                    }
+                }
+            }
+
+            for await emails in group {
+                allEmails.append(contentsOf: emails)
+            }
+        }
+
+        return allEmails
     }
 
     func selectMailbox(_ mailbox: Mailbox) {
@@ -612,7 +720,11 @@ final class InboxViewModel {
             }
             Task {
                 do {
-                    try await GmailService.shared.markAsRead(messageId: email.id)
+                    if let account = accountForEmail(email) {
+                        try await GmailService.shared.markAsRead(messageId: email.id, account: account)
+                    } else {
+                        try await GmailService.shared.markAsRead(messageId: email.id)
+                    }
                 } catch {
                     logger.error("Failed to mark email as read: \(error.localizedDescription)")
                 }

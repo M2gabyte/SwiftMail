@@ -190,7 +190,7 @@ struct SearchResultsView: View {
     var body: some View {
         List {
             ForEach(results) { email in
-                NavigationLink(destination: EmailDetailView(emailId: email.id, threadId: email.threadId)) {
+                NavigationLink(destination: EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)) {
                     SearchResultRow(email: email)
                 }
                 .onTapGesture {
@@ -285,11 +285,20 @@ class SearchViewModel: ObservableObject {
     @Published var recentSearches: [String] = []
 
     private let recentSearchesKey = "recentSearches"
+    private var accountEmail: String? { AuthService.shared.currentAccount?.email }
     private var searchTask: Task<Void, Never>?
     private let debounceInterval: TimeInterval = 0.3
 
     init() {
         loadRecentSearches()
+
+        NotificationCenter.default.addObserver(
+            forName: .accountDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.loadRecentSearches()
+        }
     }
 
     /// Schedule a debounced search - cancels previous pending search
@@ -368,11 +377,11 @@ class SearchViewModel: ObservableObject {
     }
 
     private func loadRecentSearches() {
-        recentSearches = UserDefaults.standard.stringArray(forKey: recentSearchesKey) ?? []
+        recentSearches = AccountDefaults.stringArray(for: recentSearchesKey, accountEmail: accountEmail)
     }
 
     private func saveRecentSearches() {
-        UserDefaults.standard.set(recentSearches, forKey: recentSearchesKey)
+        AccountDefaults.setStringArray(recentSearches, for: recentSearchesKey, accountEmail: accountEmail)
     }
 }
 

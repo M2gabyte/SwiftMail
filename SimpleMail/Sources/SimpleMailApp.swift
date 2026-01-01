@@ -226,7 +226,8 @@ class BiometricAuthManager: ObservableObject {
     private let settingsKey = "appSettings"
 
     var isBiometricEnabled: Bool {
-        if let data = UserDefaults.standard.data(forKey: settingsKey),
+        let accountEmail = AuthService.shared.currentAccount?.email
+        if let data = AccountDefaults.data(for: settingsKey, accountEmail: accountEmail),
            let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
             return settings.biometricLock
         }

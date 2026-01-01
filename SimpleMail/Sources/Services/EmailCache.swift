@@ -15,7 +15,15 @@ final class EmailCacheManager: ObservableObject {
 
     private var modelContext: ModelContext?
 
-    private init() {}
+    private init() {
+        NotificationCenter.default.addObserver(
+            forName: .accountDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateCacheStats()
+        }
+    }
 
     // MARK: - Configuration
 
@@ -36,7 +44,22 @@ final class EmailCacheManager: ObservableObject {
             logger.warning("Failed to fetch cache count: \(error.localizedDescription)")
             cachedEmailCount = 0
         }
-        lastSyncDate = UserDefaults.standard.object(forKey: "lastEmailSync") as? Date
+        let accountEmail = AuthService.shared.currentAccount?.email
+        lastSyncDate = AccountDefaults.date(for: "lastEmailSync", accountEmail: accountEmail)
+    }
+
+    func cachedEmailCount(accountEmail: String?) -> Int {
+        guard let context = modelContext else { return 0 }
+        guard let accountEmail = accountEmail?.lowercased() else {
+            return cachedEmailCount
+        }
+
+        let descriptor = FetchDescriptor<Email>(
+            predicate: #Predicate { email in
+                email.accountEmail == accountEmail
+            }
+        )
+        return (try? context.fetchCount(descriptor)) ?? 0
     }
 
     // MARK: - Cache Emails
@@ -118,7 +141,8 @@ final class EmailCacheManager: ObservableObject {
 
         do {
             try context.save()
-            UserDefaults.standard.set(Date(), forKey: "lastEmailSync")
+            let accountEmail = emails.compactMap(\.accountEmail).first
+            AccountDefaults.setDate(Date(), for: "lastEmailSync", accountEmail: accountEmail)
             updateCacheStats()
             logger.info("Cached \(emails.count) emails")
         } catch {
@@ -128,13 +152,14 @@ final class EmailCacheManager: ObservableObject {
         // Cleanup: Only remove stale emails for FULL inbox fetches (not filtered/search/paginated)
         // This prevents incorrectly deleting valid cached emails when fetch returns partial results
         if isFullInboxFetch, let oldestDate = oldestFetchedDate, !fetchedIds.isEmpty {
-            removeStaleInboxEmails(fetchedIds: fetchedIds, since: oldestDate)
+            let accountEmail = emails.compactMap(\.accountEmail).first
+            removeStaleInboxEmails(fetchedIds: fetchedIds, since: oldestDate, accountEmail: accountEmail)
         }
     }
 
     // MARK: - Load Cached Emails
 
-    func loadCachedEmails(mailbox: Mailbox = .inbox, limit: Int = 100) -> [Email] {
+    func loadCachedEmails(mailbox: Mailbox = .inbox, limit: Int = 100, accountEmail: String? = nil) -> [Email] {
         guard let context = modelContext else { return [] }
 
         let labelIds = labelIdsForMailbox(mailbox)
@@ -161,7 +186,11 @@ final class EmailCacheManager: ObservableObject {
         }
 
         do {
-            return try context.fetch(descriptor)
+            let results = try context.fetch(descriptor)
+            if let accountEmail = accountEmail?.lowercased() {
+                return results.filter { $0.accountEmail == accountEmail }
+            }
+            return results
         } catch {
             logger.error("Failed to load cached emails: \(error.localizedDescription)")
             return []
@@ -170,7 +199,7 @@ final class EmailCacheManager: ObservableObject {
 
     // MARK: - Search Cached Emails
 
-    func searchCachedEmails(query: String) -> [Email] {
+    func searchCachedEmails(query: String, accountEmail: String? = nil) -> [Email] {
         guard let context = modelContext else { return [] }
 
         let lowercaseQuery = query.lowercased()
@@ -184,7 +213,11 @@ final class EmailCacheManager: ObservableObject {
         )
 
         do {
-            return try context.fetch(descriptor)
+            let results = try context.fetch(descriptor)
+            if let accountEmail = accountEmail?.lowercased() {
+                return results.filter { $0.accountEmail == accountEmail }
+            }
+            return results
         } catch {
             logger.error("Failed to search cached emails: \(error.localizedDescription)")
             return []
@@ -236,7 +269,7 @@ final class EmailCacheManager: ObservableObject {
 
     // MARK: - Cleanup Helpers
 
-    private func removeStaleInboxEmails(fetchedIds: Set<String>, since oldestDate: Date) {
+    private func removeStaleInboxEmails(fetchedIds: Set<String>, since oldestDate: Date, accountEmail: String?) {
         guard let context = modelContext else { return }
 
         let descriptor = FetchDescriptor<Email>(
@@ -248,6 +281,10 @@ final class EmailCacheManager: ObservableObject {
         do {
             let cached = try context.fetch(descriptor)
             for email in cached where !fetchedIds.contains(email.id) {
+                if let accountEmail = accountEmail?.lowercased(),
+                   email.accountEmail?.lowercased() != accountEmail {
+                    continue
+                }
                 context.delete(email)
             }
             try context.save()
@@ -273,6 +310,42 @@ final class EmailCacheManager: ObservableObject {
         }
     }
 
+    /// Clear cache for a specific account only
+    func clearCache(accountEmail: String?) {
+        guard let context = modelContext else { return }
+        guard let email = accountEmail?.lowercased() else {
+            // If no account specified, clear all
+            clearCache()
+            return
+        }
+
+        do {
+            // Delete emails for this account
+            let emailDescriptor = FetchDescriptor<Email>(
+                predicate: #Predicate { $0.accountEmail == email }
+            )
+            let emails = try context.fetch(emailDescriptor)
+            for e in emails {
+                context.delete(e)
+            }
+
+            // Delete email details for this account
+            let detailDescriptor = FetchDescriptor<EmailDetail>(
+                predicate: #Predicate { $0.accountEmail == email }
+            )
+            let details = try context.fetch(detailDescriptor)
+            for detail in details {
+                context.delete(detail)
+            }
+
+            try context.save()
+            updateCacheStats()
+            logger.info("Cache cleared for account: \(email)")
+        } catch {
+            logger.error("Failed to clear cache for account: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Cache Email Detail
 
     func cacheEmailDetail(_ detail: EmailDetail) {
@@ -288,6 +361,7 @@ final class EmailCacheManager: ObservableObject {
                 existing.body = detail.body
                 existing.isUnread = detail.isUnread
                 existing.isStarred = detail.isStarred
+                existing.accountEmail = detail.accountEmail
             } else {
                 let cached = EmailDetail(
                     id: detail.id,
@@ -302,7 +376,8 @@ final class EmailCacheManager: ObservableObject {
                     labelIds: detail.labelIds,
                     body: detail.body,
                     to: detail.to,
-                    cc: detail.cc
+                    cc: detail.cc,
+                    accountEmail: detail.accountEmail
                 )
                 context.insert(cached)
             }
@@ -333,6 +408,7 @@ final class EmailCacheManager: ObservableObject {
 
     private func labelIdsForMailbox(_ mailbox: Mailbox) -> [String] {
         switch mailbox {
+        case .allInboxes: return ["INBOX"]  // Unified inbox shows INBOX from all accounts
         case .inbox: return ["INBOX"]
         case .sent: return ["SENT"]
         case .archive: return []

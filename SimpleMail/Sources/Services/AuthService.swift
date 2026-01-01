@@ -3,6 +3,10 @@ import AuthenticationServices
 import CryptoKit
 import UIKit
 
+extension Notification.Name {
+    static let accountDidChange = Notification.Name("accountDidChange")
+}
+
 // MARK: - Auth Service
 
 @MainActor
@@ -122,7 +126,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
         let callbackURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
             let session = ASWebAuthenticationSession(
                 url: authURL,
-                callbackURLScheme: "com.googleusercontent.apps.328102220939-s1mjoq2mpsc1dh4c3kkudq3npmg8vusb"
+                callbackURLScheme: Config.googleOAuthCallbackScheme
             ) { callbackURL, error in
                 if let error = error {
                     continuation.resume(throwing: error)
@@ -297,6 +301,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
         currentAccount = account
         isAuthenticated = true
         saveAccounts()
+        NotificationCenter.default.post(name: .accountDidChange, object: nil)
     }
 
     func updateAccount(_ account: Account) {
@@ -306,6 +311,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
                 currentAccount = account
             }
             saveAccounts()
+            NotificationCenter.default.post(name: .accountDidChange, object: nil)
         }
     }
 
@@ -316,11 +322,13 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
         }
         isAuthenticated = !accounts.isEmpty
         saveAccounts()
+        NotificationCenter.default.post(name: .accountDidChange, object: nil)
     }
 
     func switchAccount(to account: Account) {
         currentAccount = account
         saveAccounts()
+        NotificationCenter.default.post(name: .accountDidChange, object: nil)
     }
 
     func signOut() {
@@ -328,6 +336,54 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
         currentAccount = nil
         isAuthenticated = false
         keychain.delete(key: "accounts")
+
+        // Clear all app caches to prevent data bleed between accounts
+        clearAllCaches()
+        NotificationCenter.default.post(name: .accountDidChange, object: nil)
+    }
+
+    /// Clear all cached data on sign-out to prevent data bleed between accounts
+    private func clearAllCaches() {
+        // 1. Clear SwiftData cache (emails, email details)
+        EmailCacheManager.shared.clearCache()
+
+        // 2. Clear UserDefaults entries related to user data
+        let defaults = UserDefaults.standard
+
+        // User-specific settings and data
+        let userDataKeys = [
+            "vipSenders",
+            "blockedSenders",
+            "appSettings",
+            "recentSearches",
+            "lastEmailSync",
+            "notificationKeyTimestamps"
+        ]
+
+        let allKeys = defaults.dictionaryRepresentation().keys
+        for key in allKeys {
+            for baseKey in userDataKeys where key == baseKey || key.hasPrefix("\(baseKey)::") {
+                defaults.removeObject(forKey: key)
+                break
+            }
+        }
+
+        // Clear notification de-dupe keys (prefixed with "notified_")
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("notified_") {
+            defaults.removeObject(forKey: key)
+        }
+
+        // Clear snoozed emails data
+        defaults.removeObject(forKey: "snoozedEmails")
+
+        // 3. Clear any in-memory caches
+        // AvatarService clears on dealloc, but force clear if needed
+        Task {
+            await AvatarService.shared.clearCache()
+        }
+
+        // 4. Notify observers that caches were cleared
+        NotificationCenter.default.post(name: .cachesDidClear, object: nil)
     }
 
     // MARK: - Persistence

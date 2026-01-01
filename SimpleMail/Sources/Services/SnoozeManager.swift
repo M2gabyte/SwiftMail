@@ -19,6 +19,14 @@ final class SnoozeManager {
 
     private init() {
         startSnoozeCheck()
+
+        NotificationCenter.default.addObserver(
+            forName: .accountDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.loadSnoozedEmails()
+        }
     }
 
     // Note: Singleton never deinits, timer lives with app lifecycle.
@@ -40,13 +48,23 @@ final class SnoozeManager {
             return
         }
 
-        let descriptor = FetchDescriptor<SnoozedEmail>(
+        // Filter by current account to prevent data bleed between accounts
+        let currentAccountEmail = AuthService.shared.currentAccount?.email.lowercased()
+
+        var descriptor = FetchDescriptor<SnoozedEmail>(
             sortBy: [SortDescriptor(\.snoozeUntil, order: .forward)]
         )
 
+        // Only show snoozed emails for the current account
+        if let accountEmail = currentAccountEmail {
+            descriptor.predicate = #Predicate { snoozed in
+                snoozed.accountEmail == accountEmail
+            }
+        }
+
         do {
             snoozedEmails = try context.fetch(descriptor)
-            logger.info("Loaded \(self.snoozedEmails.count) snoozed emails")
+            logger.info("Loaded \(self.snoozedEmails.count) snoozed emails for account")
         } catch {
             logger.error("Failed to load snoozed emails: \(error.localizedDescription)")
         }
@@ -60,6 +78,9 @@ final class SnoozeManager {
             return
         }
 
+        // Capture current account for proper scoping
+        let accountEmail = AuthService.shared.currentAccount?.email.lowercased()
+
         let snoozed = SnoozedEmail(
             id: email.id,
             threadId: email.threadId,
@@ -67,7 +88,8 @@ final class SnoozeManager {
             snippet: email.snippet,
             from: email.from,
             date: email.date,
-            snoozeUntil: date
+            snoozeUntil: date,
+            accountEmail: accountEmail
         )
 
         context.insert(snoozed)
@@ -94,7 +116,12 @@ final class SnoozeManager {
         }
 
         do {
-            try await GmailService.shared.unarchive(messageId: snoozed.id)
+            if let accountEmail = snoozed.accountEmail?.lowercased(),
+               let account = AuthService.shared.accounts.first(where: { $0.email.lowercased() == accountEmail }) {
+                try await GmailService.shared.unarchive(messageId: snoozed.id, account: account)
+            } else {
+                try await GmailService.shared.unarchive(messageId: snoozed.id)
+            }
             logger.info("Unarchived email via Gmail API")
         } catch {
             logger.error("Failed to unarchive email: \(error.localizedDescription)")

@@ -141,11 +141,11 @@ struct SettingsView: View {
                     Toggle("Smart Reply Suggestions", isOn: $viewModel.settings.smartReplies)
 
                     NavigationLink("VIP Senders") {
-                        VIPSendersView()
+                        VIPSendersView(accountEmail: viewModel.currentAccount?.email)
                     }
 
                     NavigationLink("Blocked Senders") {
-                        BlockedSendersView()
+                        BlockedSendersView(accountEmail: viewModel.currentAccount?.email)
                     }
                 } header: {
                     Text("Smart Features")
@@ -222,9 +222,15 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Link("Privacy Policy", destination: URL(string: "https://simplemail.app/privacy")!)
-                    Link("Terms of Service", destination: URL(string: "https://simplemail.app/terms")!)
-                    Link("Send Feedback", destination: URL(string: "mailto:support@simplemail.app")!)
+                    if let privacyURL = URL(string: "https://simplemail.app/privacy") {
+                        Link("Privacy Policy", destination: privacyURL)
+                    }
+                    if let termsURL = URL(string: "https://simplemail.app/terms") {
+                        Link("Terms of Service", destination: termsURL)
+                    }
+                    if let feedbackURL = URL(string: "mailto:support@simplemail.app") {
+                        Link("Send Feedback", destination: feedbackURL)
+                    }
                 } header: {
                     Text("About")
                 }
@@ -319,18 +325,31 @@ class SettingsViewModel: ObservableObject {
     @Published var lastGmailSettingsSync: Date?
     @Published var cacheSize = "Calculating..."
 
-    private let settingsKey = "appSettings"
-    private let gmailSyncKey = "lastGmailSettingsSync"
+    private let settingsKeyBase = "appSettings"
+    private let gmailSyncKeyBase = "lastGmailSettingsSync"
+    private var accountEmail: String? { currentAccount?.email.lowercased() }
 
     init() {
-        loadSettings()
         currentAccount = AuthService.shared.currentAccount
-        lastGmailSettingsSync = UserDefaults.standard.object(forKey: gmailSyncKey) as? Date
+        loadSettings()
+        lastGmailSettingsSync = AccountDefaults.date(for: gmailSyncKeyBase, accountEmail: accountEmail)
         calculateCacheSize()
+
+        NotificationCenter.default.addObserver(
+            forName: .accountDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.currentAccount = AuthService.shared.currentAccount
+            self.loadSettings()
+            self.lastGmailSettingsSync = AccountDefaults.date(for: self.gmailSyncKeyBase, accountEmail: self.accountEmail)
+            self.calculateCacheSize()
+        }
     }
 
     func loadSettings() {
-        if let data = UserDefaults.standard.data(forKey: settingsKey),
+        if let data = AccountDefaults.data(for: settingsKeyBase, accountEmail: accountEmail),
            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
             settings = decoded
         }
@@ -338,7 +357,7 @@ class SettingsViewModel: ObservableObject {
 
     func saveSettings() {
         if let encoded = try? JSONEncoder().encode(settings) {
-            UserDefaults.standard.set(encoded, forKey: settingsKey)
+            AccountDefaults.setData(encoded, for: settingsKeyBase, accountEmail: accountEmail)
         }
     }
 
@@ -358,7 +377,7 @@ class SettingsViewModel: ObservableObject {
             _ = try await GmailService.shared.fetchLabels()
 
             lastGmailSettingsSync = Date()
-            UserDefaults.standard.set(lastGmailSettingsSync, forKey: gmailSyncKey)
+            AccountDefaults.setDate(lastGmailSettingsSync, for: gmailSyncKeyBase, accountEmail: accountEmail)
 
             HapticFeedback.success()
         } catch {
@@ -368,18 +387,18 @@ class SettingsViewModel: ObservableObject {
     }
 
     func clearLocalCache() async {
-        EmailCacheManager.shared.clearCache()
+        EmailCacheManager.shared.clearCache(accountEmail: accountEmail)
         calculateCacheSize()
         HapticFeedback.success()
     }
 
     private func calculateCacheSize() {
-        let count = EmailCacheManager.shared.cachedEmailCount
+        let count = EmailCacheManager.shared.cachedEmailCount(accountEmail: accountEmail)
         cacheSize = "\(count) email\(count == 1 ? "" : "s")"
     }
 
     func signOut() async {
-        EmailCacheManager.shared.clearCache()
+        EmailCacheManager.shared.clearCache(accountEmail: accountEmail)
         AuthService.shared.signOut()
     }
 }
@@ -638,6 +657,7 @@ struct SignaturePreview: View {
 }
 
 struct VIPSendersView: View {
+    let accountEmail: String?
     @State private var vipSenders: [String] = []
     @State private var showingAddSheet = false
     @State private var newSenderEmail = ""
@@ -697,7 +717,7 @@ struct VIPSendersView: View {
     }
 
     private func loadVIPSenders() {
-        vipSenders = UserDefaults.standard.stringArray(forKey: vipSendersKey) ?? []
+        vipSenders = AccountDefaults.stringArray(for: vipSendersKey, accountEmail: accountEmail)
     }
 
     private func addVIPSender() {
@@ -707,19 +727,20 @@ struct VIPSendersView: View {
             return
         }
         vipSenders.append(email)
-        UserDefaults.standard.set(vipSenders, forKey: vipSendersKey)
+        AccountDefaults.setStringArray(vipSenders, for: vipSendersKey, accountEmail: accountEmail)
         newSenderEmail = ""
         HapticFeedback.success()
     }
 
     private func removeVIP(at offsets: IndexSet) {
         vipSenders.remove(atOffsets: offsets)
-        UserDefaults.standard.set(vipSenders, forKey: vipSendersKey)
+        AccountDefaults.setStringArray(vipSenders, for: vipSendersKey, accountEmail: accountEmail)
         HapticFeedback.light()
     }
 }
 
 struct BlockedSendersView: View {
+    let accountEmail: String?
     @State private var blockedSenders: [String] = []
 
     private let blockedSendersKey = "blockedSenders"
@@ -758,12 +779,12 @@ struct BlockedSendersView: View {
     }
 
     private func loadBlockedSenders() {
-        blockedSenders = UserDefaults.standard.stringArray(forKey: blockedSendersKey) ?? []
+        blockedSenders = AccountDefaults.stringArray(for: blockedSendersKey, accountEmail: accountEmail)
     }
 
     private func unblockSender(at offsets: IndexSet) {
         blockedSenders.remove(atOffsets: offsets)
-        UserDefaults.standard.set(blockedSenders, forKey: blockedSendersKey)
+        AccountDefaults.setStringArray(blockedSenders, for: blockedSendersKey, accountEmail: accountEmail)
         HapticFeedback.light()
     }
 }
