@@ -55,13 +55,22 @@ SimpleMail/
 │   │   ├── AuthService.swift        # OAuth authentication
 │   │   ├── GmailService.swift       # Gmail API client
 │   │   ├── PeopleService.swift      # Google People API (contacts)
-│   │   ├── AvatarService.swift      # Avatar caching & brand logos
+│   │   ├── AvatarService.swift      # Avatar resolution + caching
+│   │   ├── BrandRegistry.swift      # Brand domain registry (JSON-backed)
+│   │   ├── DomainNormalizer.swift   # Email + domain normalization
 │   │   ├── BackgroundSync.swift     # Background refresh
 │   │   ├── SnoozeManager.swift      # Snooze persistence
 │   │   └── EmailCache.swift         # Offline caching
 │   │
 │   ├── Engine/
 │   │   └── BriefingEngine.swift     # Email categorization/briefing
+│   │
+│   ├── Utils/
+│   │   ├── JSONCoding.swift         # Shared JSON encoders/decoders
+│   │   └── Color+Hex.swift          # Hex string to Color utilities
+│   │
+│   ├── Resources/
+│   │   └── brand_registry.json      # Domain registry data
 │   │
 │   └── Assets.xcassets/             # Images, colors, app icon
 │
@@ -370,10 +379,10 @@ ContentView
 
 **SmartAvatarView:**
 - Three-layer fallback: Contact Photo → Brand Logo → Initials
-- Uses AvatarService for caching and domain detection
-- AsyncImage for lazy loading of photos and brand logos
-- InitialsAvatarView as base layer (always rendered)
-- Deterministic colors based on email hash
+- Resolves via AvatarService with normalized email + brand domain
+- AsyncImage for lazy loading; brand logos render on white circle
+- Marks logo success/failure to avoid re-requesting dead domains
+- Deterministic colors based on email hash + optional brand color override
 
 ### 8. Google People API (PeopleService.swift)
 
@@ -411,62 +420,59 @@ https://www.googleapis.com/auth/contacts.readonly
 
 ### 9. Avatar Service (AvatarService.swift)
 
-**Smart Avatar System:**
+**Smart Avatar Resolution (data-driven + cached):**
 ```swift
 actor AvatarService {
-    static let shared = AvatarService()
+    struct AvatarResolution: Sendable {
+        let email: String
+        let initials: String
+        let backgroundColorHex: String
+        let brandLogoURL: URL?
+        let contactPhotoURL: URL?
+        let brandDomain: String?
+        let source: AvatarSource
+    }
 
-    // Caches
-    private var photoCache: [String: URL?] = [:]
-    private var brandLogoStatus: [String: Bool] = [:]
-
-    // Photo lookup
-    func getCachedPhoto(for email: String) -> URL??
-    func cachePhoto(email: String, url: URL?)
-    func hasPhotoCache(for email: String) -> Bool
-
-    // Brand logos
-    func getBrandLogoURL(for email: String) -> URL?
+    func resolveAvatar(email: String, name: String, accountEmail: String? = nil) async -> AvatarResolution
+    func prefetch(contacts: [(email: String, name: String)], accountEmail: String? = nil)
     func markBrandLogoLoaded(_ domain: String, success: Bool)
-    func hasBrandLogoFailed(for email: String) -> Bool
-
-    // Domain detection
-    func isPersonalDomain(_ domain: String) -> Bool
-    static func colorIndex(for email: String) -> Int
+    nonisolated static func avatarColorHex(for email: String) -> String
 }
 ```
 
-**Features:**
-- Three-layer fallback chain: Contact Photo → Brand Logo → Initials
-- In-memory caching for contact photos and brand logo status
-- Personal domain detection (gmail.com, outlook.com, etc.) to skip brand logos
-- Domain aliases for correct branding (vzw.com → verizon.com)
-- High-quality 256px favicons via Google's favicon service
-- Deterministic color selection for initials based on email hash
+**Resolution flow:**
+1. Normalize sender with `DomainNormalizer` (lowercase, Gmail plus-tag stripping, alias mapping).
+2. Compute root domain via public suffix list; determine `brandDomain` only for non-personal domains.
+3. Return cached `AvatarResolution` if within TTL (7 days).
+4. Fetch contact photo from `PeopleService` (highest priority).
+5. If no photo and brand domain is eligible, request brand logo URL.
+6. Apply brand color override if provided; otherwise use deterministic hash color.
+7. Cache resolution + record logo success/failure to avoid repeated dead logo fetches.
 
-**Brand Logo URL:**
+**BrandRegistry (BrandRegistry.swift):**
+- JSON-backed registry (`Resources/brand_registry.json`).
+- Controls:
+  - `personalDomains` (skip brand logos)
+  - `domainAliases` (alias → primary domain)
+  - `logoOverrides` (explicit logo URL per domain)
+  - `brandColors` (hex color overrides)
+  - `publicSuffixes` (root domain extraction)
+
+**DomainNormalizer (DomainNormalizer.swift):**
+- Extracts raw email from headers like `"Name <email@domain>"`.
+- Normalizes Gmail-style plus tags (`john+promo@gmail.com` → `john@gmail.com`).
+- Uses public suffix list for accurate root domain selection.
+
+**Brand Logo URL (default):**
 ```
 https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://{domain}&size=256
 ```
 
-**Personal Domains (skip brand logo):**
-```
-gmail.com, googlemail.com, outlook.com, hotmail.com, live.com,
-msn.com, yahoo.com, ymail.com, icloud.com, me.com, mac.com,
-aol.com, protonmail.com, proton.me, zoho.com, fastmail.com,
-hey.com, tutanota.com, tutamail.com
-```
-
-**Domain Aliases:**
-| Alias Domain | Primary Brand |
-|--------------|---------------|
-| vzw.com | verizon.com |
-| vtext.com | verizon.com |
-| bloomberglp.com | bloomberg.com |
-| mail.capitalone.com | capitalone.com |
-| alerts.chase.com | chase.com |
-| facebookmail.com | facebook.com |
-| mail.instagram.com | instagram.com |
+**SmartAvatarView integration:**
+- Always renders initials base layer.
+- Overlays brand logo with white circle background.
+- Overlays contact photo (highest priority).
+- On logo failure, marks domain as failed and re-resolves to drop the logo.
 
 ### 10. Theme Manager (SimpleMailApp.swift)
 
