@@ -7,6 +7,11 @@ import OSLog
 
 private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxViewModel")
 
+// Notification for when blocked senders list changes
+extension Notification.Name {
+    static let blockedSendersDidChange = Notification.Name("blockedSendersDidChange")
+}
+
 @MainActor
 @Observable
 final class InboxViewModel {
@@ -19,6 +24,9 @@ final class InboxViewModel {
     var isLoading = false
     var isLoadingMore = false
     var error: Error?
+
+    // Increment to force re-filter (e.g., when blocked senders change)
+    private var filterVersion = 0
 
     // MARK: - Navigation
 
@@ -46,9 +54,14 @@ final class InboxViewModel {
         let index: Int
     }
 
+    // MARK: - Notification Observer
+    @ObservationIgnored private var blockedSendersObserver: NSObjectProtocol?
+
     // MARK: - Computed Properties
 
     var emailSections: [EmailSection] {
+        // Touch filterVersion to trigger re-computation when it changes
+        _ = filterVersion
         let filteredEmails = applyFilters(emails)
         return groupEmailsByDate(filteredEmails)
     }
@@ -61,10 +74,24 @@ final class InboxViewModel {
     // MARK: - Init
 
     init() {
+        // Listen for blocked senders changes from EmailDetailView
+        blockedSendersObserver = NotificationCenter.default.addObserver(
+            forName: .blockedSendersDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.filterVersion += 1
+                self?.updateFilterCounts()
+            }
+        }
+
         Task {
             await loadEmails()
         }
     }
+
+    // Note: blockedSendersObserver is automatically removed when the token is deallocated
 
     // MARK: - Load Real Emails
 
@@ -230,8 +257,8 @@ final class InboxViewModel {
 
             // Deadline detection (sync)
             let deadlineKeywords = ["today", "tomorrow", "urgent", "asap", "deadline", "due"]
-            let lowerText = text.lowercased()
-            if deadlineKeywords.contains(where: { lowerText.contains($0) }) {
+            let emailText = "\(email.subject) \(email.snippet)".lowercased()
+            if deadlineKeywords.contains(where: { emailText.contains($0) }) {
                 counts[.deadlines, default: 0] += 1
             }
         }
@@ -502,6 +529,41 @@ final class InboxViewModel {
                     updateFilterCounts()
                     self.error = error
                 }
+            }
+        }
+    }
+
+    func blockSender(_ email: Email) {
+        let senderEmail = email.senderEmail.lowercased()
+
+        // Add to blocked senders list
+        var blockedSenders = UserDefaults.standard.stringArray(forKey: "blockedSenders") ?? []
+        if !blockedSenders.contains(senderEmail) {
+            blockedSenders.append(senderEmail)
+            UserDefaults.standard.set(blockedSenders, forKey: "blockedSenders")
+        }
+
+        // Force re-filter to hide emails from this sender
+        filterVersion += 1
+
+        // Also trash the email
+        trashEmail(email)
+        HapticFeedback.success()
+    }
+
+    func reportSpam(_ email: Email) {
+        withAnimation {
+            emails.removeAll { $0.id == email.id }
+        }
+        updateFilterCounts()
+        HapticFeedback.medium()
+
+        Task {
+            do {
+                try await GmailService.shared.reportSpam(messageId: email.id)
+            } catch {
+                self.error = error
+                await loadEmails()
             }
         }
     }

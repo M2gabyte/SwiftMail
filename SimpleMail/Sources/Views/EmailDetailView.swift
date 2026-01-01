@@ -131,22 +131,21 @@ struct EmailDetailView: View {
             Button("Snooze") {
                 showingSnoozeSheet = true
             }
+            Button(viewModel.isVIPSender ? "Remove from VIP" : "Mark as VIP") {
+                viewModel.toggleVIP()
+            }
 
-            Divider()
-
+            // Unsubscribe (only shows if List-Unsubscribe header present)
             if viewModel.canUnsubscribe {
                 Button("Unsubscribe") {
                     Task { await viewModel.unsubscribe() }
                 }
             }
 
-            Button(viewModel.isVIPSender ? "Remove from VIP" : "Mark as VIP") {
-                viewModel.toggleVIP()
-            }
-
-            Button("Block Sender") {
+            Button("Block Sender", role: .destructive) {
                 Task {
                     await viewModel.blockSender()
+                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
                     dismiss()
                 }
             }
@@ -154,6 +153,7 @@ struct EmailDetailView: View {
             Button("Report Spam", role: .destructive) {
                 Task {
                     await viewModel.reportSpam()
+                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
                     dismiss()
                 }
             }
@@ -726,7 +726,8 @@ class EmailDetailViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            messages = try await GmailService.shared.fetchThread(threadId: threadId)
+            let messageDTOs = try await GmailService.shared.fetchThread(threadId: threadId)
+            messages = messageDTOs.map(EmailDetail.init(dto:))
             // Expand the latest message by default
             if let lastId = messages.last?.id {
                 expandedMessageIds.insert(lastId)

@@ -35,7 +35,11 @@ struct InboxView: View {
                     },
                     onRefresh: {
                         await viewModel.refresh()
-                    }
+                    },
+                    onTrash: { email in viewModel.trashEmail(email) },
+                    onStar: { email in viewModel.starEmail(email) },
+                    onBlockSender: { email in viewModel.blockSender(email) },
+                    onReportSpam: { email in viewModel.reportSpam(email) }
                 )
             }
             .navigationTitle("")
@@ -277,6 +281,10 @@ struct EmailListView: View {
     let onToggleRead: (Email) -> Void
     let onLoadMore: (Email) -> Void
     let onRefresh: () async -> Void
+    let onTrash: (Email) -> Void
+    let onStar: (Email) -> Void
+    let onBlockSender: (Email) -> Void
+    let onReportSpam: (Email) -> Void
 
     var body: some View {
         List {
@@ -304,6 +312,51 @@ struct EmailListView: View {
                                     )
                                 }
                                 .tint(.blue)
+                            }
+                            .contextMenu {
+                                Button {
+                                    onTap(email)
+                                } label: {
+                                    Label("Open", systemImage: "envelope.open")
+                                }
+
+                                Button {
+                                    onArchive(email)
+                                } label: {
+                                    Label("Archive", systemImage: "archivebox")
+                                }
+
+                                Button {
+                                    onStar(email)
+                                } label: {
+                                    Label(email.isStarred ? "Unstar" : "Star", systemImage: email.isStarred ? "star.slash" : "star")
+                                }
+
+                                Button {
+                                    onToggleRead(email)
+                                } label: {
+                                    Label(email.isUnread ? "Mark as Read" : "Mark as Unread", systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
+                                }
+
+                                Divider()
+
+                                Button(role: .destructive) {
+                                    onBlockSender(email)
+                                } label: {
+                                    Label("Block Sender", systemImage: "hand.raised")
+                                }
+
+                                Button(role: .destructive) {
+                                    onReportSpam(email)
+                                } label: {
+                                    Label("Report Spam", systemImage: "exclamationmark.shield")
+                                }
+
+                                Button(role: .destructive) {
+                                    onTrash(email)
+                                } label: {
+                                    Label("Trash", systemImage: "trash")
+                                }
                             }
                             .onTapGesture {
                                 onTap(email)
