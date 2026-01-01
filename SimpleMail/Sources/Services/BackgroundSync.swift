@@ -121,8 +121,7 @@ final class BackgroundSyncManager {
         let (emails, _) = try await GmailService.shared.fetchInbox(maxResults: 50)
 
         // Update local cache (SwiftData)
-        let emailDTOs = emails.toDTOs()
-        await EmailCacheManager.shared.cacheEmails(emailDTOs)
+        await EmailCacheManager.shared.cacheEmails(emails)
 
         logger.info("Synced \(emails.count) emails to cache")
     }
@@ -135,6 +134,9 @@ final class BackgroundSyncManager {
         // Load settings
         let settings = loadSettings()
         guard settings.notificationsEnabled else { return }
+
+        // Prune old notification keys periodically
+        pruneNotificationKeys()
 
         // Check for new unread emails
         let (emails, _) = try await GmailService.shared.fetchInbox(
@@ -171,9 +173,54 @@ final class BackgroundSyncManager {
         return AppSettings()
     }
 
+    // MARK: - Notification Key Pruning
+
+    /// Prune old notification de-dupe keys to prevent unbounded UserDefaults growth
+    /// Called during background sync to clean up keys older than 7 days
+    private func pruneNotificationKeys() {
+        let defaults = UserDefaults.standard
+        let now = Date()
+        let maxAge: TimeInterval = 7 * 24 * 60 * 60 // 7 days
+
+        // Get all keys
+        let allKeys = defaults.dictionaryRepresentation().keys
+
+        // Track notification keys with timestamps
+        let notificationKeysKey = "notificationKeyTimestamps"
+        var timestamps = defaults.dictionary(forKey: notificationKeysKey) as? [String: Double] ?? [:]
+
+        // Find notification keys
+        for key in allKeys where key.hasPrefix("notified_") {
+            // If we don't have a timestamp for this key, add one
+            if timestamps[key] == nil {
+                timestamps[key] = now.timeIntervalSince1970
+            }
+        }
+
+        // Remove old keys
+        var keysToRemove: [String] = []
+        for (key, timestamp) in timestamps {
+            let age = now.timeIntervalSince1970 - timestamp
+            if age > maxAge {
+                defaults.removeObject(forKey: key)
+                keysToRemove.append(key)
+            }
+        }
+
+        // Update timestamps dictionary
+        for key in keysToRemove {
+            timestamps.removeValue(forKey: key)
+        }
+        defaults.set(timestamps, forKey: notificationKeysKey)
+
+        if !keysToRemove.isEmpty {
+            logger.info("Pruned \(keysToRemove.count) old notification keys")
+        }
+    }
+
     // MARK: - Notifications
 
-    private func sendNotification(for email: Email, isVIP: Bool = false) async {
+    private func sendNotification(for email: EmailDTO, isVIP: Bool = false) async {
         let content = UNMutableNotificationContent()
 
         if isVIP {

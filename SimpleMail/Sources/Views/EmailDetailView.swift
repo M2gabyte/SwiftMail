@@ -1031,22 +1031,24 @@ class EmailDetailViewModel: ObservableObject {
     }
 
     func archive() async {
-        for message in messages {
-            do {
-                try await GmailService.shared.archive(messageId: message.id)
-            } catch {
-                detailLogger.error("Failed to archive message: \(error.localizedDescription)")
-            }
+        // Use batch API for efficiency (single request vs N requests)
+        let messageIds = messages.map(\.id)
+        do {
+            try await GmailService.shared.batchArchive(messageIds: messageIds)
+        } catch {
+            detailLogger.error("Failed to archive thread: \(error.localizedDescription)")
+            self.error = error
         }
     }
 
     func trash() async {
-        for message in messages {
-            do {
-                try await GmailService.shared.trash(messageId: message.id)
-            } catch {
-                detailLogger.error("Failed to trash message: \(error.localizedDescription)")
-            }
+        // Use batch API for efficiency
+        let messageIds = messages.map(\.id)
+        do {
+            try await GmailService.shared.batchTrash(messageIds: messageIds)
+        } catch {
+            detailLogger.error("Failed to trash thread: \(error.localizedDescription)")
+            self.error = error
         }
     }
 
@@ -1065,18 +1067,21 @@ class EmailDetailViewModel: ObservableObject {
     }
 
     func toggleRead() async {
-        for message in messages {
-            do {
-                if message.isUnread {
-                    try await GmailService.shared.markAsRead(messageId: message.id)
-                } else {
-                    try await GmailService.shared.markAsUnread(messageId: message.id)
-                }
-            } catch {
-                self.error = error
+        // Use batch API for efficiency
+        let unreadIds = messages.filter(\.isUnread).map(\.id)
+        let readIds = messages.filter { !$0.isUnread }.map(\.id)
+
+        do {
+            if !unreadIds.isEmpty {
+                try await GmailService.shared.batchMarkAsRead(messageIds: unreadIds)
             }
+            if !readIds.isEmpty {
+                try await GmailService.shared.batchMarkAsUnread(messageIds: readIds)
+            }
+            await loadThread()
+        } catch {
+            self.error = error
         }
-        await loadThread()
     }
 
     func snooze(until date: Date) async {

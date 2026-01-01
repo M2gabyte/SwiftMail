@@ -41,7 +41,13 @@ final class EmailCacheManager: ObservableObject {
 
     // MARK: - Cache Emails
 
-    func cacheEmails(_ emails: [EmailDTO]) {
+    /// Cache emails, optionally cleaning up stale entries
+    /// - Parameters:
+    ///   - emails: Emails to cache
+    ///   - isFullInboxFetch: If true and emails contain INBOX items, remove cached INBOX
+    ///     emails not in this set. Set to false for filtered/search/paginated fetches to
+    ///     avoid incorrectly deleting valid cached emails.
+    func cacheEmails(_ emails: [EmailDTO], isFullInboxFetch: Bool = false) {
         guard let context = modelContext else {
             logger.warning("No model context configured")
             return
@@ -119,8 +125,9 @@ final class EmailCacheManager: ObservableObject {
             logger.error("Failed to cache emails: \(error.localizedDescription)")
         }
 
-        // Cleanup: remove cached inbox emails that no longer exist in the latest fetch window.
-        if let oldestDate = oldestFetchedDate, !fetchedIds.isEmpty {
+        // Cleanup: Only remove stale emails for FULL inbox fetches (not filtered/search/paginated)
+        // This prevents incorrectly deleting valid cached emails when fetch returns partial results
+        if isFullInboxFetch, let oldestDate = oldestFetchedDate, !fetchedIds.isEmpty {
             removeStaleInboxEmails(fetchedIds: fetchedIds, since: oldestDate)
         }
     }

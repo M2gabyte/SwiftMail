@@ -273,29 +273,75 @@ struct NoResultsView: View {
 
 @MainActor
 class SearchViewModel: ObservableObject {
-    @Published var query = ""
+    @Published var query = "" {
+        didSet {
+            // Debounce search as user types
+            scheduleSearch()
+        }
+    }
     @Published var results: [Email] = []
     @Published var isLoading = false
     @Published var hasSearched = false
     @Published var recentSearches: [String] = []
 
     private let recentSearchesKey = "recentSearches"
+    private var searchTask: Task<Void, Never>?
+    private let debounceInterval: TimeInterval = 0.3
 
     init() {
         loadRecentSearches()
     }
 
-    func search() async {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+    /// Schedule a debounced search - cancels previous pending search
+    private func scheduleSearch() {
+        // Cancel any pending search
+        searchTask?.cancel()
 
+        let currentQuery = query.trimmingCharacters(in: .whitespaces)
+        guard !currentQuery.isEmpty else {
+            results = []
+            hasSearched = false
+            return
+        }
+
+        // Schedule new search after debounce interval
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(Int(debounceInterval * 1000)))
+
+            // Check if cancelled during sleep
+            guard !Task.isCancelled else { return }
+
+            await performSearch(query: currentQuery)
+        }
+    }
+
+    /// Immediate search (for submit action)
+    func search() async {
+        searchTask?.cancel()
+        let currentQuery = query.trimmingCharacters(in: .whitespaces)
+        guard !currentQuery.isEmpty else { return }
+        await performSearch(query: currentQuery)
+    }
+
+    /// Actual search implementation
+    private func performSearch(query: String) async {
         isLoading = true
         hasSearched = true
         defer { isLoading = false }
 
+        // Check cancellation before network request
+        guard !Task.isCancelled else { return }
+
         do {
-            results = try await GmailService.shared.search(query: query)
+            let emailDTOs = try await GmailService.shared.search(query: query)
+
+            // Check cancellation after network request
+            guard !Task.isCancelled else { return }
+
+            results = emailDTOs.map(Email.init(dto:))
             addToRecent(query)
         } catch {
+            guard !Task.isCancelled else { return }
             searchLogger.error("Search error: \(error.localizedDescription)")
             results = []
         }

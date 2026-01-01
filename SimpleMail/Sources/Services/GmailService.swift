@@ -659,6 +659,62 @@ actor GmailService: GmailAPIProvider {
         }
     }
 
+    // MARK: - Batch Operations (reduces API calls for threads)
+
+    /// Batch modify labels for multiple messages at once
+    /// Much more efficient than calling modifyLabels per message
+    func batchModifyLabels(
+        messageIds: [String],
+        addLabels: [String] = [],
+        removeLabels: [String] = []
+    ) async throws {
+        guard !messageIds.isEmpty else { return }
+
+        let token = try await getAccessToken()
+        guard let url = URL(string: "\(baseURL)/users/me/messages/batchModify") else {
+            throw GmailError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = requestTimeout
+
+        let body: [String: Any] = [
+            "ids": messageIds,
+            "addLabelIds": addLabels,
+            "removeLabelIds": removeLabels
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 else {
+            throw GmailError.actionFailed
+        }
+    }
+
+    /// Batch archive (remove INBOX label) for multiple messages
+    func batchArchive(messageIds: [String]) async throws {
+        try await batchModifyLabels(messageIds: messageIds, removeLabels: ["INBOX"])
+    }
+
+    /// Batch mark as read for multiple messages
+    func batchMarkAsRead(messageIds: [String]) async throws {
+        try await batchModifyLabels(messageIds: messageIds, removeLabels: ["UNREAD"])
+    }
+
+    /// Batch mark as unread for multiple messages
+    func batchMarkAsUnread(messageIds: [String]) async throws {
+        try await batchModifyLabels(messageIds: messageIds, addLabels: ["UNREAD"])
+    }
+
+    /// Batch trash for multiple messages
+    func batchTrash(messageIds: [String]) async throws {
+        try await batchModifyLabels(messageIds: messageIds, addLabels: ["TRASH"], removeLabels: ["INBOX"])
+    }
+
     // MARK: - Send Email
 
     func sendEmail(
