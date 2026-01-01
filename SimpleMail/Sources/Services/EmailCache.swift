@@ -34,6 +34,24 @@ final class EmailCacheManager: ObservableObject {
         updateCacheStats()
     }
 
+    func configureIfNeeded() {
+        guard modelContext == nil else { return }
+        do {
+            let schema = Schema([
+                Email.self,
+                EmailDetail.self,
+                SnoozedEmail.self,
+                SenderPreference.self
+            ])
+            let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            let container = try ModelContainer(for: schema, configurations: [configuration])
+            modelContext = ModelContext(container)
+            updateCacheStats()
+        } catch {
+            logger.error("Failed to configure cache context: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Cache Statistics
 
     func updateCacheStats() {
@@ -78,6 +96,9 @@ final class EmailCacheManager: ObservableObject {
     ///     emails not in this set. Set to false for filtered/search/paginated fetches to
     ///     avoid incorrectly deleting valid cached emails.
     func cacheEmails(_ emails: [EmailDTO], isFullInboxFetch: Bool = false) {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
         guard let context = modelContext else {
             logger.warning("No model context configured")
             return
@@ -167,6 +188,9 @@ final class EmailCacheManager: ObservableObject {
     // MARK: - Load Cached Emails
 
     func loadCachedEmails(mailbox: Mailbox = .inbox, limit: Int = 100, accountEmail: String? = nil) -> [Email] {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
         guard let context = modelContext else { return [] }
 
         let labelIds = labelIdsForMailbox(mailbox)
@@ -256,6 +280,9 @@ final class EmailCacheManager: ObservableObject {
     // MARK: - Delete Cached Email
 
     func deleteEmail(_ email: Email) {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
         guard let context = modelContext else { return }
 
         let emailId = email.id
@@ -277,6 +304,9 @@ final class EmailCacheManager: ObservableObject {
     // MARK: - Cleanup Helpers
 
     private func removeStaleInboxEmails(fetchedIds: Set<String>, since oldestDate: Date, accountEmail: String?) {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
         guard let context = modelContext else { return }
 
         let descriptor = FetchDescriptor<Email>(
@@ -304,6 +334,9 @@ final class EmailCacheManager: ObservableObject {
     // MARK: - Clear Cache
 
     func clearCache() {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
         guard let context = modelContext else { return }
 
         do {
@@ -319,6 +352,9 @@ final class EmailCacheManager: ObservableObject {
 
     /// Clear cache for a specific account only
     func clearCache(accountEmail: String?) {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
         guard let context = modelContext else { return }
         guard let email = accountEmail?.lowercased() else {
             // If no account specified, clear all
@@ -356,6 +392,9 @@ final class EmailCacheManager: ObservableObject {
     // MARK: - Cache Email Detail
 
     func cacheEmailDetail(_ detail: EmailDetail) {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
         guard let context = modelContext else { return }
 
         let detailId = detail.id
@@ -397,6 +436,9 @@ final class EmailCacheManager: ObservableObject {
     // MARK: - Load Cached Email Detail
 
     func loadCachedEmailDetail(id emailId: String) -> EmailDetail? {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
         guard let context = modelContext else { return nil }
 
         let descriptor = FetchDescriptor<EmailDetail>(

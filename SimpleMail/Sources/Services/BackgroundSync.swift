@@ -128,16 +128,26 @@ final class BackgroundSyncManager {
         // Check for cancellation before network call
         try Task.checkCancellation()
 
-        // Fetch latest emails
-        let (emails, _) = try await GmailService.shared.fetchInbox(maxResults: 50)
+        let accounts = await MainActor.run { AuthService.shared.accounts }
+        guard !accounts.isEmpty else { return }
+
+        var allEmails: [EmailDTO] = []
+        for account in accounts {
+            if Task.isCancelled { break }
+            let (emails, _) = try await GmailService.shared.fetchInbox(
+                for: account,
+                maxResults: 50
+            )
+            allEmails.append(contentsOf: emails)
+        }
 
         // Check for cancellation before cache update
         try Task.checkCancellation()
 
         // Update local cache (SwiftData)
-        await EmailCacheManager.shared.cacheEmails(emails)
+        await EmailCacheManager.shared.cacheEmails(allEmails)
 
-        logger.info("Synced \(emails.count) emails to cache")
+        logger.info("Synced \(allEmails.count) emails to cache")
     }
 
     private func checkForNewEmails() async throws {
@@ -156,38 +166,44 @@ final class BackgroundSyncManager {
         // Prune old notification keys periodically
         pruneNotificationKeys()
 
-        // Check for new unread emails
-        let (emails, _) = try await GmailService.shared.fetchInbox(
-            query: "is:unread",
-            maxResults: 10
-        )
+        let accounts = await MainActor.run { AuthService.shared.accounts }
+        guard !accounts.isEmpty else { return }
 
-        // Check for cancellation before processing notifications
-        try Task.checkCancellation()
-
-        let newEmails = emails.filter { email in
-            // Check if we've already notified for this email
-            !AccountDefaults.bool(for: "notified_\(email.id)", accountEmail: email.accountEmail)
-        }
-
-        for email in newEmails {
-            // Check for cancellation in the loop
+        for account in accounts {
             if Task.isCancelled { break }
+            let (emails, _) = try await GmailService.shared.fetchInbox(
+                for: account,
+                query: "is:unread",
+                maxResults: 10
+            )
 
-            let accountEmail = email.accountEmail
-            let settings = loadSettings(accountEmail: accountEmail)
-            guard settings.notificationsEnabled else { continue }
+            // Check for cancellation before processing notifications
+            try Task.checkCancellation()
 
-            let vipSenders = Set(AccountDefaults.stringArray(for: "vipSenders", accountEmail: accountEmail))
-            let isVIP = vipSenders.contains(email.senderEmail.lowercased())
+            let newEmails = emails.filter { email in
+                // Check if we've already notified for this email
+                !AccountDefaults.bool(for: "notified_\(email.id)", accountEmail: email.accountEmail)
+            }
 
-            // Check notification preferences
-            if isVIP && settings.notifyVIPSenders {
-                await sendNotification(for: email, isVIP: true)
-                AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
-            } else if settings.notifyNewEmails {
-                await sendNotification(for: email, isVIP: false)
-                AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
+            for email in newEmails {
+                // Check for cancellation in the loop
+                if Task.isCancelled { break }
+
+                let accountEmail = email.accountEmail
+                let settings = loadSettings(accountEmail: accountEmail)
+                guard settings.notificationsEnabled else { continue }
+
+                let vipSenders = Set(AccountDefaults.stringArray(for: "vipSenders", accountEmail: accountEmail))
+                let isVIP = vipSenders.contains(email.senderEmail.lowercased())
+
+                // Check notification preferences
+                if isVIP && settings.notifyVIPSenders {
+                    await sendNotification(for: email, isVIP: true)
+                    AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
+                } else if settings.notifyNewEmails {
+                    await sendNotification(for: email, isVIP: false)
+                    AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
+                }
             }
         }
     }
