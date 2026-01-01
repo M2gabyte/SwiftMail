@@ -193,9 +193,9 @@ struct SearchResultsView: View {
                 NavigationLink(destination: EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)) {
                     SearchResultRow(email: email)
                 }
-                .onTapGesture {
+                .simultaneousGesture(TapGesture().onEnded {
                     onSelect(email)
-                }
+                })
             }
         }
         .listStyle(.plain)
@@ -235,16 +235,27 @@ struct SearchResultRow: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        if Calendar.current.isDateInToday(date) {
-            formatter.timeStyle = .short
-        } else if Calendar.current.isDateInYesterday(date) {
+        if SearchDateFormatters.calendar.isDateInToday(date) {
+            return SearchDateFormatters.timeFormatter.string(from: date)
+        } else if SearchDateFormatters.calendar.isDateInYesterday(date) {
             return "Yesterday"
-        } else {
-            formatter.dateFormat = "MMM d"
         }
-        return formatter.string(from: date)
+        return SearchDateFormatters.dateFormatter.string(from: date)
     }
+}
+
+private enum SearchDateFormatters {
+    static let calendar = Calendar.current
+    static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
 }
 
 // MARK: - No Results View

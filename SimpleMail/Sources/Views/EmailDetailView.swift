@@ -277,14 +277,25 @@ struct EmailMessageCard: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        if Calendar.current.isDateInToday(date) {
-            formatter.timeStyle = .short
-        } else {
-            formatter.dateFormat = "MMM d, h:mm a"
+        if MessageDateFormatters.calendar.isDateInToday(date) {
+            return MessageDateFormatters.timeFormatter.string(from: date)
         }
-        return formatter.string(from: date)
+        return MessageDateFormatters.fullDateFormatter.string(from: date)
     }
+}
+
+private enum MessageDateFormatters {
+    static let calendar = Calendar.current
+    static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    static let fullDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, h:mm a"
+        return formatter
+    }()
 }
 
 // MARK: - Email Body View (WebView with dynamic height)
@@ -363,11 +374,11 @@ enum HTMLSanitizer {
             options: .regularExpression
         )
 
-        // Remove inline event handlers (onclick, onerror, etc.)
+        // Remove inline event handlers (onclick, onerror, etc.), quoted or unquoted
         result = result.replacingOccurrences(
-            of: "\\son\\w+\\s*=\\s*[\"'][^\"']*[\"']",
+            of: "\\son\\w+\\s*=\\s*(\"[^\"]*\"|'[^']*'|[^\\s>]+)",
             with: "",
-            options: .regularExpression
+            options: [.regularExpression, .caseInsensitive]
         )
 
         // Remove javascript: URLs
@@ -387,6 +398,25 @@ enum HTMLSanitizer {
             of: "<iframe[^>]*/?>",
             with: "",
             options: .regularExpression
+        )
+
+        // Remove meta refresh and base href redirects
+        result = result.replacingOccurrences(
+            of: "<meta[^>]*http-equiv\\s*=\\s*[\"']?refresh[\"']?[^>]*>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        result = result.replacingOccurrences(
+            of: "<base[^>]*>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        // Remove external stylesheets (can contain tracking pixels)
+        result = result.replacingOccurrences(
+            of: "<link[^>]*rel\\s*=\\s*[\"']?stylesheet[\"']?[^>]*>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
         )
 
         // Remove object/embed tags
@@ -436,10 +466,24 @@ enum HTMLSanitizer {
     static func blockImages(_ html: String) -> String {
         var result = html
 
+        // Remove <source> elements that can load remote images (picture/srcset)
+        result = result.replacingOccurrences(
+            of: "<source[^>]*srcset\\s*=\\s*[\"'][^\"']*https?://[^\"']*[\"'][^>]*/?>",
+            with: "",
+            options: .regularExpression
+        )
+
         // Block http/https images (swap src -> data-blocked-src)
         result = result.replacingOccurrences(
             of: "<img([^>]*)src\\s*=\\s*[\"'](https?://[^\"']+)[\"']([^>]*)>",
             with: "<img$1data-blocked-src=\"$2\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\"$3>",
+            options: .regularExpression
+        )
+
+        // Strip srcset from images (prevents remote loads even with blocked src)
+        result = result.replacingOccurrences(
+            of: "\\s+srcset\\s*=\\s*[\"'][^\"']*[\"']",
+            with: "",
             options: .regularExpression
         )
 
@@ -448,6 +492,18 @@ enum HTMLSanitizer {
             of: "(<img[^>]*data-blocked-src=[\"'][^\"']+[\"'][^>]*?)\\s+(width|height)\\s*=\\s*[\"']?\\d+[\"']?",
             with: "$1",
             options: .regularExpression
+        )
+
+        // Neutralize remote background images in inline styles and style blocks
+        result = result.replacingOccurrences(
+            of: "url\\(\\s*[\"']?https?://[^\\)\"']+[\"']?\\s*\\)",
+            with: "none",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "@import\\s+url\\(\\s*[\"']?https?://[^\\)\"']+[\"']?\\s*\\)\\s*;?",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
         )
 
         return result
@@ -574,6 +630,13 @@ struct EmailBodyWebView: UIViewRepresentable {
                 .blocked-form { border: 1px dashed #ccc; padding: 8px; margin: 8px 0; }
             </style>
             <script>
+                var heightTimer = null;
+                function scheduleHeight() {
+                    if (heightTimer) {
+                        clearTimeout(heightTimer);
+                    }
+                    heightTimer = setTimeout(postHeight, 50);
+                }
                 function collapseEmptySpacers() {
                     var elements = document.querySelectorAll('td, tr');
                     elements.forEach(function(el) {
@@ -610,6 +673,14 @@ struct EmailBodyWebView: UIViewRepresentable {
                     collapseEmptySpacers();
                     postHeight();
                 });
+                if (window.ResizeObserver) {
+                    var ro = new ResizeObserver(function() { scheduleHeight(); });
+                    ro.observe(document.body);
+                }
+                if (window.MutationObserver) {
+                    var mo = new MutationObserver(function() { scheduleHeight(); });
+                    mo.observe(document.body, { childList: true, subtree: true, attributes: true });
+                }
             </script>
         </head>
         <body>

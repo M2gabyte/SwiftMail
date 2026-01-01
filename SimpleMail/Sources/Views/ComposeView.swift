@@ -80,10 +80,19 @@ struct ComposeView: View {
                     Divider().padding(.leading)
 
                     // Body
-                    TextEditor(text: $viewModel.body)
-                        .frame(minHeight: 300)
-                        .padding(.horizontal)
-                        .focused($focusedField, equals: .body)
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $viewModel.body)
+                            .frame(minHeight: 300)
+                            .focused($focusedField, equals: .body)
+
+                        if viewModel.body.isEmpty {
+                            Text("Write your message…")
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 8)
+                                .padding(.leading, 6)
+                        }
+                    }
+                    .padding(.horizontal)
                 }
             }
             .navigationTitle(navigationTitle)
@@ -169,6 +178,9 @@ struct RecipientField: View {
     @Binding var pendingInput: String
     let isFocused: Bool
 
+    private let labelWidth: CGFloat = 60
+    private let horizontalPadding: CGFloat = 16
+
     @State private var suggestions: [PeopleService.Contact] = []
     @State private var showingSuggestions = false
 
@@ -177,7 +189,7 @@ struct RecipientField: View {
             HStack(alignment: .top, spacing: 8) {
                 Text(label)
                     .foregroundStyle(.secondary)
-                    .frame(width: 60, alignment: .leading)
+                    .frame(width: labelWidth, alignment: .leading)
                     .padding(.top, 12)
 
                 FlowLayout(spacing: 6) {
@@ -206,52 +218,57 @@ struct RecipientField: View {
                 }
                 .padding(.vertical, 8)
             }
-            .padding(.horizontal)
+            .padding(.horizontal, horizontalPadding)
 
             // Autocomplete suggestions
             if showingSuggestions && !suggestions.isEmpty && isFocused {
-                VStack(spacing: 0) {
-                    ForEach(suggestions.prefix(5)) { contact in
-                        Button(action: {
-                            selectContact(contact)
-                        }) {
-                            HStack(spacing: 10) {
-                                SmartAvatarView(
-                                    email: contact.email,
-                                    name: contact.name,
-                                    size: 28
-                                )
+                HStack(spacing: 0) {
+                    Spacer()
+                        .frame(width: labelWidth + horizontalPadding)
 
-                                VStack(alignment: .leading, spacing: 1) {
-                                    if !contact.name.isEmpty {
-                                        Text(contact.name)
-                                            .font(.subheadline)
+                    VStack(spacing: 0) {
+                        ForEach(suggestions.prefix(5)) { contact in
+                            Button(action: {
+                                selectContact(contact)
+                            }) {
+                                HStack(spacing: 10) {
+                                    SmartAvatarView(
+                                        email: contact.email,
+                                        name: contact.name,
+                                        size: 28
+                                    )
+
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        if !contact.name.isEmpty {
+                                            Text(contact.name)
+                                                .font(.subheadline)
+                                                .lineLimit(1)
+                                        }
+                                        Text(contact.email)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
                                             .lineLimit(1)
                                     }
-                                    Text(contact.email)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+
+                                    Spacer()
                                 }
-
-                                Spacer()
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+                            .buttonStyle(.plain)
 
-                        if contact.id != suggestions.prefix(5).last?.id {
-                            Divider()
-                                .padding(.leading, 54)
+                            if contact.id != suggestions.prefix(5).last?.id {
+                                Divider()
+                                    .padding(.leading, 54)
+                            }
                         }
                     }
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                    .padding(.trailing, horizontalPadding)
                 }
-                .background(Color(.systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
-                .padding(.horizontal, 76) // Align with text field
                 .padding(.top, -4)
             }
         }
