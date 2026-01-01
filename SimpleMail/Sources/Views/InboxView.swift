@@ -93,10 +93,22 @@ struct InboxView: View {
                 )
             }
 
+            // Empty state for search
             if !debouncedSearchText.isEmpty && filteredSections.isEmpty {
                 ContentUnavailableView.search(text: debouncedSearchText)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+            }
+
+            // Empty state for filters (no search active)
+            if debouncedSearchText.isEmpty && viewModel.activeFilter != nil && filteredSections.isEmpty {
+                ContentUnavailableView(
+                    "No Matches",
+                    systemImage: viewModel.activeFilter?.icon ?? "envelope",
+                    description: Text("No emails match the \"\(viewModel.activeFilter?.rawValue ?? "")\" filter.")
+                )
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
 
             ForEach(filteredSections) { section in
@@ -203,9 +215,10 @@ struct InboxView: View {
                 .listRowSeparator(.hidden)
             }
 
-            if viewModel.hasMoreEmails && !viewModel.isLoadingMore {
+            // Only show "Load More" when there are visible emails (not when filter returns empty)
+            if viewModel.hasMoreEmails && !viewModel.isLoadingMore && !filteredSections.isEmpty {
                 Button(action: {
-                    if let lastEmail = viewModel.emailSections.last?.emails.last {
+                    if let lastEmail = filteredSections.last?.emails.last {
                         Task { await viewModel.loadMoreIfNeeded(currentEmail: lastEmail) }
                     }
                 }) {
