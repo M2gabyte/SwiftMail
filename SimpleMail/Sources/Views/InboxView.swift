@@ -10,7 +10,8 @@ struct InboxView: View {
     @State private var showingCompose = false
     @State private var listDensity: ListDensity = .comfortable
     @State private var showingSettings = false
-    @State private var showingSearch = false
+    @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         List {
@@ -151,6 +152,8 @@ struct InboxView: View {
         .background(Color(.systemBackground))
         .listSectionSpacing(6)
         .accessibilityIdentifier("inboxList")
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic))
+        .searchFocused($searchFocused)
         .navigationTitle(viewModel.currentMailbox.rawValue)
         .navigationBarTitleDisplayMode(.large)
         .toolbarTitleMenu {
@@ -164,31 +167,31 @@ struct InboxView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(action: { showingSettings = true }) {
+                Button { showingSettings = true } label: {
                     Image(systemName: "gearshape")
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Settings")
             }
             ToolbarItemGroup(placement: .bottomBar) {
-                Button(action: {
-                    showingSearch = true
-                }) {
+                Button { searchFocused = true } label: {
                     Image(systemName: "magnifyingglass")
                 }
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("searchButton")
                 .accessibilityLabel("Search emails")
 
                 Spacer()
 
-                Button(action: { showingCompose = true }) {
+                Button { showingCompose = true } label: {
                     Image(systemName: "square.and.pencil")
                 }
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("composeButton")
                 .accessibilityLabel("Compose new email")
             }
         }
-        .toolbarBackground(.visible, for: .bottomBar)
-        .toolbarBackground(.ultraThinMaterial, for: .bottomBar)
+        .toolbarBackground(.automatic, for: .bottomBar)
         .navigationDestination(isPresented: $viewModel.showingEmailDetail) {
             if let email = viewModel.selectedEmail {
                 EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)
@@ -199,9 +202,6 @@ struct InboxView: View {
         }
         .sheet(isPresented: $showingCompose) {
             ComposeView()
-        }
-        .fullScreenCover(isPresented: $showingSearch) {
-            SearchSheet(viewModel: viewModel)
         }
         .refreshable {
             await viewModel.refresh()
@@ -653,103 +653,6 @@ struct EmailSection: Identifiable {
     let id: String
     let title: String
     let emails: [Email]
-}
-
-// MARK: - Search Sheet
-
-struct SearchSheet: View {
-    let viewModel: InboxViewModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @State private var results: [Email] = []
-    @State private var isSearching = false
-    @FocusState private var isSearchFieldFocused: Bool
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                if results.isEmpty && !isSearching && !query.isEmpty {
-                    ContentUnavailableView.search(text: query)
-                } else if results.isEmpty && query.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.tertiary)
-                        Text("Search your emails")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                        Text("Find messages by sender, subject, or content")
-                            .font(.subheadline)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List(results) { email in
-                        EmailRow(email: email)
-                            .listRowBackground(Color(.systemBackground))
-                            .onTapGesture {
-                                viewModel.openEmail(email)
-                                dismiss()
-                            }
-                    }
-                    .listStyle(.plain)
-                }
-            }
-            .navigationTitle("Search")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search emails")
-            .searchFocused($isSearchFieldFocused)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-            .onAppear {
-                isSearchFieldFocused = true
-            }
-            .onChange(of: query) { _, newValue in
-                performSearch(newValue)
-            }
-        }
-    }
-
-    private func performSearch(_ searchQuery: String) {
-        guard !searchQuery.isEmpty else {
-            results = []
-            return
-        }
-
-        isSearching = true
-        Task {
-            // Search cached emails first
-            let cached = await EmailCacheManager.shared.searchCachedEmails(
-                query: searchQuery,
-                accountEmail: AuthService.shared.currentAccount?.email
-            )
-            await MainActor.run {
-                results = cached
-                isSearching = false
-            }
-
-            // Then search via API for more results
-            do {
-                let (apiResults, _) = try await GmailService.shared.fetchInbox(
-                    query: searchQuery,
-                    maxResults: 50
-                )
-                await MainActor.run {
-                    // Merge results, preferring API results
-                    let apiIds = Set(apiResults.map(\.id))
-                    let uniqueCached = cached.filter { !apiIds.contains($0.id) }
-                    results = apiResults.map { Email(dto: $0) } + uniqueCached
-                }
-            } catch {
-                // Keep showing cached results on API error
-            }
-        }
-    }
 }
 
 // MARK: - Preview
