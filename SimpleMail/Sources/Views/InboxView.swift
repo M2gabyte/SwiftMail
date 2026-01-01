@@ -13,6 +13,23 @@ struct InboxView: View {
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
 
+    /// Filtered sections based on search text
+    private var filteredSections: [EmailSection] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return viewModel.emailSections }
+
+        return viewModel.emailSections.compactMap { section in
+            let filteredEmails = section.emails.filter { email in
+                email.senderName.localizedCaseInsensitiveContains(query) ||
+                email.senderEmail.localizedCaseInsensitiveContains(query) ||
+                email.subject.localizedCaseInsensitiveContains(query) ||
+                email.snippet.localizedCaseInsensitiveContains(query)
+            }
+            guard !filteredEmails.isEmpty else { return nil }
+            return EmailSection(id: section.id, title: section.title, emails: filteredEmails)
+        }
+    }
+
     var body: some View {
         List {
             InboxHeaderBlock(
@@ -24,7 +41,7 @@ struct InboxView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color(.systemBackground))
 
-            ForEach(viewModel.emailSections) { section in
+            ForEach(filteredSections) { section in
                 Section {
                     ForEach(section.emails) { email in
                         EmailRow(
@@ -154,28 +171,6 @@ struct InboxView: View {
         .accessibilityIdentifier("inboxList")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    ForEach(Mailbox.allCases, id: \.self) { mailbox in
-                        Button {
-                            viewModel.selectMailbox(mailbox)
-                        } label: {
-                            if mailbox == viewModel.currentMailbox {
-                                Label(mailbox.rawValue, systemImage: "checkmark")
-                            } else {
-                                Label(mailbox.rawValue, systemImage: mailbox.icon)
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                }
-            }
-            ToolbarItem(placement: .principal) {
-                TextField("Search", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(minWidth: 200)
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
@@ -187,15 +182,37 @@ struct InboxView: View {
                     Image(systemName: "ellipsis.circle")
                 }
             }
-            ToolbarItemGroup(placement: .bottomBar) {
-                Spacer()
 
-                Button { showingCompose = true } label: {
-                    Image(systemName: "square.and.pencil")
+            ToolbarItem(placement: .bottomBar) {
+                HStack(spacing: 12) {
+                    Menu {
+                        ForEach(Mailbox.allCases, id: \.self) { mailbox in
+                            Button {
+                                viewModel.selectMailbox(mailbox)
+                            } label: {
+                                if mailbox == viewModel.currentMailbox {
+                                    Label(mailbox.rawValue, systemImage: "checkmark")
+                                } else {
+                                    Label(mailbox.rawValue, systemImage: mailbox.icon)
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 18))
+                    }
+                    .buttonStyle(.plain)
+
+                    BottomSearchPill(text: $searchText, focused: $searchFocused)
+
+                    Button { showingCompose = true } label: {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 18))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("composeButton")
+                    .accessibilityLabel("Compose new email")
                 }
-                .tint(.primary)
-                .accessibilityIdentifier("composeButton")
-                .accessibilityLabel("Compose new email")
             }
         }
         .safeAreaInset(edge: .bottom) {
