@@ -75,6 +75,10 @@ SimpleMail/
 │   │
 │   └── Assets.xcassets/             # Images, colors, app icon
 │
+├── SimpleMailUITests/
+│   ├── SimpleMailUITests.swift      # XCUITest UI automation tests
+│   └── SimpleMailUITestsLaunchTests.swift  # Launch performance tests
+│
 └── SimpleMail.xcodeproj/
 ```
 
@@ -803,6 +807,7 @@ log stream --predicate 'subsystem == "com.simplemail.app"' --level debug
 - PKCE code generation
 - MIME message building
 - Base64URL encoding/decoding
+- HTMLSanitizer security functions
 
 **Protocol-Based Mocking:**
 ```swift
@@ -828,11 +833,55 @@ let viewModel = InboxViewModel(gmailService: mockService)
 - SwiftData persistence
 - Background task scheduling
 
-### UI Tests
-- Navigation flows
-- Swipe actions
-- Pull-to-refresh
-- Compose flow
+### UI Tests (XCUITest)
+
+**Test Target:** `SimpleMailUITests`
+
+**18 Automated Tests:**
+| Test | Coverage |
+|------|----------|
+| `testAppLaunches` | App startup |
+| `testLoginScreenAppears` | Auth state detection |
+| `testTabBarExists` | Tab bar presence |
+| `testCanSwitchToBriefingTab` | Briefing navigation |
+| `testCanSwitchToSettingsTab` | Settings navigation |
+| `testInboxLoads` | Inbox display |
+| `testCanPullToRefresh` | Pull-to-refresh gesture |
+| `testCanOpenSearch` | Search sheet presentation |
+| `testCanOpenCompose` | Compose view |
+| `testCanDismissCompose` | Compose dismissal |
+| `testCanOpenEmail` | Email detail navigation |
+| `testCanNavigateBackFromEmail` | Back navigation |
+| `testSettingsShowsAccountInfo` | Settings content |
+| `testCanSwipeEmailForActions` | Swipe gestures |
+| `testLaunchPerformance` | Launch time measurement |
+| `testLaunch` (4x) | Launch reliability |
+
+**Accessibility Identifiers:**
+```swift
+// InboxView
+.accessibilityIdentifier("inboxList")
+.accessibilityIdentifier("searchButton")
+.accessibilityIdentifier("composeButton")
+
+// EmailDetailView
+.accessibilityIdentifier("emailDetailView")
+
+// ComposeView
+.accessibilityIdentifier("composeView")
+.accessibilityIdentifier("cancelCompose")
+.accessibilityIdentifier("sendButton")
+```
+
+**Running Tests:**
+```bash
+# Command line
+xcodebuild test -project SimpleMail.xcodeproj -scheme SimpleMail \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -only-testing:SimpleMailUITests
+
+# Xcode: ⌘+U
+```
 
 ## Future Enhancements
 
@@ -944,9 +993,25 @@ actor GmailService {
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.9*
+*Architecture version: 2.0*
 
 **Changelog:**
+- v2.0:
+  - Added XCUITest framework with 18 automated UI tests
+  - Tests cover: app launch, tab navigation, inbox, search, compose, email detail, settings, swipe actions, performance
+  - Added accessibility identifiers to key UI elements (inboxList, searchButton, composeButton, emailDetailView, composeView, cancelCompose, sendButton)
+  - Fixed AI summary threshold to use plain text length instead of HTML length
+  - Added EmailTextHelper.plainTextLength() to strip HTML before counting characters
+  - Lowered threshold from 500 to 300 chars (plain text is more compact than HTML)
+  - Enhanced HTMLSanitizer with additional security measures:
+    - Improved event handler regex to handle quoted and unquoted attributes
+    - Added meta refresh and base href redirect removal
+    - Added external stylesheet blocking (can contain tracking pixels)
+    - Added srcset stripping from images
+    - Added background-image URL neutralization in inline styles
+    - Added @import URL removal from style blocks
+  - Added MessageDateFormatters enum for cached date formatters in EmailMessageCard
+  - Added ResizeObserver and MutationObserver for dynamic WebView height updates
 - v1.9:
   - Added EmailFilters utility for People scope filtering (ported from React briefingEngine)
   - looksLikeHumanSender(): Detects real people vs automated senders
