@@ -25,8 +25,12 @@ SimpleMail is a native iOS email client built with SwiftUI and SwiftData, design
 SimpleMail/
 ├── Sources/
 │   ├── SimpleMailApp.swift          # App entry point, scene management
-│   ├── Info.plist                   # App configuration
+│   ├── Info.plist                   # App configuration, OAuth config
 │   ├── SimpleMail.entitlements      # Keychain, background modes
+│   │
+│   ├── Config/
+│   │   ├── Config.swift             # OAuth credentials from Info.plist
+│   │   └── TimeoutConfig.swift      # Centralized timeout values
 │   │
 │   ├── Models/
 │   │   ├── Email.swift              # Core email models (SwiftData)
@@ -89,10 +93,12 @@ Store tokens in Keychain
 
 **Key Features:**
 - Automatic token refresh when expired (5-minute buffer)
-- Multi-account support
-- Secure Keychain storage
+- Multi-account support with atomic update pattern (race-condition safe)
+- Secure Keychain storage via KeychainServiceSync with NSLock
 - Thread-safe with `@MainActor`
 - `MainActor.assumeIsolated` for safe nonisolated protocol callbacks
+- HTTP status code validation on all API responses
+- Comprehensive error handling (invalidResponse, userInfoFetchFailed, rateLimited)
 
 ### 2. Gmail Service (GmailService.swift)
 
@@ -259,11 +265,17 @@ emails
 
 **Cache Operations:**
 ```swift
-EmailCacheManager.shared.cacheEmails(emails)      // Save
+EmailCacheManager.shared.cacheEmails(emails)      // Save (batch fetch for O(1) lookups)
 EmailCacheManager.shared.loadCachedEmails()       // Load
 EmailCacheManager.shared.searchCachedEmails(q)    // Offline search
 EmailCacheManager.shared.clearCache()             // Clear all
 ```
+
+**Performance Optimizations:**
+- Batch fetch of existing emails before update (avoids N+1 queries)
+- Dictionary lookup for O(1) existing email checks
+- Safe array access patterns (`.first` instead of `[0]`)
+- Proper error logging via OSLog
 
 ### 6. Background Sync (BackgroundSync.swift)
 
@@ -352,6 +364,7 @@ ContentView
 **ComposeView:**
 - FlowLayout for recipient chips
 - Email autocomplete with Google People API
+- Email validation (local@domain.tld format with proper domain structure)
 - Auto-save drafts
 - Reply threading with In-Reply-To headers
 
@@ -685,6 +698,14 @@ logger.warning("Rate limited on \(url.path)")
 | `BackgroundSync` | Background task execution |
 | `PeopleService` | Contacts fetch, search, photo lookup |
 | `AvatarService` | Avatar cache operations |
+| `EmailCache` | Cache operations, batch updates |
+| `Settings` | Settings sync, label management |
+| `Search` | Search queries and results |
+| `Briefing` | Briefing item interactions |
+| `Attachments` | Attachment downloads |
+| `BatchOperations` | Multi-select and print jobs |
+| `SimpleMailApp` | URL handling, notifications |
+| `Keychain` | Keychain storage operations |
 
 **Viewing Logs:**
 ```bash
@@ -836,11 +857,14 @@ actor KeychainService {
     func clearAll()
 }
 
-// Synchronous wrapper for @MainActor contexts
-final class KeychainServiceSync {
+// Synchronous wrapper for @MainActor contexts (NSLock for thread safety)
+final class KeychainServiceSync: @unchecked Sendable {
     static let shared = KeychainServiceSync()
-    func save(key: String, data: Data)
-    func read(key: String) -> Data?
+    private let lock = NSLock()
+
+    func save(key: String, data: Data)   // Lock-protected direct Security API
+    func read(key: String) -> Data?       // Lock-protected direct Security API
+    func delete(key: String)              // Lock-protected direct Security API
 }
 ```
 
@@ -863,9 +887,21 @@ actor GmailService {
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.7*
+*Architecture version: 1.8*
 
 **Changelog:**
+- v1.8:
+  - Added Config directory with Config.swift (OAuth from Info.plist) and TimeoutConfig.swift (centralized timeouts)
+  - Fixed KeychainServiceSync to use NSLock for proper thread-safe synchronous access
+  - Added HTTP status validation to fetchUserInfo in AuthService
+  - Added new AuthError cases: invalidResponse, userInfoFetchFailed(Int), rateLimited
+  - Fixed account management race condition with atomic update pattern
+  - Fixed N+1 query in EmailCache.cacheEmails() using batch fetch with dictionary lookup
+  - Fixed unsafe array access (labelIds.first instead of labelIds[0])
+  - Replaced all print() with OSLog Logger across 9 files
+  - Replaced silent try? with proper error handling and logging
+  - Added email validation in ComposeView (validates local@domain.tld format)
+  - Added OAuth config keys to Info.plist for build settings
 - v1.7:
   - Added SmartAvatarView with three-layer fallback chain (Contact Photo → Brand Logo → Initials)
   - Added AvatarService actor for avatar caching and domain detection
