@@ -115,6 +115,24 @@ private enum DateFormatters {
 - Use `nonisolated` for pure parsing functions that don't access actor state
 - Use Sendable DTOs for cross-actor data transfer (SwiftData models aren't Sendable)
 
+## Git Conventions
+
+### Commit Messages
+```
+Short summary of change (imperative mood)
+
+Optional longer description of what and why.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+```
+
+### Commit Best Practices
+- Use HEREDOC for multi-line commit messages to preserve formatting
+- Don't commit `.xcuserstate` files (user-specific Xcode state)
+- Don't commit `.build/` directories
+
 ## Code Style
 
 ### SwiftUI Views
