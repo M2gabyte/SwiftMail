@@ -152,46 +152,55 @@ struct InboxView: View {
         .background(Color(.systemBackground))
         .listSectionSpacing(6)
         .accessibilityIdentifier("inboxList")
-        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic))
-        .searchFocused($searchFocused)
-        .navigationTitle(viewModel.currentMailbox.rawValue)
-        .navigationBarTitleDisplayMode(.large)
-        .toolbarTitleMenu {
-            ForEach(Mailbox.allCases, id: \.self) { mailbox in
-                Button {
-                    viewModel.selectMailbox(mailbox)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Menu {
+                    ForEach(Mailbox.allCases, id: \.self) { mailbox in
+                        Button {
+                            viewModel.selectMailbox(mailbox)
+                        } label: {
+                            if mailbox == viewModel.currentMailbox {
+                                Label(mailbox.rawValue, systemImage: "checkmark")
+                            } else {
+                                Label(mailbox.rawValue, systemImage: mailbox.icon)
+                            }
+                        }
+                    }
                 } label: {
-                    Label(mailbox.rawValue, systemImage: mailbox.icon)
+                    Image(systemName: "line.3.horizontal.decrease.circle")
                 }
             }
-        }
-        .toolbar {
+            ToolbarItem(placement: .principal) {
+                TextField("Search", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 200)
+            }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingSettings = true } label: {
-                    Image(systemName: "gearshape")
+                Menu {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Settings")
             }
             ToolbarItemGroup(placement: .bottomBar) {
-                Button { searchFocused = true } label: {
-                    Image(systemName: "magnifyingglass")
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("searchButton")
-                .accessibilityLabel("Search emails")
-
                 Spacer()
 
                 Button { showingCompose = true } label: {
                     Image(systemName: "square.and.pencil")
                 }
-                .buttonStyle(.plain)
+                .tint(.primary)
                 .accessibilityIdentifier("composeButton")
                 .accessibilityLabel("Compose new email")
             }
         }
-        .toolbarBackground(.automatic, for: .bottomBar)
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 44)
+        }
         .navigationDestination(isPresented: $viewModel.showingEmailDetail) {
             if let email = viewModel.selectedEmail {
                 EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)
@@ -373,26 +382,33 @@ struct FilterPill: View {
             HStack(spacing: 6) {
                 Image(systemName: filter.icon)
                     .font(.caption)
+                    .foregroundStyle(isActive ? filter.color : .secondary)
                 Text(filter.rawValue)
                     .font(.subheadline)
+                    .foregroundStyle(.primary)
                 if count > 0 {
                     Text("\(count)")
                         .font(.caption2)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .fill(isActive ? .white.opacity(0.3) : filter.color.opacity(0.2))
-                        )
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .foregroundStyle(isActive ? .white : .primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                Capsule()
-                    .fill(isActive ? filter.color : Color(.systemGray6))
+                Group {
+                    if isActive {
+                        Capsule().fill(.thinMaterial)
+                    } else {
+                        Capsule().fill(Color.clear)
+                    }
+                }
+            )
+            .overlay(
+                Capsule().strokeBorder(
+                    .primary.opacity(isActive ? 0.22 : 0.10),
+                    lineWidth: 1
+                )
             )
         }
         .buttonStyle(.plain)
