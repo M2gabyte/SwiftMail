@@ -12,34 +12,85 @@ struct InboxView: View {
     @State private var showingSettings = false
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
+    @StateObject private var searchHistory = SearchHistoryManager.shared
 
-    /// Filtered sections based on search text
+    /// Whether to show search UI (recent searches, suggestions)
+    private var isSearchActive: Bool {
+        searchFocused || !searchText.isEmpty
+    }
+
+    /// Filtered sections based on search text with smart filter support
     private var filteredSections: [EmailSection] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return viewModel.emailSections }
+
+        // Parse smart filters
+        let filter = SearchFilter.parse(query)
 
         return viewModel.emailSections.compactMap { section in
             let filteredEmails = section.emails.filter { email in
-                email.senderName.localizedCaseInsensitiveContains(query) ||
-                email.senderEmail.localizedCaseInsensitiveContains(query) ||
-                email.subject.localizedCaseInsensitiveContains(query) ||
-                email.snippet.localizedCaseInsensitiveContains(query)
+                filter.matches(email)
             }
             guard !filteredEmails.isEmpty else { return nil }
             return EmailSection(id: section.id, title: section.title, emails: filteredEmails)
         }
     }
 
+    /// Save search to history when user commits
+    private func commitSearch() {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty {
+            searchHistory.addSearch(query)
+        }
+    }
+
+    /// Terms to highlight in search results
+    private var highlightTerms: [String] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+        return SearchFilter.parse(query).highlightTerms
+    }
+
     var body: some View {
         List {
-            InboxHeaderBlock(
-                scope: $viewModel.scope,
-                activeFilter: $viewModel.activeFilter,
-                filterCounts: viewModel.filterCounts
-            )
-            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 10, trailing: 16))
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color(.systemBackground))
+            // Show header only when not actively searching
+            if !isSearchActive {
+                InboxHeaderBlock(
+                    scope: $viewModel.scope,
+                    activeFilter: $viewModel.activeFilter,
+                    filterCounts: viewModel.filterCounts
+                )
+                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 10, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color(.systemBackground))
+            }
+
+            // Search suggestions when focused with empty text
+            if searchFocused && searchText.isEmpty {
+                SearchSuggestionsSection(
+                    recentSearches: searchHistory.recentSearches,
+                    onSelectSearch: { query in
+                        searchText = query
+                        commitSearch()
+                    },
+                    onRemoveSearch: { query in
+                        searchHistory.removeSearch(query)
+                    },
+                    onClearHistory: {
+                        searchHistory.clearHistory()
+                    }
+                )
+            }
+
+            // Filter suggestions when typing
+            if !searchText.isEmpty && !searchText.contains(":") {
+                FilterSuggestionsRow(
+                    query: searchText,
+                    onSelect: { filter in
+                        searchText = filter
+                    }
+                )
+            }
 
             if !searchText.isEmpty && filteredSections.isEmpty {
                 ContentUnavailableView.search(text: searchText)
@@ -53,7 +104,8 @@ struct InboxView: View {
                         EmailRow(
                             email: email,
                             isCompact: listDensity == .compact,
-                            showAccountBadge: viewModel.currentMailbox == .allInboxes
+                            showAccountBadge: viewModel.currentMailbox == .allInboxes,
+                            highlightTerms: highlightTerms
                         )
                         .listRowBackground(Color(.systemBackground))
                         .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
@@ -212,7 +264,7 @@ struct InboxView: View {
                             .background(.thinMaterial, in: Circle())
                     }
 
-                    BottomSearchPill(text: $searchText, focused: $searchFocused)
+                    BottomSearchPill(text: $searchText, focused: $searchFocused, onSubmit: commitSearch)
 
                     Button { showingCompose = true } label: {
                         Image(systemName: "square.and.pencil")
@@ -519,6 +571,7 @@ struct EmailRow: View {
     let email: Email
     var isCompact: Bool = false
     var showAccountBadge: Bool = false
+    var highlightTerms: [String] = []
 
     private var isVIPSender: Bool {
         let vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: email.accountEmail)
@@ -530,6 +583,49 @@ struct EmailRow: View {
             return nil
         }
         return accountEmail.split(separator: "@").first.map(String.init)
+    }
+
+    /// Highlight matching terms in text
+    private func highlightedText(_ text: String, font: Font, baseColor: Color = .primary) -> Text {
+        guard !highlightTerms.isEmpty else {
+            return Text(text).foregroundStyle(baseColor)
+        }
+
+        var result = Text("")
+        var lastEnd = text.startIndex
+
+        // Find all matches and sort by position
+        var matches: [(range: Range<String.Index>, term: String)] = []
+        for term in highlightTerms where !term.isEmpty {
+            var searchStart = text.startIndex
+            while let range = text.range(of: term, options: .caseInsensitive, range: searchStart..<text.endIndex) {
+                matches.append((range, term))
+                searchStart = range.upperBound
+            }
+        }
+        matches.sort { $0.range.lowerBound < $1.range.lowerBound }
+
+        // Build attributed text
+        for match in matches {
+            if match.range.lowerBound >= lastEnd {
+                // Add non-highlighted text before match
+                if lastEnd < match.range.lowerBound {
+                    result = result + Text(text[lastEnd..<match.range.lowerBound]).foregroundStyle(baseColor)
+                }
+                // Add highlighted match
+                result = result + Text(text[match.range])
+                    .foregroundStyle(Color.yellow)
+                    .bold()
+                lastEnd = match.range.upperBound
+            }
+        }
+
+        // Add remaining text
+        if lastEnd < text.endIndex {
+            result = result + Text(text[lastEnd...]).foregroundStyle(baseColor)
+        }
+
+        return result
     }
 
     var body: some View {
@@ -546,7 +642,7 @@ struct EmailRow: View {
             // Content
             VStack(alignment: .leading, spacing: isCompact ? 1 : 2) {
                 HStack {
-                    Text(email.senderName)
+                    highlightedText(email.senderName, font: isCompact ? .caption : .subheadline)
                         .font(isCompact ? .caption : .subheadline)
                         .fontWeight(email.isUnread ? .semibold : .regular)
                         .lineLimit(1)
@@ -580,15 +676,14 @@ struct EmailRow: View {
                     }
                 }
 
-                Text(email.subject)
+                highlightedText(email.subject, font: isCompact ? .caption2 : .caption)
                     .font(isCompact ? .caption2 : .caption)
                     .fontWeight(email.isUnread ? .medium : .regular)
                     .lineLimit(1)
 
                 if !isCompact {
-                    Text(email.snippet)
+                    highlightedText(email.snippet, font: .caption2, baseColor: .secondary)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
@@ -694,6 +789,110 @@ struct EmailSection: Identifiable {
     let id: String
     let title: String
     let emails: [Email]
+}
+
+// MARK: - Search Suggestions
+
+struct SearchSuggestionsSection: View {
+    let recentSearches: [String]
+    let onSelectSearch: (String) -> Void
+    let onRemoveSearch: (String) -> Void
+    let onClearHistory: () -> Void
+
+    var body: some View {
+        // Smart filter suggestions
+        Section {
+            ForEach(SearchFilter.suggestions, id: \.prefix) { suggestion in
+                Button {
+                    onSelectSearch(suggestion.prefix)
+                } label: {
+                    Label(suggestion.description, systemImage: suggestion.icon)
+                        .foregroundStyle(.primary)
+                }
+            }
+        } header: {
+            Text("Search Filters")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .textCase(nil)
+        }
+        .listRowBackground(Color(.systemBackground))
+
+        // Recent searches
+        if !recentSearches.isEmpty {
+            Section {
+                ForEach(recentSearches, id: \.self) { search in
+                    HStack {
+                        Button {
+                            onSelectSearch(search)
+                        } label: {
+                            Label(search, systemImage: "clock.arrow.circlepath")
+                                .foregroundStyle(.primary)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            onRemoveSearch(search)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Recent")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+
+                    Spacer()
+
+                    Button("Clear") {
+                        onClearHistory()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+                }
+            }
+            .listRowBackground(Color(.systemBackground))
+        }
+    }
+}
+
+struct FilterSuggestionsRow: View {
+    let query: String
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(SearchFilter.suggestions.prefix(3), id: \.prefix) { suggestion in
+                    Button {
+                        onSelect("\(suggestion.prefix)\(query)")
+                    } label: {
+                        Label("\(suggestion.prefix)\(query)", systemImage: suggestion.icon)
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(.systemGray6))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
 }
 
 // MARK: - Preview

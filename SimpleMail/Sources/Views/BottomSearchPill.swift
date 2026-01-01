@@ -3,6 +3,9 @@ import SwiftUI
 struct BottomSearchPill: View {
     @Binding var text: String
     @FocusState.Binding var focused: Bool
+    var onSubmit: (() -> Void)?
+
+    @StateObject private var speechRecognizer = SpeechRecognizer()
 
     var body: some View {
         HStack(spacing: 8) {
@@ -17,8 +20,22 @@ struct BottomSearchPill: View {
                     .autocorrectionDisabled()
                     .submitLabel(.search)
                     .focused($focused)
+                    .onSubmit {
+                        onSubmit?()
+                    }
 
-                if !text.isEmpty {
+                // Voice or Clear button
+                if speechRecognizer.isListening {
+                    Button {
+                        speechRecognizer.stopListening()
+                    } label: {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.red)
+                            .symbolEffect(.pulse)
+                    }
+                    .buttonStyle(.plain)
+                } else if !text.isEmpty {
                     Button {
                         let generator = UIImpactFeedbackGenerator(style: .light)
                         generator.impactOccurred()
@@ -30,6 +47,18 @@ struct BottomSearchPill: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
                     .transition(.scale.combined(with: .opacity))
+                } else {
+                    Button {
+                        let generator = UIImpactFeedbackGenerator(style: .light)
+                        generator.impactOccurred()
+                        speechRecognizer.startListening()
+                        focused = true
+                    } label: {
+                        Image(systemName: "mic")
+                            .font(.system(size: 16, weight: .regular))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 14)
@@ -45,6 +74,7 @@ struct BottomSearchPill: View {
                     generator.impactOccurred()
                     text = ""
                     focused = false
+                    speechRecognizer.stopListening()
                 } label: {
                     Text("Cancel")
                         .font(.body)
@@ -56,6 +86,12 @@ struct BottomSearchPill: View {
         }
         .animation(.easeInOut(duration: 0.2), value: focused)
         .animation(.easeInOut(duration: 0.2), value: text.isEmpty)
+        .animation(.easeInOut(duration: 0.2), value: speechRecognizer.isListening)
+        .onChange(of: speechRecognizer.transcript) { _, newValue in
+            if !newValue.isEmpty {
+                text = newValue
+            }
+        }
     }
 }
 
