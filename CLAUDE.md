@@ -1,5 +1,11 @@
 # Claude Code Instructions for SimpleMail (Swift)
 
+## General Principles
+
+- **Delegate to sub-agents** when tasks can be broken down
+- **Parallelize when possible** - launch multiple agents concurrently for independent tasks
+- **Provide effective context** - give agents enough information to work autonomously
+
 ## Task Management
 
 - **Always use todo lists** for any multi-step task. This helps track progress and ensures nothing gets missed.
