@@ -5,41 +5,57 @@ struct BottomSearchPill: View {
     @FocusState.Binding var focused: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            // Search pill
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(.secondary)
 
-            TextField("Search", text: $text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .focused($focused)
+                TextField("Search", text: $text)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .focused($focused)
 
-            if text.isEmpty {
-                Button(action: {}) {
-                    Image(systemName: "mic")
-                        .font(.system(size: 16, weight: .regular))
+                if !text.isEmpty {
+                    Button {
+                        let generator = UIImpactFeedbackGenerator(style: .light)
+                        generator.impactOccurred()
+                        text = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16, weight: .regular))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tertiary)
+                    .transition(.scale.combined(with: .opacity))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            } else {
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.thinMaterial, in: Capsule())
+            .contentShape(Capsule())
+            .onTapGesture { focused = true }
+
+            // Cancel button when focused or has text
+            if focused || !text.isEmpty {
                 Button {
+                    let generator = UIImpactFeedbackGenerator(style: .light)
+                    generator.impactOccurred()
                     text = ""
+                    focused = false
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16, weight: .regular))
+                    Text("Cancel")
+                        .font(.body)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.thinMaterial, in: Capsule())
-        .contentShape(Capsule())
-        .onTapGesture { focused = true }
-        .frame(maxWidth: .infinity)
+        .animation(.easeInOut(duration: 0.2), value: focused)
+        .animation(.easeInOut(duration: 0.2), value: text.isEmpty)
     }
 }
 

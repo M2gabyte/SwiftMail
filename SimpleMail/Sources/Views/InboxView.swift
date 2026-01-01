@@ -41,6 +41,12 @@ struct InboxView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color(.systemBackground))
 
+            if !searchText.isEmpty && filteredSections.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
             ForEach(filteredSections) { section in
                 Section {
                     ForEach(section.emails) { email in
@@ -166,6 +172,7 @@ struct InboxView: View {
         .listStyle(.plain)
         .listRowSpacing(0)
         .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.interactively)
         .background(Color(.systemBackground))
         .listSectionSpacing(6)
         .accessibilityIdentifier("inboxList")
