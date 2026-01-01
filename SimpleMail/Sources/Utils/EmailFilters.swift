@@ -1,7 +1,10 @@
 import Foundation
+import OSLog
 
 // MARK: - Email Filters
 // Pure functions for email classification, ported from React briefingEngine.ts
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "EmailFilters")
 
 enum EmailFilters {
 
@@ -191,17 +194,29 @@ enum EmailFilters {
     /// Filter emails to only show those from real people
     /// Matches React's filterForPeopleScope function
     static func filterForPeopleScope(_ emails: [Email]) -> [Email] {
-        return emails.filter { email in
+        logger.info("filterForPeopleScope: Processing \(emails.count) emails")
+
+        let result = emails.filter { email in
+            let isHuman = looksLikeHumanSender(email)
+            let bulk = isBulk(email)
+            let hasSent = email.labelIds.contains("SENT")
+
             // Keep if it looks like a human sender AND is not bulk
-            if looksLikeHumanSender(email) && !isBulk(email) {
+            if isHuman && !bulk {
                 return true
             }
             // Also keep emails we've replied to (conversation evidence)
-            if email.labelIds.contains("SENT") {
+            if hasSent {
                 return true
             }
+
+            // Log why email was filtered out
+            logger.debug("Filtered out: \(email.senderName) <\(email.senderEmail)> - isHuman=\(isHuman), isBulk=\(bulk)")
             return false
         }
+
+        logger.info("filterForPeopleScope: Kept \(result.count) of \(emails.count) emails")
+        return result
     }
 
     // MARK: - Private Helpers
