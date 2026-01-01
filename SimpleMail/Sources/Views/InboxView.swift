@@ -417,6 +417,11 @@ struct EmailRow: View {
     let email: Email
     var isCompact: Bool = false
 
+    private var isVIPSender: Bool {
+        let vipSenders = UserDefaults.standard.stringArray(forKey: "vipSenders") ?? []
+        return vipSenders.contains(email.senderEmail.lowercased())
+    }
+
     var body: some View {
         HStack(spacing: isCompact ? 8 : 10) {
             // Avatar (hidden in compact mode)
@@ -435,6 +440,12 @@ struct EmailRow: View {
                         .font(isCompact ? .caption : .subheadline)
                         .fontWeight(email.isUnread ? .semibold : .regular)
                         .lineLimit(1)
+
+                    if isVIPSender {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                    }
 
                     Spacer()
 

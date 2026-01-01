@@ -70,18 +70,37 @@ struct EmailDetailView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            EmailDetailFooter(
-                onReply: { showingReplySheet = true },
-                onReplyAll: { showingReplySheet = true },
-                onForward: { },
-                onArchive: {
+        .toolbar {
+            ToolbarItemGroup(placement: .bottomBar) {
+                // Reply Menu (left side)
+                Menu {
+                    Button(action: { showingReplySheet = true }) {
+                        Label("Reply", systemImage: "arrowshape.turn.up.left")
+                    }
+                    Button(action: { showingReplySheet = true }) {
+                        Label("Reply All", systemImage: "arrowshape.turn.up.left.2")
+                    }
+                    Button(action: { }) {
+                        Label("Forward", systemImage: "arrowshape.turn.up.right")
+                    }
+                } label: {
+                    Image(systemName: "arrowshape.turn.up.left")
+                        .font(.title3)
+                }
+
+                Spacer()
+
+                // Archive (right side)
+                Button(action: {
                     Task {
                         await viewModel.archive()
                         dismiss()
                     }
+                }) {
+                    Image(systemName: "archivebox")
+                        .font(.title3)
                 }
-            )
+            }
         }
         .sheet(isPresented: $showingReplySheet) {
             if let latestMessage = viewModel.messages.last {
@@ -114,6 +133,10 @@ struct EmailDetailView: View {
                 Button("Unsubscribe") {
                     Task { await viewModel.unsubscribe() }
                 }
+            }
+
+            Button(viewModel.isVIPSender ? "Remove from VIP" : "Mark as VIP") {
+                viewModel.toggleVIP()
             }
 
             Button("Block Sender") {
@@ -649,52 +672,6 @@ struct EmailSummaryView: View {
     }
 }
 
-// MARK: - Email Detail Footer
-
-struct EmailDetailFooter: View {
-    let onReply: () -> Void
-    let onReplyAll: () -> Void
-    let onForward: () -> Void
-    let onArchive: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            FooterButton(icon: "arrowshape.turn.up.left.fill", label: "Reply", action: onReply)
-            FooterButton(icon: "arrowshape.turn.up.left.2.fill", label: "Reply All", action: onReplyAll)
-            FooterButton(icon: "arrowshape.turn.up.right.fill", label: "Forward", action: onForward)
-            FooterButton(icon: "archivebox.fill", label: "Archive", action: onArchive)
-        }
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.1), radius: 8, y: -4)
-                .ignoresSafeArea(edges: .bottom)
-        )
-    }
-}
-
-struct FooterButton: View {
-    let icon: String
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.title3)
-                Text(label)
-                    .font(.caption2)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.blue)
-    }
-}
-
 // MARK: - Email Detail ViewModel
 
 @MainActor
@@ -727,6 +704,12 @@ class EmailDetailViewModel: ObservableObject {
     var senderEmail: String? {
         guard let from = messages.last?.from else { return nil }
         return EmailParser.extractSenderEmail(from: from)
+    }
+
+    var isVIPSender: Bool {
+        guard let email = senderEmail else { return false }
+        let vipSenders = UserDefaults.standard.stringArray(forKey: "vipSenders") ?? []
+        return vipSenders.contains(email.lowercased())
     }
 
     var autoSummarizeEnabled: Bool {
@@ -883,6 +866,24 @@ class EmailDetailViewModel: ObservableObject {
             try? await GmailService.shared.reportSpam(messageId: message.id)
         }
         HapticFeedback.success()
+    }
+
+    func toggleVIP() {
+        guard let email = senderEmail else { return }
+        let emailLower = email.lowercased()
+
+        var vipSenders = UserDefaults.standard.stringArray(forKey: "vipSenders") ?? []
+
+        if vipSenders.contains(emailLower) {
+            vipSenders.removeAll { $0 == emailLower }
+            HapticFeedback.light()
+        } else {
+            vipSenders.append(emailLower)
+            HapticFeedback.success()
+        }
+
+        UserDefaults.standard.set(vipSenders, forKey: "vipSenders")
+        objectWillChange.send() // Trigger UI update
     }
 }
 
