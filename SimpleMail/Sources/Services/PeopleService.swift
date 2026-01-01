@@ -196,6 +196,69 @@ actor PeopleService {
         }
     }
 
+    // MARK: - Photo Lookup
+
+    /// Gets the photo URL for a specific email address
+    func getPhotoURL(for email: String) async -> URL? {
+        let lowercasedEmail = email.lowercased()
+
+        // Try to get from cached contacts
+        guard let accountKey = await currentAccountKey() else {
+            return nil
+        }
+
+        // If cache is empty, try to fetch contacts
+        if cachedContactsByAccount[accountKey]?.isEmpty ?? true {
+            do {
+                _ = try await fetchContacts()
+            } catch {
+                logger.warning("Failed to fetch contacts for photo lookup: \(error.localizedDescription)")
+            }
+        }
+
+        // Find matching contact
+        let cached = cachedContactsByAccount[accountKey] ?? []
+        if let contact = cached.first(where: { $0.email.lowercased() == lowercasedEmail }) {
+            if let photoURLString = contact.photoURL, let url = URL(string: photoURLString) {
+                return url
+            }
+        }
+
+        return nil
+    }
+
+    /// Gets photo URLs for multiple email addresses (batch lookup)
+    func getPhotoURLs(for emails: [String]) async -> [String: URL] {
+        var results: [String: URL] = [:]
+
+        guard let accountKey = await currentAccountKey() else {
+            return results
+        }
+
+        // If cache is empty, try to fetch contacts
+        if cachedContactsByAccount[accountKey]?.isEmpty ?? true {
+            do {
+                _ = try await fetchContacts()
+            } catch {
+                logger.warning("Failed to fetch contacts for batch photo lookup: \(error.localizedDescription)")
+            }
+        }
+
+        let cached = cachedContactsByAccount[accountKey] ?? []
+        let lowercasedEmails = Set(emails.map { $0.lowercased() })
+
+        for contact in cached {
+            let lowerEmail = contact.email.lowercased()
+            if lowercasedEmails.contains(lowerEmail) {
+                if let photoURLString = contact.photoURL, let url = URL(string: photoURLString) {
+                    results[lowerEmail] = url
+                }
+            }
+        }
+
+        return results
+    }
+
     // MARK: - Parsing
 
     private func parseContacts(from persons: [Person]) -> [Contact] {
@@ -290,8 +353,8 @@ actor PeopleService {
     // MARK: - Clear Cache
 
     func clearCache() {
-        cachedContacts = []
-        lastCacheTime = nil
+        cachedContactsByAccount = [:]
+        lastCacheTimeByAccount = [:]
     }
 }
 

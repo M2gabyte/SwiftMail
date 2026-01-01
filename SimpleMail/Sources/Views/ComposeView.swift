@@ -213,16 +213,11 @@ struct RecipientField: View {
                             selectContact(contact)
                         }) {
                             HStack(spacing: 10) {
-                                // Avatar
-                                ZStack {
-                                    Circle()
-                                        .fill(avatarColor(for: contact.email))
-                                    Text(contact.initials)
-                                        .font(.caption2)
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(.white)
-                                }
-                                .frame(width: 28, height: 28)
+                                SmartAvatarView(
+                                    email: contact.email,
+                                    name: contact.name,
+                                    size: 28
+                                )
 
                                 VStack(alignment: .leading, spacing: 1) {
                                     if !contact.name.isEmpty {
@@ -293,14 +288,6 @@ struct RecipientField: View {
                 showingSuggestions = !filtered.isEmpty
             }
         }
-    }
-
-    private func avatarColor(for email: String) -> Color {
-        let hash = email.hashValue
-        let colors: [Color] = [
-            .blue, .green, .orange, .purple, .pink, .teal, .indigo, .cyan
-        ]
-        return colors[abs(hash) % colors.count]
     }
 }
 

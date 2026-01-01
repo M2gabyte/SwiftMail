@@ -222,16 +222,11 @@ struct BriefingItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Avatar
-            ZStack {
-                Circle()
-                    .fill(avatarColor)
-                Text(initials)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 40, height: 40)
+            SmartAvatarView(
+                email: item.senderEmail,
+                name: item.senderName,
+                size: 40
+            )
 
             // Content
             VStack(alignment: .leading, spacing: 4) {
@@ -276,20 +271,6 @@ struct BriefingItemRow: View {
         }
         .padding(12)
         .contentShape(Rectangle())
-    }
-
-    private var initials: String {
-        let words = item.senderName.split(separator: " ")
-        if words.count >= 2 {
-            return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
-        }
-        return String(item.senderName.prefix(2)).uppercased()
-    }
-
-    private var avatarColor: Color {
-        let hash = item.senderEmail.hashValue
-        let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .cyan]
-        return colors[abs(hash) % colors.count]
     }
 
     private var badgeColor: Color {
