@@ -426,11 +426,11 @@ struct EmailRow: View {
         HStack(spacing: isCompact ? 8 : 10) {
             // Avatar (hidden in compact mode)
             if !isCompact {
-                AvatarView(
-                    initials: email.senderInitials,
-                    email: email.senderEmail
+                SmartAvatarView(
+                    email: email.senderEmail,
+                    name: email.senderName,
+                    size: 36
                 )
-                .frame(width: 36, height: 36)
             }
 
             // Content
@@ -482,34 +482,6 @@ struct EmailRow: View {
         }
         .padding(.vertical, isCompact ? 0 : 2)
         .contentShape(Rectangle())
-    }
-}
-
-// MARK: - Avatar View
-
-struct AvatarView: View {
-    let initials: String
-    let email: String
-    var size: CGFloat = 40
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(avatarColor)
-            Text(initials)
-                .font(size > 32 ? .caption : .system(size: size * 0.35))
-                .fontWeight(.semibold)
-                .foregroundStyle(.white)
-        }
-        .frame(width: size, height: size)
-    }
-
-    private var avatarColor: Color {
-        let hash = email.hashValue
-        let colors: [Color] = [
-            .blue, .green, .orange, .purple, .pink, .teal, .indigo, .cyan
-        ]
-        return colors[abs(hash) % colors.count]
     }
 }
 

@@ -223,11 +223,11 @@ struct EmailRowContent: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            AvatarView(
-                initials: email.senderInitials,
-                email: email.senderEmail
+            SmartAvatarView(
+                email: email.senderEmail,
+                name: email.senderName,
+                size: 36
             )
-            .frame(width: 36, height: 36)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack {

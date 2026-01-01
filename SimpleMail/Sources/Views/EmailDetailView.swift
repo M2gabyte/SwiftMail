@@ -181,9 +181,9 @@ struct EmailMessageCard: View {
             // Header - always visible
             Button(action: onToggleExpand) {
                 HStack(spacing: 12) {
-                    AvatarView(
-                        initials: initials,
+                    SmartAvatarView(
                         email: senderEmail,
+                        name: senderName,
                         size: 40
                     )
 
@@ -241,14 +241,6 @@ struct EmailMessageCard: View {
 
     private var senderName: String {
         EmailParser.extractSenderName(from: message.from)
-    }
-
-    private var initials: String {
-        let words = senderName.split(separator: " ")
-        if words.count >= 2 {
-            return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
-        }
-        return String(senderName.prefix(2)).uppercased()
     }
 
     private func formatDate(_ date: Date) -> String {

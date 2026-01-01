@@ -44,12 +44,14 @@ SimpleMail/
 │   │   ├── BriefingScreenView.swift # Daily digest view
 │   │   ├── SnoozePickerSheet.swift  # Snooze time picker
 │   │   ├── AttachmentViewer.swift   # QuickLook attachment preview
-│   │   └── BatchOperations.swift    # Multi-select & batch actions
+│   │   ├── BatchOperations.swift    # Multi-select & batch actions
+│   │   └── SmartAvatarView.swift    # Avatar with fallback chain
 │   │
 │   ├── Services/
 │   │   ├── AuthService.swift        # OAuth authentication
 │   │   ├── GmailService.swift       # Gmail API client
 │   │   ├── PeopleService.swift      # Google People API (contacts)
+│   │   ├── AvatarService.swift      # Avatar caching & brand logos
 │   │   ├── BackgroundSync.swift     # Background refresh
 │   │   ├── SnoozeManager.swift      # Snooze persistence
 │   │   └── EmailCache.swift         # Offline caching
@@ -353,6 +355,13 @@ ContentView
 - Auto-save drafts
 - Reply threading with In-Reply-To headers
 
+**SmartAvatarView:**
+- Three-layer fallback: Contact Photo → Brand Logo → Initials
+- Uses AvatarService for caching and domain detection
+- AsyncImage for lazy loading of photos and brand logos
+- InitialsAvatarView as base layer (always rendered)
+- Deterministic colors based on email hash
+
 ### 8. Google People API (PeopleService.swift)
 
 **Contact Autocomplete:**
@@ -370,6 +379,8 @@ actor PeopleService {
     func fetchContacts() async throws -> [Contact]
     func searchContacts(query: String) async -> [Contact]
     func preloadContacts() async
+    func getPhotoURL(for email: String) async -> URL?
+    func getPhotoURLs(for emails: [String]) async -> [String: URL]
 }
 ```
 
@@ -378,13 +389,73 @@ actor PeopleService {
 - 5-minute cache to reduce API calls
 - Preloads on app launch for faster compose autocomplete
 - Deduplicates contacts by email address
+- Photo URL lookup for avatar display (single and batch)
 
 **OAuth Scope Required:**
 ```
 https://www.googleapis.com/auth/contacts.readonly
 ```
 
-### 9. Theme Manager (SimpleMailApp.swift)
+### 9. Avatar Service (AvatarService.swift)
+
+**Smart Avatar System:**
+```swift
+actor AvatarService {
+    static let shared = AvatarService()
+
+    // Caches
+    private var photoCache: [String: URL?] = [:]
+    private var brandLogoStatus: [String: Bool] = [:]
+
+    // Photo lookup
+    func getCachedPhoto(for email: String) -> URL??
+    func cachePhoto(email: String, url: URL?)
+    func hasPhotoCache(for email: String) -> Bool
+
+    // Brand logos
+    func getBrandLogoURL(for email: String) -> URL?
+    func markBrandLogoLoaded(_ domain: String, success: Bool)
+    func hasBrandLogoFailed(for email: String) -> Bool
+
+    // Domain detection
+    func isPersonalDomain(_ domain: String) -> Bool
+    static func colorIndex(for email: String) -> Int
+}
+```
+
+**Features:**
+- Three-layer fallback chain: Contact Photo → Brand Logo → Initials
+- In-memory caching for contact photos and brand logo status
+- Personal domain detection (gmail.com, outlook.com, etc.) to skip brand logos
+- Domain aliases for correct branding (vzw.com → verizon.com)
+- High-quality 256px favicons via Google's favicon service
+- Deterministic color selection for initials based on email hash
+
+**Brand Logo URL:**
+```
+https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://{domain}&size=256
+```
+
+**Personal Domains (skip brand logo):**
+```
+gmail.com, googlemail.com, outlook.com, hotmail.com, live.com,
+msn.com, yahoo.com, ymail.com, icloud.com, me.com, mac.com,
+aol.com, protonmail.com, proton.me, zoho.com, fastmail.com,
+hey.com, tutanota.com, tutamail.com
+```
+
+**Domain Aliases:**
+| Alias Domain | Primary Brand |
+|--------------|---------------|
+| vzw.com | verizon.com |
+| vtext.com | verizon.com |
+| bloomberglp.com | bloomberg.com |
+| mail.capitalone.com | capitalone.com |
+| alerts.chase.com | chase.com |
+| facebookmail.com | facebook.com |
+| mail.instagram.com | instagram.com |
+
+### 10. Theme Manager (SimpleMailApp.swift)
 
 **Appearance Settings:**
 ```swift
@@ -413,7 +484,7 @@ enum AppTheme: String, Codable {
 - Applied via `.preferredColorScheme()` on root view
 - Immediate UI update on change
 
-### 10. Biometric Authentication (SimpleMailApp.swift)
+### 11. Biometric Authentication (SimpleMailApp.swift)
 
 **Face ID / Touch ID Lock:**
 ```swift
@@ -612,6 +683,8 @@ logger.warning("Rate limited on \(url.path)")
 | `SnoozeManager` | Snooze scheduling, notifications |
 | `AuthService` | OAuth flow, token refresh |
 | `BackgroundSync` | Background task execution |
+| `PeopleService` | Contacts fetch, search, photo lookup |
+| `AvatarService` | Avatar cache operations |
 
 **Viewing Logs:**
 ```bash
@@ -790,9 +863,18 @@ actor GmailService {
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.6*
+*Architecture version: 1.7*
 
 **Changelog:**
+- v1.7:
+  - Added SmartAvatarView with three-layer fallback chain (Contact Photo → Brand Logo → Initials)
+  - Added AvatarService actor for avatar caching and domain detection
+  - Brand logos fetched via Google's high-quality favicon service (256px)
+  - Personal domain detection to skip brand logos for gmail.com, outlook.com, etc.
+  - Domain alias mapping for correct branding (vzw.com → verizon.com, etc.)
+  - Added getPhotoURL() and getPhotoURLs() to PeopleService for contact photo lookup
+  - Replaced old AvatarView in InboxView, EmailDetailView, ComposeView, BriefingScreenView, BatchOperations
+  - Deterministic color selection for initials based on email hash
 - v1.6:
   - Fixed email body rendering with dynamic WebView height calculation using JavaScript message handlers
   - WebView now measures content height after load and image load events
