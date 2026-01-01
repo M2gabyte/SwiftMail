@@ -322,34 +322,43 @@ struct ComposeView: View {
             .accessibilityIdentifier("cancelCompose")
         }
 
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            Button(action: { showingAIDraft = true }) {
-                Image(systemName: "sparkles")
-            }
-
-            Button(action: { showingTemplates = true }) {
-                Image(systemName: "doc.on.doc")
-            }
-
-            Button(action: { viewModel.showCcBcc.toggle() }) {
-                Image(systemName: viewModel.showCcBcc ? "chevron.up" : "chevron.down")
-            }
-
-            Button(action: { viewModel.showAttachmentPicker = true }) {
-                Image(systemName: "paperclip")
-            }
-
-            Button(action: { showingScheduleSheet = true }) {
-                Image(systemName: "clock")
-            }
-            .disabled(!viewModel.canSend)
-
+        ToolbarItem(placement: .primaryAction) {
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
+                    .foregroundStyle(viewModel.canSend ? .blue : .gray)
             }
             .disabled(!viewModel.canSend)
             .accessibilityIdentifier("sendButton")
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button(action: { showingAIDraft = true }) {
+                    Label("AI Draft", systemImage: "sparkles")
+                }
+
+                Button(action: { showingTemplates = true }) {
+                    Label("Templates", systemImage: "doc.on.doc")
+                }
+
+                Button(action: { viewModel.showAttachmentPicker = true }) {
+                    Label("Add Attachment", systemImage: "paperclip")
+                }
+
+                Button(action: { viewModel.showCcBcc.toggle() }) {
+                    Label(viewModel.showCcBcc ? "Hide Cc/Bcc" : "Show Cc/Bcc", systemImage: viewModel.showCcBcc ? "chevron.up" : "chevron.down")
+                }
+
+                Divider()
+
+                Button(action: { showingScheduleSheet = true }) {
+                    Label("Schedule Send", systemImage: "clock")
+                }
+                .disabled(!viewModel.canSend)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
         }
     }
 
@@ -394,6 +403,8 @@ struct RecipientField: View {
     @State private var suggestions: [PeopleService.Contact] = []
     @State private var showingSuggestions = false
 
+    @FocusState private var textFieldFocused: Bool
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
@@ -413,7 +424,8 @@ struct RecipientField: View {
                         .textInputAutocapitalization(.never)
                         .keyboardType(.emailAddress)
                         .autocorrectionDisabled()
-                        .frame(minWidth: 100)
+                        .frame(minWidth: 100, maxWidth: .infinity)
+                        .focused($textFieldFocused)
                         .onSubmit {
                             addRecipient()
                         }
@@ -427,8 +439,16 @@ struct RecipientField: View {
                         }
                 }
                 .padding(.vertical, 8)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    textFieldFocused = true
+                }
             }
             .padding(.horizontal, horizontalPadding)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                textFieldFocused = true
+            }
 
             // Autocomplete suggestions
             if showingSuggestions && !suggestions.isEmpty && isFocused {
