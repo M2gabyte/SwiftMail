@@ -283,40 +283,11 @@ private enum MessageDateFormatters {
 struct EmailBodyView: View {
     let html: String
     @State private var contentHeight: CGFloat = 200
-    @State private var showImages = false
-
-    private var hasImages: Bool {
-        let lowered = html.lowercased()
-        return lowered.contains("<img") || lowered.contains("background-image")
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Show "Load Images" button at TOP if images are blocked
-            if !showImages && hasImages {
-                Button {
-                    showImages = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "photo.fill")
-                        Text("Load Remote Images")
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color.blue)
-                    .clipShape(Capsule())
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-            }
-
-            EmailBodyWebView(html: html, contentHeight: $contentHeight, blockImages: !showImages)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: contentHeight)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        EmailBodyWebView(html: html, contentHeight: $contentHeight, blockImages: false)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: contentHeight)
     }
 }
 
