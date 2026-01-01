@@ -79,7 +79,8 @@ final class InboxViewModel {
                 maxResults: 50,
                 labelIds: labelIds
             )
-            self.emails = dedupeByThread(fetchedEmails)
+            let emailModels = fetchedEmails.map(Email.init(dto:))
+            self.emails = dedupeByThread(emailModels)
             self.nextPageToken = pageToken
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")
@@ -118,9 +119,9 @@ final class InboxViewModel {
                 pageToken: pageToken,
                 labelIds: labelIds
             )
-
+            let moreEmailModels = moreEmails.map(Email.init(dto:))
             let existingThreadIds = Set(emails.map { $0.threadId })
-            let uniqueNewEmails = moreEmails.filter { !existingThreadIds.contains($0.threadId) }
+            let uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
             emails.append(contentsOf: uniqueNewEmails)
             nextPageToken = newPageToken
             updateFilterCounts()
@@ -220,18 +221,9 @@ final class InboxViewModel {
             }
         }
 
-        // Apply scope filter
+        // Apply scope filter (People = emails from real humans, not bulk/newsletters)
         if scope == .people {
-            filtered = filtered.filter { email in
-                // Simple human sender check - not from noreply/newsletter domains
-                let senderEmail = email.senderEmail.lowercased()
-                let isNotBulk = email.listUnsubscribe == nil &&
-                               !email.labelIds.contains("CATEGORY_PROMOTIONS") &&
-                               !senderEmail.contains("noreply") &&
-                               !senderEmail.contains("no-reply") &&
-                               !senderEmail.contains("newsletter")
-                return isNotBulk
-            }
+            filtered = EmailFilters.filterForPeopleScope(filtered)
         }
 
         // Apply active filter
@@ -326,7 +318,7 @@ final class InboxViewModel {
         pendingArchive = PendingArchive(email: email, index: index)
 
         // Optimistic update - remove from list immediately
-        withAnimation(.easeOut(duration: 0.25)) {
+        _ = withAnimation(.easeOut(duration: 0.25)) {
             emails.remove(at: index)
         }
         updateFilterCounts()
@@ -334,7 +326,7 @@ final class InboxViewModel {
 
         // Show undo toast
         undoToastMessage = "Email Archived"
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        _ = withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             showingUndoToast = true
         }
 
@@ -360,7 +352,7 @@ final class InboxViewModel {
         // Restore the email at its original position
         guard let pending = pendingArchive else { return }
 
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        _ = withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             // Insert at original index, clamped to valid range
             let insertIndex = min(pending.index, emails.count)
             emails.insert(pending.email, at: insertIndex)
@@ -374,7 +366,7 @@ final class InboxViewModel {
 
     private func finalizeArchive(_ email: Email) {
         // Hide toast
-        withAnimation(.easeOut(duration: 0.2)) {
+        _ = withAnimation(.easeOut(duration: 0.2)) {
             showingUndoToast = false
         }
         pendingArchive = nil
@@ -394,7 +386,7 @@ final class InboxViewModel {
     }
 
     func trashEmail(_ email: Email) {
-        withAnimation {
+        _ = withAnimation {
             emails.removeAll { $0.id == email.id }
         }
         updateFilterCounts()
@@ -436,7 +428,7 @@ final class InboxViewModel {
 
     func snoozeEmail(_ email: Email, until date: Date) {
         // Archive the email optimistically
-        withAnimation {
+        _ = withAnimation {
             emails.removeAll { $0.id == email.id }
         }
         updateFilterCounts()

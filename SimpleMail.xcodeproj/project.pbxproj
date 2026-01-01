@@ -37,6 +37,7 @@
 		A1000030 /* DomainNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000030 /* DomainNormalizer.swift */; };
 		A1000031 /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000031 /* Color+Hex.swift */; };
 		A1000032 /* brand_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B1000032 /* brand_registry.json */; };
+		A1000033 /* EmailFilters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000033 /* EmailFilters.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -73,6 +74,7 @@
 		B1000030 /* DomainNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainNormalizer.swift; sourceTree = "<group>"; };
 		B1000031 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
 		B1000032 /* brand_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = brand_registry.json; sourceTree = "<group>"; };
+		B1000033 /* EmailFilters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailFilters.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -193,6 +195,7 @@
 			children = (
 				B1000028 /* JSONCoding.swift */,
 				B1000031 /* Color+Hex.swift */,
+				B1000033 /* EmailFilters.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -303,6 +306,7 @@
 				A1000029 /* BrandRegistry.swift in Sources */,
 				A1000030 /* DomainNormalizer.swift in Sources */,
 				A1000031 /* Color+Hex.swift in Sources */,
+				A1000033 /* EmailFilters.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
