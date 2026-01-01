@@ -88,6 +88,7 @@ struct ComposeView: View {
             }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("composeView")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -97,6 +98,7 @@ struct ComposeView: View {
                             dismiss()
                         }
                     }
+                    .accessibilityIdentifier("cancelCompose")
                 }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -113,6 +115,7 @@ struct ComposeView: View {
                             .font(.title2)
                     }
                     .disabled(!viewModel.canSend)
+                    .accessibilityIdentifier("sendButton")
                 }
             }
             .alert("Discard Draft?", isPresented: $viewModel.showDiscardAlert) {

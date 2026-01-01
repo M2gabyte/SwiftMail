@@ -32,9 +32,10 @@ struct EmailDetailView: View {
                         .padding(40)
                 } else {
                     // AI Summary at thread level (for long emails)
+                    // Check plain text length, not HTML length, to avoid false negatives
                     if viewModel.autoSummarizeEnabled,
                        let latestMessage = viewModel.messages.last,
-                       latestMessage.body.count > 500 {
+                       EmailTextHelper.plainTextLength(latestMessage.body) > 300 {
                         EmailSummaryView(
                             emailBody: latestMessage.body,
                             isExpanded: $viewModel.summaryExpanded
@@ -79,6 +80,7 @@ struct EmailDetailView: View {
                 }
             }
         }
+        .accessibilityIdentifier("emailDetailView")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -315,6 +317,37 @@ struct EmailBodyView: View {
     }
 }
 
+// MARK: - Email Text Helper
+
+enum EmailTextHelper {
+    /// Calculate plain text length from HTML, stripping tags and normalizing whitespace
+    static func plainTextLength(_ html: String) -> Int {
+        var text = html
+
+        // Remove style/script blocks
+        text = text.replacingOccurrences(of: "<style[^>]*>[\\s\\S]*?</style>", with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: "<script[^>]*>[\\s\\S]*?</script>", with: "", options: .regularExpression)
+
+        // Remove HTML tags
+        text = text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+
+        // Decode common entities
+        text = text.replacingOccurrences(of: "&nbsp;", with: " ")
+        text = text.replacingOccurrences(of: "&amp;", with: "&")
+        text = text.replacingOccurrences(of: "&lt;", with: "<")
+        text = text.replacingOccurrences(of: "&gt;", with: ">")
+        text = text.replacingOccurrences(of: "&zwnj;", with: "")
+        text = text.replacingOccurrences(of: "&zwj;", with: "")
+
+        // Normalize whitespace
+        text = text.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        return text.count
+    }
+}
+
 // MARK: - HTML Sanitizer
 
 enum HTMLSanitizer {
@@ -379,15 +412,41 @@ enum HTMLSanitizer {
         return result
     }
 
+    /// Remove zero-width characters that create empty space in marketing emails
+    static func removeZeroWidthCharacters(_ html: String) -> String {
+        var result = html
+        // Remove HTML entities for zero-width characters
+        result = result.replacingOccurrences(of: "&zwnj;", with: "")
+        result = result.replacingOccurrences(of: "&zwj;", with: "")
+        result = result.replacingOccurrences(of: "&#8204;", with: "")
+        result = result.replacingOccurrences(of: "&#8205;", with: "")
+        result = result.replacingOccurrences(of: "&#x200C;", with: "")
+        result = result.replacingOccurrences(of: "&#x200D;", with: "")
+        result = result.replacingOccurrences(of: "&#x200B;", with: "") // zero-width space
+        result = result.replacingOccurrences(of: "&#8203;", with: "")
+        // Remove actual Unicode zero-width characters
+        result = result.replacingOccurrences(of: "\u{200B}", with: "") // zero-width space
+        result = result.replacingOccurrences(of: "\u{200C}", with: "") // zero-width non-joiner
+        result = result.replacingOccurrences(of: "\u{200D}", with: "") // zero-width joiner
+        result = result.replacingOccurrences(of: "\u{FEFF}", with: "") // byte order mark
+        return result
+    }
+
     /// Block remote images by converting img src to data-src
     static func blockImages(_ html: String) -> String {
-        // Replace src= with data-blocked-src= for remote images
         var result = html
 
-        // Block http/https images
+        // Block http/https images (swap src -> data-blocked-src)
         result = result.replacingOccurrences(
-            of: "<img([^>]*)src\\s*=\\s*[\"'](https?://[^\"']+)[\"']",
-            with: "<img$1data-blocked-src=\"$2\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\"",
+            of: "<img([^>]*)src\\s*=\\s*[\"'](https?://[^\"']+)[\"']([^>]*)>",
+            with: "<img$1data-blocked-src=\"$2\" src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\"$3>",
+            options: .regularExpression
+        )
+
+        // Strip width/height attributes from blocked images to avoid giant whitespace
+        result = result.replacingOccurrences(
+            of: "(<img[^>]*data-blocked-src=[\"'][^\"']+[\"'][^>]*?)\\s+(width|height)\\s*=\\s*[\"']?\\d+[\"']?",
+            with: "$1",
             options: .regularExpression
         )
 
@@ -435,6 +494,9 @@ struct EmailBodyWebView: UIViewRepresentable {
         // SECURITY: Sanitize HTML to prevent XSS attacks
         var safeHTML = HTMLSanitizer.sanitize(html)
 
+        // Remove zero-width characters that create empty space in marketing emails
+        safeHTML = HTMLSanitizer.removeZeroWidthCharacters(safeHTML)
+
         // Block remote images to prevent tracking (unless user opted in)
         if blockImages {
             safeHTML = HTMLSanitizer.blockImages(safeHTML)
@@ -446,11 +508,13 @@ struct EmailBodyWebView: UIViewRepresentable {
         <head>
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <style>
+                /* Base layout constraints - don't override email styling */
                 * { box-sizing: border-box; }
                 html, body {
                     margin: 0;
                     padding: 0;
                     width: 100%;
+                    max-width: 100%;
                     overflow-x: hidden;
                 }
                 body {
@@ -465,9 +529,30 @@ struct EmailBodyWebView: UIViewRepresentable {
                 @media (prefers-color-scheme: dark) {
                     body { color: #f0f0f0; background-color: transparent; }
                 }
-                img { max-width: 100%; height: auto; display: block; }
+                /* Constrain images and tables to viewport */
+                img { max-width: 100% !important; height: auto !important; }
+                table { max-width: 100% !important; }
                 a { color: #007AFF; }
-                table { width: 100% !important; max-width: 100% !important; }
+                /* Collapse empty elements that create whitespace */
+                div:empty, span:empty, td:empty, p:empty {
+                    display: none !important;
+                }
+                /* Reduce excessive spacing from marketing emails */
+                table[width="100%"], table[width="600"], table[width="640"] {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+                /* Hide tracking pixels and tiny spacer images */
+                img[width="1"], img[height="1"],
+                img[width="0"], img[height="0"],
+                img[style*="display:none"], img[style*="display: none"] {
+                    display: none !important;
+                }
+                img[data-blocked-src] {
+                    display: none !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                }
                 blockquote {
                     margin: 8px 0;
                     padding-left: 12px;
@@ -488,6 +573,44 @@ struct EmailBodyWebView: UIViewRepresentable {
                 }
                 .blocked-form { border: 1px dashed #ccc; padding: 8px; margin: 8px 0; }
             </style>
+            <script>
+                function collapseEmptySpacers() {
+                    var elements = document.querySelectorAll('td, tr');
+                    elements.forEach(function(el) {
+                        var text = (el.textContent || '').replace(/\\u00a0/g, '').trim();
+                        var hasMedia = el.querySelector('img, svg, video, iframe, a, button, input, textarea, select');
+                        if (!hasMedia && text.length === 0) {
+                            el.style.display = 'none';
+                            el.style.height = '0';
+                            el.style.minHeight = '0';
+                            el.style.padding = '0';
+                            el.style.margin = '0';
+                        }
+                    });
+                }
+                function postHeight() {
+                    var height = Math.max(
+                        document.body.scrollHeight,
+                        document.body.offsetHeight,
+                        document.documentElement.scrollHeight,
+                        document.documentElement.offsetHeight
+                    );
+                    window.webkit.messageHandlers.heightHandler.postMessage(height);
+                }
+                // Post height after load and after images load
+                window.onload = function() {
+                    collapseEmptySpacers();
+                    postHeight();
+                    // Recheck after a delay for dynamic content
+                    setTimeout(postHeight, 100);
+                    setTimeout(postHeight, 500);
+                };
+                // Also post height when images load
+                document.addEventListener('DOMContentLoaded', function() {
+                    collapseEmptySpacers();
+                    postHeight();
+                });
+            </script>
         </head>
         <body>
             \(safeHTML)
@@ -725,6 +848,25 @@ struct EmailSummaryView: View {
             .replacingOccurrences(of: "&#39;", with: "'")
             .replacingOccurrences(of: "&#x27;", with: "'")
             .replacingOccurrences(of: "&#160;", with: " ")
+            // Zero-width characters (used in marketing emails)
+            .replacingOccurrences(of: "&zwnj;", with: "")
+            .replacingOccurrences(of: "&zwj;", with: "")
+            .replacingOccurrences(of: "&#8204;", with: "")
+            .replacingOccurrences(of: "&#8205;", with: "")
+            .replacingOccurrences(of: "&#x200C;", with: "")
+            .replacingOccurrences(of: "&#x200D;", with: "")
+            // Other common entities
+            .replacingOccurrences(of: "&mdash;", with: "—")
+            .replacingOccurrences(of: "&ndash;", with: "–")
+            .replacingOccurrences(of: "&rsquo;", with: "'")
+            .replacingOccurrences(of: "&lsquo;", with: "'")
+            .replacingOccurrences(of: "&rdquo;", with: "\"")
+            .replacingOccurrences(of: "&ldquo;", with: "\"")
+            .replacingOccurrences(of: "&hellip;", with: "...")
+            .replacingOccurrences(of: "&bull;", with: "•")
+            .replacingOccurrences(of: "&copy;", with: "©")
+            .replacingOccurrences(of: "&reg;", with: "®")
+            .replacingOccurrences(of: "&trade;", with: "™")
 
         // Clean up whitespace
         text = text

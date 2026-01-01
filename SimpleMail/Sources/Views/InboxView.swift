@@ -57,9 +57,11 @@ struct InboxView: View {
                         Button(action: { showingSearch = true }) {
                             Image(systemName: "magnifyingglass")
                         }
+                        .accessibilityIdentifier("searchButton")
                         Button(action: { showingCompose = true }) {
                             Image(systemName: "square.and.pencil")
                         }
+                        .accessibilityIdentifier("composeButton")
                     }
                 }
             }
@@ -422,6 +424,7 @@ struct EmailListView: View {
         .listRowSpacing(0)
         .scrollContentBackground(.hidden)
         .background(Color(.systemBackground))
+        .accessibilityIdentifier("inboxList")
         .refreshable {
             await onRefresh()
         }

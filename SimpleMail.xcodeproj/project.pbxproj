@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -41,7 +41,18 @@
 		A1000034 /* AccountDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000034 /* AccountDefaults.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		4DC2BDD62F063BC300D0267A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E1000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E0000001;
+			remoteInfo = SimpleMail;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMailUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0000001 /* SimpleMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000001 /* SimpleMailApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleMailApp.swift; sourceTree = "<group>"; };
 		B1000002 /* Email.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Email.swift; sourceTree = "<group>"; };
@@ -79,7 +90,18 @@
 		B1000034 /* AccountDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDefaults.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		4DC2BDD12F063BC300D0267A /* SimpleMailUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SimpleMailUITests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
+		4DC2BDCD2F063BC300D0267A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -94,6 +116,7 @@
 			isa = PBXGroup;
 			children = (
 				D0000002 /* SimpleMail/Sources */,
+				4DC2BDD12F063BC300D0267A /* SimpleMailUITests */,
 				D0000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -121,6 +144,7 @@
 			isa = PBXGroup;
 			children = (
 				B0000001 /* SimpleMail.app */,
+				4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -214,6 +238,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		4DC2BDCF2F063BC300D0267A /* SimpleMailUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4DC2BDDA2F063BC300D0267A /* Build configuration list for PBXNativeTarget "SimpleMailUITests" */;
+			buildPhases = (
+				4DC2BDCC2F063BC300D0267A /* Sources */,
+				4DC2BDCD2F063BC300D0267A /* Frameworks */,
+				4DC2BDCE2F063BC300D0267A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4DC2BDD72F063BC300D0267A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4DC2BDD12F063BC300D0267A /* SimpleMailUITests */,
+			);
+			name = SimpleMailUITests;
+			packageProductDependencies = (
+			);
+			productName = SimpleMailUITests;
+			productReference = 4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		E0000001 /* SimpleMail */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F0000001 /* Build configuration list for PBXNativeTarget "SimpleMail" */;
@@ -238,9 +285,13 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1520;
+				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 1520;
 				TargetAttributes = {
+					4DC2BDCF2F063BC300D0267A = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = E0000001;
+					};
 					E0000001 = {
 						CreatedOnToolsVersion = 15.2;
 					};
@@ -260,11 +311,19 @@
 			projectRoot = "";
 			targets = (
 				E0000001 /* SimpleMail */,
+				4DC2BDCF2F063BC300D0267A /* SimpleMailUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		4DC2BDCE2F063BC300D0267A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E0000003 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -277,6 +336,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4DC2BDCC2F063BC300D0267A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E0000002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -316,7 +382,57 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		4DC2BDD72F063BC300D0267A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E0000001 /* SimpleMail */;
+			targetProxy = 4DC2BDD62F063BC300D0267A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		4DC2BDD82F063BC300D0267A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VV6PB4PX4X;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.M2gabyte.SimpleMailUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SimpleMail;
+			};
+			name = Debug;
+		};
+		4DC2BDD92F063BC300D0267A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VV6PB4PX4X;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.M2gabyte.SimpleMailUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SimpleMail;
+			};
+			name = Release;
+		};
 		G0000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -505,6 +621,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		4DC2BDDA2F063BC300D0267A /* Build configuration list for PBXNativeTarget "SimpleMailUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4DC2BDD82F063BC300D0267A /* Debug */,
+				4DC2BDD92F063BC300D0267A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		F0000001 /* Build configuration list for PBXNativeTarget "SimpleMail" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
