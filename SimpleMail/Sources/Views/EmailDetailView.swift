@@ -659,7 +659,8 @@ struct EmailBodyWebView: UIViewRepresentable {
         let weakHandler = WeakScriptMessageHandler(coordinator: context.coordinator)
         contentController.add(weakHandler, name: "heightHandler")
 
-        webView.loadHTMLString(styledHTML, baseURL: nil)
+        // Use a real baseURL to allow loading remote images
+        webView.loadHTMLString(styledHTML, baseURL: URL(string: "https://mail.google.com"))
     }
 
     func makeCoordinator() -> Coordinator {
