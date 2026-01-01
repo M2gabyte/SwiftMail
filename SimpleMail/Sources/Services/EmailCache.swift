@@ -21,7 +21,9 @@ final class EmailCacheManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateCacheStats()
+            Task { @MainActor in
+                self?.updateCacheStats()
+            }
         }
     }
 
@@ -59,7 +61,12 @@ final class EmailCacheManager: ObservableObject {
                 email.accountEmail == accountEmail
             }
         )
-        return (try? context.fetchCount(descriptor)) ?? 0
+        do {
+            return try context.fetchCount(descriptor)
+        } catch {
+            logger.warning("Failed to fetch account email count: \(error.localizedDescription)")
+            return 0
+        }
     }
 
     // MARK: - Cache Emails

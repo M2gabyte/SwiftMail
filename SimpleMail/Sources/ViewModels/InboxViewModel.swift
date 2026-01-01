@@ -132,7 +132,8 @@ final class InboxViewModel {
                     query: query,
                     labelIds: labelIds
                 )
-                self.emails = dedupeByThread(fetchedEmails)
+                let emailModels = fetchedEmails.map(Email.init(dto:))
+                self.emails = dedupeByThread(emailModels)
                 self.nextPageToken = nil
             } else {
                 let labelIds = labelIdsForMailbox(currentMailbox)
@@ -444,7 +445,7 @@ final class InboxViewModel {
         pendingArchive = PendingArchive(email: email, index: index)
 
         // Optimistic update - remove from list immediately
-        withAnimation(.easeOut(duration: 0.25)) {
+        _ = withAnimation(.easeOut(duration: 0.25)) {
             emails.remove(at: index)
         }
         updateFilterCounts()
@@ -452,20 +453,22 @@ final class InboxViewModel {
 
         // Show undo toast
         undoToastMessage = "Email Archived"
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        _ = withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             showingUndoToast = true
         }
 
         // Start 4-second countdown to finalize
-        undoTask = Task {
+        let emailId = email.id
+        undoTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(4))
 
             // Check if task was cancelled (user tapped undo)
             guard !Task.isCancelled else { return }
 
             // Finalize the archive
-            if let pending = pendingArchive, pending.email.id == email.id {
-                finalizeArchive(email)
+            guard let self else { return }
+            if let pending = pendingArchive, pending.email.id == emailId {
+                finalizeArchive(pending.email)
             }
         }
     }
@@ -478,7 +481,7 @@ final class InboxViewModel {
         // Restore the email at its original position
         guard let pending = pendingArchive else { return }
 
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        _ = withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             // Insert at original index, clamped to valid range
             let insertIndex = min(pending.index, emails.count)
             emails.insert(pending.email, at: insertIndex)
@@ -492,20 +495,22 @@ final class InboxViewModel {
 
     private func finalizeArchive(_ email: Email) {
         // Hide toast
-        withAnimation(.easeOut(duration: 0.2)) {
+        _ = withAnimation(.easeOut(duration: 0.2)) {
             showingUndoToast = false
         }
         pendingArchive = nil
 
         // Call Gmail API to actually archive
+        let messageId = email.id
+        let account = accountForEmail(email)
         Task {
             do {
-                if let account = accountForEmail(email) {
-                    try await GmailService.shared.archive(messageId: email.id, account: account)
+                if let account {
+                    try await GmailService.shared.archive(messageId: messageId, account: account)
                 } else {
-                    try await GmailService.shared.archive(messageId: email.id)
+                    try await GmailService.shared.archive(messageId: messageId)
                 }
-                logger.info("Email archived: \(email.id)")
+                logger.info("Email archived: \(messageId)")
             } catch {
                 // Rollback on failure - reload emails
                 logger.error("Failed to archive email: \(error.localizedDescription)")
@@ -522,12 +527,14 @@ final class InboxViewModel {
         updateFilterCounts()
         HapticFeedback.medium()
 
+        let messageId = email.id
+        let account = accountForEmail(email)
         Task {
             do {
-                if let account = accountForEmail(email) {
-                    try await GmailService.shared.trash(messageId: email.id, account: account)
+                if let account {
+                    try await GmailService.shared.trash(messageId: messageId, account: account)
                 } else {
-                    try await GmailService.shared.trash(messageId: email.id)
+                    try await GmailService.shared.trash(messageId: messageId)
                 }
             } catch {
                 self.error = error
@@ -542,24 +549,26 @@ final class InboxViewModel {
             emails[index].isStarred.toggle()
             HapticFeedback.light()
 
+            let messageId = email.id
+            let account = accountForEmail(email)
             Task {
                 do {
                     if wasStarred {
-                        if let account = accountForEmail(email) {
-                            try await GmailService.shared.unstar(messageId: email.id, account: account)
+                        if let account {
+                            try await GmailService.shared.unstar(messageId: messageId, account: account)
                         } else {
-                            try await GmailService.shared.unstar(messageId: email.id)
+                            try await GmailService.shared.unstar(messageId: messageId)
                         }
                     } else {
-                        if let account = accountForEmail(email) {
-                            try await GmailService.shared.star(messageId: email.id, account: account)
+                        if let account {
+                            try await GmailService.shared.star(messageId: messageId, account: account)
                         } else {
-                            try await GmailService.shared.star(messageId: email.id)
+                            try await GmailService.shared.star(messageId: messageId)
                         }
                     }
                 } catch {
                     // Rollback
-                    if let idx = emails.firstIndex(where: { $0.id == email.id }) {
+                    if let idx = emails.firstIndex(where: { $0.id == messageId }) {
                         emails[idx].isStarred = wasStarred
                     }
                     self.error = error
@@ -576,17 +585,20 @@ final class InboxViewModel {
         updateFilterCounts()
         HapticFeedback.medium()
 
+        let messageId = email.id
+        let account = accountForEmail(email)
+        let emailDTO = email.toDTO()
         Task {
             do {
                 // Archive via Gmail
-                if let account = accountForEmail(email) {
-                    try await GmailService.shared.archive(messageId: email.id, account: account)
+                if let account {
+                    try await GmailService.shared.archive(messageId: messageId, account: account)
                 } else {
-                    try await GmailService.shared.archive(messageId: email.id)
+                    try await GmailService.shared.archive(messageId: messageId)
                 }
 
                 // Save snooze to local database for unsnoozing later
-                await SnoozeManager.shared.snoozeEmail(email, until: date)
+                await SnoozeManager.shared.snoozeEmail(emailDTO, until: date)
             } catch {
                 self.error = error
                 await loadEmails()
@@ -601,24 +613,26 @@ final class InboxViewModel {
             updateFilterCounts()
             HapticFeedback.light()
 
+            let messageId = email.id
+            let account = accountForEmail(email)
             Task {
                 do {
                     if wasUnread {
-                        if let account = accountForEmail(email) {
-                            try await GmailService.shared.markAsRead(messageId: email.id, account: account)
+                        if let account {
+                            try await GmailService.shared.markAsRead(messageId: messageId, account: account)
                         } else {
-                            try await GmailService.shared.markAsRead(messageId: email.id)
+                            try await GmailService.shared.markAsRead(messageId: messageId)
                         }
                     } else {
-                        if let account = accountForEmail(email) {
-                            try await GmailService.shared.markAsUnread(messageId: email.id, account: account)
+                        if let account {
+                            try await GmailService.shared.markAsUnread(messageId: messageId, account: account)
                         } else {
-                            try await GmailService.shared.markAsUnread(messageId: email.id)
+                            try await GmailService.shared.markAsUnread(messageId: messageId)
                         }
                     }
                 } catch {
                     // Rollback
-                    if let idx = emails.firstIndex(where: { $0.id == email.id }) {
+                    if let idx = emails.firstIndex(where: { $0.id == messageId }) {
                         emails[idx].isUnread = wasUnread
                     }
                     updateFilterCounts()
@@ -654,12 +668,14 @@ final class InboxViewModel {
         updateFilterCounts()
         HapticFeedback.medium()
 
+        let messageId = email.id
+        let account = accountForEmail(email)
         Task {
             do {
-                if let account = accountForEmail(email) {
-                    try await GmailService.shared.reportSpam(messageId: email.id, account: account)
+                if let account {
+                    try await GmailService.shared.reportSpam(messageId: messageId, account: account)
                 } else {
-                    try await GmailService.shared.reportSpam(messageId: email.id)
+                    try await GmailService.shared.reportSpam(messageId: messageId)
                 }
             } catch {
                 self.error = error
@@ -674,11 +690,11 @@ final class InboxViewModel {
         accounts: [AuthService.Account],
         query: String?,
         labelIds: [String]
-    ) async throws -> [Email] {
+    ) async throws -> [EmailDTO] {
         guard !accounts.isEmpty else { return [] }
 
-        var allEmails: [Email] = []
-        await withTaskGroup(of: [Email].self) { group in
+        var allEmails: [EmailDTO] = []
+        await withTaskGroup(of: [EmailDTO].self) { group in
             for account in accounts {
                 group.addTask {
                     do {
@@ -688,7 +704,7 @@ final class InboxViewModel {
                             maxResults: 50,
                             labelIds: labelIds
                         )
-                        return emails.map(Email.init(dto:))
+                        return emails
                     } catch {
                         logger.error("Unified inbox fetch failed for \(account.email): \(error.localizedDescription)")
                         return []
@@ -723,12 +739,14 @@ final class InboxViewModel {
                 emails[index].isUnread = false
                 updateFilterCounts()
             }
+            let messageId = email.id
+            let account = accountForEmail(email)
             Task {
                 do {
-                    if let account = accountForEmail(email) {
-                        try await GmailService.shared.markAsRead(messageId: email.id, account: account)
+                    if let account {
+                        try await GmailService.shared.markAsRead(messageId: messageId, account: account)
                     } else {
-                        try await GmailService.shared.markAsRead(messageId: email.id)
+                        try await GmailService.shared.markAsRead(messageId: messageId)
                     }
                 } catch {
                     logger.error("Failed to mark email as read: \(error.localizedDescription)")

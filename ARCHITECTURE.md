@@ -24,7 +24,7 @@ SimpleMail is a native iOS email client built with SwiftUI and SwiftData, design
 ```
 SimpleMail/
 ├── Sources/
-│   ├── SimpleMailApp.swift          # App entry point, scene management
+│   ├── SimpleMailApp.swift          # App entry point, scene management, graceful error handling
 │   ├── Info.plist                   # App configuration, OAuth config
 │   ├── SimpleMail.entitlements      # Keychain, background modes
 │   │
@@ -49,7 +49,8 @@ SimpleMail/
 │   │   ├── SnoozePickerSheet.swift  # Snooze time picker
 │   │   ├── AttachmentViewer.swift   # QuickLook attachment preview
 │   │   ├── BatchOperations.swift    # Multi-select & batch actions
-│   │   └── SmartAvatarView.swift    # Avatar with fallback chain
+│   │   ├── SmartAvatarView.swift    # Avatar with fallback chain
+│   │   └── ErrorBanner.swift        # Reusable error display component
 │   │
 │   ├── Services/
 │   │   ├── AuthService.swift        # OAuth authentication
@@ -58,8 +59,9 @@ SimpleMail/
 │   │   ├── AvatarService.swift      # Avatar resolution + caching
 │   │   ├── BrandRegistry.swift      # Brand domain registry (JSON-backed)
 │   │   ├── DomainNormalizer.swift   # Email + domain normalization
-│   │   ├── BackgroundSync.swift     # Background refresh
+│   │   ├── BackgroundSync.swift     # Background refresh + notifications
 │   │   ├── SnoozeManager.swift      # Snooze persistence
+│   │   ├── ScheduledSendManager.swift # Scheduled send queue
 │   │   └── EmailCache.swift         # Offline caching
 │   │
 │   ├── Engine/
@@ -68,7 +70,8 @@ SimpleMail/
 │   ├── Utils/
 │   │   ├── JSONCoding.swift         # Shared JSON encoders/decoders
 │   │   ├── Color+Hex.swift          # Hex string to Color utilities
-│   │   └── EmailFilters.swift       # Email classification (human/bulk detection)
+│   │   ├── EmailFilters.swift       # Email classification (human/bulk detection)
+│   │   └── NetworkRetry.swift       # Exponential backoff retry utility
 │   │
 │   ├── Resources/
 │   │   └── brand_registry.json      # Domain registry data
@@ -192,10 +195,31 @@ enum Base64URL {
 | `fetchAttachment()` | GET /attachments/{id} | Download attachment |
 | `search()` | GET /messages?q= | Gmail search syntax |
 
-**Rate Limiting:**
+**Rate Limiting & Retry:**
 - Batched requests (3 concurrent max)
 - 20-second timeout per request
-- Automatic retry on 429
+- Automatic retry on 429 via `NetworkRetry` utility
+
+**NetworkRetry Utility (NetworkRetry.swift):**
+```swift
+struct NetworkRetry {
+    static func execute<T>(
+        maxAttempts: Int = 3,
+        baseDelay: TimeInterval = 1.0,
+        maxDelay: TimeInterval = 30.0,
+        operation: () async throws -> T
+    ) async throws -> T
+
+    // Checks GmailError.rateLimited, PeopleError.rateLimited, URLError codes
+    static func isRetryable(_ error: Error) -> Bool
+}
+```
+
+**Features:**
+- Exponential backoff with jitter (prevents thundering herd)
+- Handles `GmailError.rateLimited` and `PeopleError.rateLimited`
+- Retries on network timeouts and connection failures
+- Configurable max attempts, base delay, and max delay
 
 ### 3. Data Models (Email.swift)
 
@@ -311,10 +335,92 @@ Fetch emails → Cache to SwiftData
     ↓
 Check for new unread → Send notification
     ↓
+Process scheduled sends → Gmail API
+    ↓
 Schedule next task
 ```
 
-### 7. Snooze Manager (SnoozeManager.swift)
+**Cancellation Handling:**
+```swift
+// Task expiration triggers cancellation
+task.expirationHandler = {
+    logger.warning("Task expiring - cancelling work")
+    syncTask.cancel()
+}
+
+// Sync functions check for cancellation at key points
+private func performSync() async throws {
+    try Task.checkCancellation()  // Before network call
+    let (emails, _) = try await GmailService.shared.fetchInbox(maxResults: 50)
+    try Task.checkCancellation()  // Before cache update
+    await EmailCacheManager.shared.cacheEmails(emails)
+}
+
+// Loop processing checks isCancelled for graceful termination
+for email in newEmails {
+    if Task.isCancelled { break }
+    // ... process notification
+}
+
+// Explicit CancellationError handling
+} catch is CancellationError {
+    logger.info("Task was cancelled due to expiration")
+    task.setTaskCompleted(success: false)
+}
+```
+
+**Notification Key Pruning:**
+- Notification de-dupe keys (`notified_{emailId}`) are pruned after 7 days
+- Prevents unbounded UserDefaults growth
+- Called during each background notification check
+
+### 7. Scheduled Send Manager (ScheduledSendManager.swift)
+
+**Schedule Send Flow:**
+```
+User composes email + sets send time
+    ↓
+Create ScheduledSend with all data (to, cc, bcc, subject, body, attachments)
+    ↓
+Save to UserDefaults (JSON encoded)
+    ↓
+Background task checks for due sends
+    ↓
+When sendAt <= now: Send via Gmail API
+    ↓
+Remove from queue on success
+```
+
+**Data Structures:**
+```swift
+struct ScheduledSend: Codable, Identifiable {
+    let id: UUID
+    let accountEmail: String
+    let to: [String]
+    let cc: [String]
+    let bcc: [String]
+    let subject: String
+    let body: String
+    let bodyHtml: String?
+    let attachments: [ScheduledAttachment]
+    let sendAt: Date
+}
+
+struct ScheduledAttachment: Codable, Identifiable {
+    let id: UUID
+    let filename: String
+    let mimeType: String
+    let dataBase64: String  // Base64-encoded attachment data
+}
+```
+
+**Features:**
+- Persists scheduled sends to UserDefaults
+- Attachments stored as base64 to survive app termination
+- Processed during background notification checks
+- Proper error logging on encode/decode failures
+
+### 8. Snooze Manager (SnoozeManager.swift)
 
 **Snooze Flow:**
 ```
@@ -383,10 +489,14 @@ ContentView
 - WebView height updates via JS + Resize/Mutation observers
 
 **ComposeView:**
-- FlowLayout for recipient chips
-- Email autocomplete with Google People API
-- Email validation (local@domain.tld format with proper domain structure)
-- Auto-save drafts
+- FlowLayout recipient chips + CC/BCC toggle
+- Google People autocomplete + email validation (local@domain.tld format)
+- Rich-text editor (bold/italic/underline, lists, links, font size, remove formatting)
+- Attachment picker (photos + files) with chips and MIME multipart send
+- AI draft with tone/length controls + preview insert
+- Templates (save/insert per account)
+- Undo Send delay + Schedule Send queue
+- Auto-save drafts with recovery banner
 - Reply threading with In-Reply-To headers
 
 **SmartAvatarView:**
@@ -536,7 +646,50 @@ if scope == .people {
 }
 ```
 
-### 11. Theme Manager (SimpleMailApp.swift)
+### 11. App Initialization (SimpleMailApp.swift)
+
+**Graceful ModelContainer Handling:**
+```swift
+@main
+struct SimpleMailApp: App {
+    /// Result of ModelContainer initialization - allows graceful error handling instead of fatalError
+    private let modelContainerResult: Result<ModelContainer, Error>
+
+    var sharedModelContainer: ModelContainer? {
+        try? modelContainerResult.get()
+    }
+
+    init() {
+        let schema = Schema([Email.self, EmailDetail.self, SnoozedEmail.self, ...])
+        do {
+            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            self.modelContainerResult = .success(container)
+        } catch {
+            logger.error("Failed to create ModelContainer: \(error.localizedDescription)")
+            self.modelContainerResult = .failure(error)
+        }
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            if let container = sharedModelContainer {
+                ContentView()
+                    .modelContainer(container)
+            } else {
+                DatabaseErrorView()  // Fallback UI with error message
+            }
+        }
+    }
+}
+```
+
+**Benefits:**
+- No crash on database initialization failure
+- User sees helpful error message instead of blank screen
+- Error is logged for debugging
+- App remains functional for error reporting
+
+### 12. Theme Manager (ThemeManager)
 
 **Appearance Settings:**
 ```swift
@@ -565,7 +718,7 @@ enum AppTheme: String, Codable {
 - Applied via `.preferredColorScheme()` on root view
 - Immediate UI update on change
 
-### 12. Biometric Authentication (SimpleMailApp.swift)
+### 13. Biometric Authentication (BiometricAuthManager)
 
 **Face ID / Touch ID Lock:**
 ```swift
@@ -761,18 +914,22 @@ logger.warning("Rate limited on \(url.path)")
 |----------|---------|
 | `GmailService` | API calls, responses, errors |
 | `InboxViewModel` | State changes, filtering |
+| `InboxView` | Settings loading, UI state |
 | `SnoozeManager` | Snooze scheduling, notifications |
-| `AuthService` | OAuth flow, token refresh |
-| `BackgroundSync` | Background task execution |
+| `AuthService` | OAuth flow, token refresh, account management |
+| `BackgroundSync` | Background task execution, cancellation |
 | `PeopleService` | Contacts fetch, search, photo lookup |
 | `AvatarService` | Avatar cache operations |
 | `EmailCache` | Cache operations, batch updates |
+| `EmailDetail` | Thread loading, AI summaries |
+| `BrandRegistry` | Brand registry JSON loading |
+| `ScheduledSend` | Scheduled send queue operations |
 | `Settings` | Settings sync, label management |
 | `Search` | Search queries and results |
 | `Briefing` | Briefing item interactions |
 | `Attachments` | Attachment downloads |
 | `BatchOperations` | Multi-select and print jobs |
-| `SimpleMailApp` | URL handling, notifications |
+| `SimpleMailApp` | URL handling, notifications, ModelContainer |
 | `Keychain` | Keychain storage operations |
 
 **Viewing Logs:**
@@ -1000,10 +1157,44 @@ actor GmailService {
 
 ---
 
-*Last updated: December 2025*
-*Architecture version: 2.0*
+*Last updated: January 2026*
+*Architecture version: 2.1*
 
 **Changelog:**
+- v2.1:
+  - **Critical Fixes:**
+    - Replaced `fatalError` in SimpleMailApp.swift with graceful ModelContainer error handling
+    - Added `DatabaseErrorView` fallback UI when ModelContainer fails to initialize
+    - Fixed DispatchQueue.main.sync deadlock risk in AuthService's `presentationAnchor` using `MainActor.assumeIsolated`
+    - Fixed token refresh race condition with proper task cleanup (removes task from dictionary on both success and failure)
+    - Added cache clearing on account switch (AvatarService + PeopleService caches invalidated)
+  - **Network Resilience:**
+    - Added `NetworkRetry.swift` utility with exponential backoff and jitter
+    - Fixed rate limiting bypass: now handles `GmailError.rateLimited` and `PeopleError.rateLimited`
+    - Configurable retry attempts, base delay, and max delay
+  - **Background Sync Improvements:**
+    - Added `Task.checkCancellation()` at key points in `performSync()` and `checkForNewEmails()`
+    - Added `Task.isCancelled` check in notification processing loop for graceful termination
+    - Improved expiration handlers with logging when tasks expire
+    - Added explicit `CancellationError` handling to distinguish cancellation from failures
+  - **Error Handling & Logging:**
+    - Replaced all silent `try?` with proper `do/catch` blocks and OSLog logging:
+      - EmailCache.swift: account email count fetch
+      - BrandRegistry.swift: JSON file loading (brand_registry.json)
+      - ScheduledSendManager.swift: encode/decode scheduled sends
+      - InboxView.swift: settings decode
+      - EmailDetailView.swift: auto-summarize settings
+      - BackgroundSync.swift: settings loading
+    - Added OSLog loggers to InboxView.swift and BrandRegistry.swift
+  - **Memory Safety:**
+    - Fixed undoTask cancellation in InboxViewModel deinit using `MainActor.assumeIsolated`
+    - Added `@unchecked Sendable` documentation to KeychainServiceSync explaining NSLock thread safety
+  - **New Files:**
+    - `Utils/NetworkRetry.swift` - Configurable network retry with exponential backoff
+    - `Views/ErrorBanner.swift` - Reusable error display component
+  - **Code Quality:**
+    - Fixed FormatButton call syntax in ComposeView.swift
+    - Renamed `body` state variable to `templateBody` in NewTemplateSheet to avoid shadowing View.body
 - v2.0:
   - Added XCUITest framework with 18 automated UI tests
   - Tests cover: app launch, tab navigation, inbox, search, compose, email detail, settings, swipe actions, performance

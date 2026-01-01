@@ -92,6 +92,12 @@ struct MIMEHeader: Sendable {
     var rendered: String { "\(name): \(value)" }
 }
 
+struct MIMEAttachment: Sendable {
+    let filename: String
+    let mimeType: String
+    let data: Data
+}
+
 /// Type-safe MIME message construction
 struct MIMEMessage: Sendable {
     let to: [String]
@@ -102,6 +108,7 @@ struct MIMEMessage: Sendable {
     let bodyHtml: String?
     let inReplyTo: String?
     let references: String?
+    let attachments: [MIMEAttachment]
 
     init(
         to: [String],
@@ -111,7 +118,8 @@ struct MIMEMessage: Sendable {
         body: String,
         bodyHtml: String? = nil,
         inReplyTo: String? = nil,
-        references: String? = nil
+        references: String? = nil,
+        attachments: [MIMEAttachment] = []
     ) {
         self.to = to
         self.cc = cc
@@ -121,6 +129,7 @@ struct MIMEMessage: Sendable {
         self.bodyHtml = bodyHtml
         self.inReplyTo = inReplyTo
         self.references = references
+        self.attachments = attachments
     }
 
     /// Build headers using result builder for clean syntax
@@ -149,11 +158,14 @@ struct MIMEMessage: Sendable {
     }
 
     func build() -> String {
-        if let html = bodyHtml {
-            return buildMultipart(html: html)
-        } else {
-            return buildPlainText()
+        if attachments.isEmpty {
+            if let html = bodyHtml {
+                return buildMultipart(html: html)
+            } else {
+                return buildPlainText()
+            }
         }
+        return buildMixed()
     }
 
     private func buildPlainText() -> String {
@@ -196,6 +208,67 @@ struct MIMEMessage: Sendable {
         "\r\n" + htmlPart.replacingOccurrences(of: "\r", with: "\r\n")
     }
 
+    private func buildMixed() -> String {
+        let mixedBoundary = "mixed_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        var lines = headers.map(\.rendered)
+        lines.append("Content-Type: multipart/mixed; boundary=\"\(mixedBoundary)\"")
+
+        let headerSection = lines.joined(separator: "\r\n")
+
+        let bodyPart: String
+        if let html = bodyHtml {
+            let altBoundary = "alt_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            let plainEncoded = Data(body.utf8).base64EncodedString()
+            let htmlEncoded = Data(html.utf8).base64EncodedString()
+            bodyPart = """
+            --\(mixedBoundary)\r
+            Content-Type: multipart/alternative; boundary="\(altBoundary)"\r
+            \r
+            --\(altBoundary)\r
+            Content-Type: text/plain; charset="UTF-8"\r
+            Content-Transfer-Encoding: base64\r
+            \r
+            \(plainEncoded)\r
+            --\(altBoundary)\r
+            Content-Type: text/html; charset="UTF-8"\r
+            Content-Transfer-Encoding: base64\r
+            \r
+            \(htmlEncoded)\r
+            --\(altBoundary)--\r
+            """
+        } else {
+            let plainEncoded = Data(body.utf8).base64EncodedString()
+            bodyPart = """
+            --\(mixedBoundary)\r
+            Content-Type: text/plain; charset="UTF-8"\r
+            Content-Transfer-Encoding: base64\r
+            \r
+            \(plainEncoded)\r
+            """
+        }
+
+        var attachmentParts: [String] = []
+        for attachment in attachments {
+            let encoded = attachment.data.base64EncodedString()
+            let part = """
+            --\(mixedBoundary)\r
+            Content-Type: \(attachment.mimeType); name="\(attachment.filename)"\r
+            Content-Disposition: attachment; filename="\(attachment.filename)"\r
+            Content-Transfer-Encoding: base64\r
+            \r
+            \(encoded)\r
+            """
+            attachmentParts.append(part)
+        }
+
+        let closing = "--\(mixedBoundary)--"
+        return headerSection + "\r\n\r\n" +
+        bodyPart.replacingOccurrences(of: "\r", with: "\r\n") +
+        "\r\n" +
+        attachmentParts.joined(separator: "\r\n").replacingOccurrences(of: "\r", with: "\r\n") +
+        "\r\n" + closing
+    }
+
     /// Encode the message for Gmail API (URL-safe Base64)
     func encoded() -> String {
         guard let data = build().data(using: .utf8) else {
@@ -211,7 +284,7 @@ struct MIMEMessage: Sendable {
 protocol GmailAPIProvider {
     func fetchInbox(query: String?, maxResults: Int, pageToken: String?, labelIds: [String]) async throws -> (emails: [EmailDTO], nextPageToken: String?)
     func fetchThread(threadId: String) async throws -> [EmailDetailDTO]
-    func sendEmail(to: [String], cc: [String], bcc: [String], subject: String, body: String, bodyHtml: String?, inReplyTo: String?, references: String?, threadId: String?) async throws -> String
+    func sendEmail(to: [String], cc: [String], bcc: [String], subject: String, body: String, bodyHtml: String?, attachments: [MIMEAttachment], inReplyTo: String?, references: String?, threadId: String?) async throws -> String
     func archive(messageId: String) async throws
     func markAsRead(messageId: String) async throws
     func markAsUnread(messageId: String) async throws
@@ -967,6 +1040,7 @@ actor GmailService: GmailAPIProvider {
         subject: String,
         body: String,
         bodyHtml: String? = nil,
+        attachments: [MIMEAttachment] = [],
         inReplyTo: String? = nil,
         references: String? = nil,
         threadId: String? = nil
@@ -987,7 +1061,65 @@ actor GmailService: GmailAPIProvider {
             body: body,
             bodyHtml: bodyHtml,
             inReplyTo: inReplyTo,
-            references: references
+            references: references,
+            attachments: attachments
+        )
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = requestTimeout
+
+        var payload: [String: Any] = ["raw": mimeMessage.encoded()]
+        if let threadId = threadId {
+            payload["threadId"] = threadId
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            logger.error("Failed to send email: status \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+            throw GmailError.sendFailed
+        }
+
+        let sendResponse = try JSONCoding.decoder.decode(MessageRef.self, from: data)
+        logger.info("Email sent successfully: \(sendResponse.id)")
+        return sendResponse.id
+    }
+
+    func sendEmail(
+        to: [String],
+        cc: [String] = [],
+        bcc: [String] = [],
+        subject: String,
+        body: String,
+        bodyHtml: String? = nil,
+        attachments: [MIMEAttachment] = [],
+        inReplyTo: String? = nil,
+        references: String? = nil,
+        threadId: String? = nil,
+        account: AuthService.Account
+    ) async throws -> String {
+        logger.info("Sending email to \(to.count) recipients")
+
+        let token = try await getAccessToken(for: account)
+        guard let url = URL(string: "\(baseURL)/users/me/messages/send") else {
+            throw GmailError.invalidURL
+        }
+
+        let mimeMessage = MIMEMessage(
+            to: to,
+            cc: cc,
+            bcc: bcc,
+            subject: subject,
+            body: body,
+            bodyHtml: bodyHtml,
+            inReplyTo: inReplyTo,
+            references: references,
+            attachments: attachments
         )
 
         var request = URLRequest(url: url)
@@ -1156,8 +1288,9 @@ actor GmailService: GmailAPIProvider {
         request.timeoutInterval = requestTimeout
 
         // Use retry logic for transient network failures
+        let frozenRequest = request
         let (data, response) = try await NetworkRetry.withRetry(maxAttempts: 3) {
-            try await URLSession.shared.data(for: request)
+            try await URLSession.shared.data(for: frozenRequest)
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {

@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import UniformTypeIdentifiers
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -24,6 +26,13 @@ struct ComposeView: View {
     @FocusState private var focusedField: Field?
     @StateObject private var richTextContext = RichTextContext()
     @State private var showingAIDraft = false
+    @State private var showingTemplates = false
+    @State private var showingScheduleSheet = false
+    @State private var showingAttachmentOptions = false
+    @State private var showingFileImporter = false
+    @State private var showingPhotoPicker = false
+    @State private var selectedPhotos: [PhotosPickerItem] = []
+    @State private var showUndoToast = false
 
     enum Field: Hashable {
         case to, cc, bcc, subject, body
@@ -38,6 +47,11 @@ struct ComposeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
+                    if viewModel.isRecoveredDraft {
+                        RecoveredDraftBanner()
+                            .padding(.horizontal)
+                            .padding(.top, 6)
+                    }
                     // Recipients
                     RecipientField(
                         label: "To",
@@ -85,6 +99,17 @@ struct ComposeView: View {
 
                     Divider().padding(.leading)
 
+                    if !viewModel.attachments.isEmpty {
+                        AttachmentPreviewRow(
+                            attachments: viewModel.attachments,
+                            onRemove: { attachment in
+                                viewModel.removeAttachment(attachment)
+                            }
+                        )
+                        .padding(.horizontal)
+                        Divider().padding(.leading)
+                    }
+
                     // Body (rich text)
                     ZStack(alignment: .topLeading) {
                         RichTextEditor(
@@ -124,6 +149,10 @@ struct ComposeView: View {
                         Image(systemName: "sparkles")
                     }
 
+                    Button(action: { showingTemplates = true }) {
+                        Image(systemName: "doc.on.doc")
+                    }
+
                     Button(action: { viewModel.showCcBcc.toggle() }) {
                         Image(systemName: viewModel.showCcBcc ? "chevron.up" : "chevron.down")
                     }
@@ -131,6 +160,11 @@ struct ComposeView: View {
                     Button(action: { viewModel.showAttachmentPicker = true }) {
                         Image(systemName: "paperclip")
                     }
+
+                    Button(action: { showingScheduleSheet = true }) {
+                        Image(systemName: "clock")
+                    }
+                    .disabled(!viewModel.canSend)
 
                     Button(action: send) {
                         Image(systemName: "arrow.up.circle.fill")
@@ -165,13 +199,42 @@ struct ComposeView: View {
             .sheet(isPresented: $showingAIDraft) {
                 AIDraftSheet { prompt, tone, length, includeSubject in
                     Task {
-                        await viewModel.applyAIDraft(
+                        await viewModel.generateAIDraftPreview(
                             prompt: prompt,
                             tone: tone,
                             length: length,
                             includeSubject: includeSubject
                         )
                     }
+                }
+            }
+            .sheet(item: $viewModel.pendingAIDraft) { draft in
+                AIDraftPreviewSheet(
+                    draft: draft,
+                    applySubject: viewModel.pendingAIDraftIncludeSubject
+                ) {
+                    viewModel.applyAIDraftResult(draft, includeSubject: viewModel.pendingAIDraftIncludeSubject)
+                }
+            }
+            .sheet(isPresented: $showingTemplates) {
+                TemplatesSheet(
+                    templates: viewModel.templates,
+                    defaultBody: viewModel.bodyAttributed.string,
+                    onInsert: { template in
+                        viewModel.appendTemplate(template)
+                    },
+                    onAdd: { title, body in
+                        viewModel.addTemplate(title: title, body: body)
+                    },
+                    onDelete: { offsets in
+                        viewModel.removeTemplates(at: offsets)
+                    }
+                )
+            }
+            .sheet(isPresented: $showingScheduleSheet) {
+                ScheduleSendSheet { date in
+                    viewModel.scheduleSend(at: date)
+                    dismiss()
                 }
             }
             .alert(
@@ -184,6 +247,81 @@ struct ComposeView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.aiDraftError ?? "Unable to generate draft.")
+            }
+            .confirmationDialog("Add Attachment", isPresented: $showingAttachmentOptions) {
+                Button("Photo Library") { showingPhotoPicker = true }
+                Button("Files") { showingFileImporter = true }
+            }
+            .photosPicker(isPresented: $showingPhotoPicker, selection: $selectedPhotos, matching: .images)
+            .onChange(of: selectedPhotos) { _, newItems in
+                Task {
+                    for item in newItems {
+                        if let data = try? await item.loadTransferable(type: Data.self) {
+                            let type = item.supportedContentTypes.first
+                            let mimeType = type?.preferredMIMEType ?? "image/jpeg"
+                            let ext = type?.preferredFilenameExtension ?? "jpg"
+                            let filename = "Photo-\(UUID().uuidString.prefix(6)).\(ext)"
+                            viewModel.addAttachment(data: data, filename: filename, mimeType: mimeType)
+                        }
+                    }
+                    selectedPhotos = []
+                }
+            }
+            .fileImporter(
+                isPresented: $showingFileImporter,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    Task {
+                        for url in urls {
+                            if let data = try? Data(contentsOf: url) {
+                                let filename = url.lastPathComponent
+                                let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+                                viewModel.addAttachment(data: data, filename: filename, mimeType: mimeType)
+                            }
+                        }
+                    }
+                case .failure:
+                    break
+                }
+            }
+            .onChange(of: viewModel.showAttachmentPicker) { _, newValue in
+                if newValue {
+                    showingAttachmentOptions = true
+                    viewModel.showAttachmentPicker = false
+                }
+            }
+            .onChange(of: viewModel.didSend) { _, newValue in
+                if newValue {
+                    dismiss()
+                    viewModel.didSend = false
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if viewModel.showUndoSend {
+                    UndoSendToast(
+                        onUndo: { viewModel.undoSend() }
+                    )
+                    .padding(.bottom, 56)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .onChange(of: viewModel.subject) { _, _ in
+                viewModel.scheduleAutoSave()
+            }
+            .onChange(of: viewModel.bodyAttributed) { _, _ in
+                viewModel.scheduleAutoSave()
+            }
+            .onChange(of: viewModel.to) { _, _ in
+                viewModel.scheduleAutoSave()
+            }
+            .onChange(of: viewModel.cc) { _, _ in
+                viewModel.scheduleAutoSave()
+            }
+            .onChange(of: viewModel.bcc) { _, _ in
+                viewModel.scheduleAutoSave()
             }
         }
     }
@@ -202,12 +340,7 @@ struct ComposeView: View {
         // Auto-add any pending input in recipient fields
         viewModel.finalizeRecipients()
 
-        Task {
-            let success = await viewModel.send()
-            if success {
-                dismiss()
-            }
-        }
+        viewModel.queueSendWithUndo()
     }
 }
 
@@ -443,6 +576,106 @@ struct FlowLayout: Layout {
     }
 }
 
+// MARK: - Attachment Preview Row
+
+struct ComposeAttachment: Identifiable, Hashable {
+    let id: UUID
+    let filename: String
+    let mimeType: String
+    let data: Data
+
+    init(filename: String, mimeType: String, data: Data) {
+        self.id = UUID()
+        self.filename = filename
+        self.mimeType = mimeType
+        self.data = data
+    }
+
+    var size: Int { data.count }
+    var isImage: Bool { mimeType.hasPrefix("image/") }
+
+    var formattedSize: String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(size))
+    }
+}
+
+struct AttachmentPreviewRow: View {
+    let attachments: [ComposeAttachment]
+    let onRemove: (ComposeAttachment) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(attachments) { attachment in
+                    AttachmentChip(attachment: attachment, onRemove: { onRemove(attachment) })
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+}
+
+struct AttachmentChip: View {
+    let attachment: ComposeAttachment
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if attachment.isImage, let image = UIImage(data: attachment.data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 34, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                Image(systemName: "doc")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, height: 34)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(attachment.filename)
+                    .font(.caption)
+                    .lineLimit(1)
+                Text(attachment.formattedSize)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct RecoveredDraftBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.uturn.left")
+            Text("Recovered draft")
+                .font(.caption)
+                .fontWeight(.medium)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.systemYellow).opacity(0.2))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
 // MARK: - Rich Text Toolbar
 
 struct RichTextToolbar: View {
@@ -451,34 +684,56 @@ struct RichTextToolbar: View {
     @State private var linkURL = ""
 
     var body: some View {
-        VStack(spacing: 8) {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                FormatButton(
+                    systemName: "bold",
+                    isActive: context.isBold,
+                    action: { context.toggleBold() }
+                )
+                FormatButton(
+                    systemName: "italic",
+                    isActive: context.isItalic,
+                    action: { context.toggleItalic() }
+                )
+                FormatButton(
+                    systemName: "underline",
+                    isActive: context.isUnderline,
+                    action: { context.toggleUnderline() }
+                )
+            }
+
             Divider()
-            HStack(spacing: 18) {
-                Button(action: { context.toggleBold() }) {
-                    Image(systemName: "bold")
+                .frame(height: 18)
+
+            HStack(spacing: 6) {
+                FormatButton(systemName: "list.bullet") {
+                    context.insertBulletList()
                 }
-                Button(action: { context.toggleItalic() }) {
-                    Image(systemName: "italic")
-                }
-                Button(action: { context.toggleUnderline() }) {
-                    Image(systemName: "underline")
-                }
-                Button(action: { context.insertBulletList() }) {
-                    Image(systemName: "list.bullet")
-                }
-                Button(action: { showingLinkPrompt = true }) {
-                    Image(systemName: "link")
-                }
-                Spacer()
-                Button(action: { context.toggleFontSize() }) {
-                    Image(systemName: "textformat.size")
+                FormatButton(systemName: "link") {
+                    showingLinkPrompt = true
                 }
             }
-            .font(.subheadline)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 6) {
+                FormatButton(systemName: "textformat.size") {
+                    context.toggleFontSize()
+                }
+                FormatButton(action: { context.clearFormatting() }) {
+                    RemoveFormattingIcon()
+                }
+            }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
         .alert("Add Link", isPresented: $showingLinkPrompt) {
             TextField("https://example.com", text: $linkURL)
                 .textInputAutocapitalization(.never)
@@ -494,6 +749,53 @@ struct RichTextToolbar: View {
             }
         } message: {
             Text("Add a link to the selected text.")
+        }
+    }
+}
+
+struct FormatButton<Label: View>: View {
+    let isActive: Bool
+    let action: () -> Void
+    let label: () -> Label
+
+    init(
+        isActive: Bool = false,
+        action: @escaping () -> Void,
+        @ViewBuilder label: @escaping () -> Label
+    ) {
+        self.isActive = isActive
+        self.action = action
+        self.label = label
+    }
+
+    init(systemName: String, isActive: Bool = false, action: @escaping () -> Void) where Label == Image {
+        self.init(isActive: isActive, action: action) {
+            Image(systemName: systemName)
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            label()
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isActive ? .white : .primary)
+                .frame(width: 32, height: 32)
+                .background(
+                    Circle()
+                        .fill(isActive ? Color.accentColor : Color(.systemGray6))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct RemoveFormattingIcon: View {
+    var body: some View {
+        ZStack {
+            Image(systemName: "textformat")
+            Image(systemName: "xmark")
+                .font(.caption2)
+                .offset(x: 6, y: -6)
         }
     }
 }
@@ -521,6 +823,53 @@ struct AIDraftResult {
     let body: String
 }
 
+struct AIDraftPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let draft: AIDraftResult
+    let applySubject: Bool
+    let onApply: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if applySubject {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Subject")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(draft.subject.isEmpty ? "(No subject)" : draft.subject)
+                                .font(.headline)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Body")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(draft.body)
+                            .font(.body)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Preview Draft")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Insert") {
+                        onApply()
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct AIDraftSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var prompt = ""
@@ -539,21 +888,43 @@ struct AIDraftSheet: View {
                 }
 
                 Section("Tone") {
-                    Picker("Tone", selection: $tone) {
+                    HStack(spacing: 8) {
                         ForEach(AIDraftTone.allCases) { option in
-                            Text(option.rawValue).tag(option)
+                            Button(action: { tone = option }) {
+                                Text(option.rawValue)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        Capsule()
+                                            .fill(tone == option ? Color.accentColor : Color(.systemGray6))
+                                    )
+                                    .foregroundStyle(tone == option ? .white : .primary)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .pickerStyle(.segmented)
                 }
 
                 Section("Length") {
-                    Picker("Length", selection: $length) {
+                    HStack(spacing: 8) {
                         ForEach(AIDraftLength.allCases) { option in
-                            Text(option.rawValue).tag(option)
+                            Button(action: { length = option }) {
+                                Text(option.rawValue)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        Capsule()
+                                            .fill(length == option ? Color.accentColor : Color(.systemGray6))
+                                    )
+                                    .foregroundStyle(length == option ? .white : .primary)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .pickerStyle(.segmented)
                 }
 
                 Section {
@@ -578,10 +949,161 @@ struct AIDraftSheet: View {
     }
 }
 
+// MARK: - Templates
+
+struct ComposeTemplate: Codable, Identifiable, Hashable {
+    let id: UUID
+    let title: String
+    let body: String
+
+    init(id: UUID = UUID(), title: String, body: String) {
+        self.id = id
+        self.title = title
+        self.body = body
+    }
+}
+
+struct TemplatesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingAdd = false
+
+    let templates: [ComposeTemplate]
+    let defaultBody: String
+    let onInsert: (ComposeTemplate) -> Void
+    let onAdd: (String, String) -> Void
+    let onDelete: (IndexSet) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if templates.isEmpty {
+                    ContentUnavailableView(
+                        "No Templates",
+                        systemImage: "doc.on.doc",
+                        description: Text("Save frequently used messages for quick reuse.")
+                    )
+                    .listRowSeparator(.hidden)
+                } else {
+                    ForEach(templates) { template in
+                        Button {
+                            onInsert(template)
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(template.title)
+                                    .font(.headline)
+                                Text(template.body)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                    .onDelete(perform: onDelete)
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Templates")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("New") { showingAdd = true }
+                }
+            }
+            .sheet(isPresented: $showingAdd) {
+                NewTemplateSheet(defaultBody: defaultBody) { title, body in
+                    onAdd(title, body)
+                }
+            }
+        }
+    }
+}
+
+struct NewTemplateSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var templateBody: String
+
+    let onSave: (String, String) -> Void
+
+    init(defaultBody: String, onSave: @escaping (String, String) -> Void) {
+        self._templateBody = State(initialValue: defaultBody)
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Title") {
+                    TextField("Template name", text: $title)
+                }
+                Section("Body") {
+                    TextEditor(text: $templateBody)
+                        .frame(minHeight: 160)
+                }
+            }
+            .navigationTitle("New Template")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(title, templateBody)
+                        dismiss()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Schedule Send
+
+struct ScheduleSendSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var sendDate = Date().addingTimeInterval(60 * 15)
+    let onSchedule: (Date) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker(
+                    "Send at",
+                    selection: $sendDate,
+                    in: Date().addingTimeInterval(60)...,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+            }
+            .navigationTitle("Schedule Send")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Schedule") {
+                        onSchedule(sendDate)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Rich Text Editor
 
 final class RichTextContext: ObservableObject {
     @Published var selectedRange: NSRange = NSRange(location: 0, length: 0)
+    @Published var isBold = false
+    @Published var isItalic = false
+    @Published var isUnderline = false
     weak var textView: UITextView?
     var onTextChange: ((NSAttributedString) -> Void)?
 
@@ -692,6 +1214,28 @@ final class RichTextContext: ObservableObject {
         }
     }
 
+    func updateSelectionState() {
+        guard let textView = textView else { return }
+        let range = textView.selectedRange
+        let attributes: [NSAttributedString.Key: Any]
+        if range.length > 0, range.location < textView.attributedText.length {
+            attributes = textView.attributedText.attributes(at: range.location, effectiveRange: nil)
+        } else {
+            attributes = textView.typingAttributes
+        }
+
+        let font = (attributes[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+        let traits = font.fontDescriptor.symbolicTraits
+        isBold = traits.contains(.traitBold)
+        isItalic = traits.contains(.traitItalic)
+
+        if let underline = attributes[.underlineStyle] as? Int {
+            isUnderline = underline != 0
+        } else {
+            isUnderline = false
+        }
+    }
+
     private func currentFont(from textView: UITextView) -> UIFont {
         if let font = textView.typingAttributes[.font] as? UIFont {
             return font
@@ -759,10 +1303,12 @@ struct RichTextEditor: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             parent.attributedText = textView.attributedText
+            parent.context.updateSelectionState()
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             parent.context.selectedRange = textView.selectedRange
+            parent.context.updateSelectionState()
         }
     }
 }
@@ -809,6 +1355,42 @@ struct StatusOverlay: View {
     }
 }
 
+// MARK: - Undo Send Toast
+
+struct UndoSendToast: View {
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "paperplane")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.8))
+
+            Text("Sending soon…")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+
+            Spacer()
+
+            Button(action: onUndo) {
+                Text("Undo")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.yellow)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.darkGray))
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+        )
+        .padding(.horizontal, 16)
+    }
+}
+
 // MARK: - Compose ViewModel
 
 @MainActor
@@ -818,6 +1400,8 @@ class ComposeViewModel: ObservableObject {
     @Published var bcc: [String] = []
     @Published var subject: String = ""
     @Published var bodyAttributed: NSAttributedString = ComposeViewModel.attributedBody(from: "")
+    @Published var attachments: [ComposeAttachment] = []
+    @Published var templates: [ComposeTemplate] = []
 
     // Pending input in recipient text fields
     @Published var pendingToInput: String = ""
@@ -830,11 +1414,19 @@ class ComposeViewModel: ObservableObject {
     @Published var isSending = false
     @Published var isGeneratingDraft = false
     @Published var aiDraftError: String?
+    @Published var showUndoSend = false
+    @Published var didSend = false
+    @Published var isRecoveredDraft = false
+    @Published var pendingAIDraft: AIDraftResult?
+    @Published var pendingAIDraftIncludeSubject = true
     @Published var error: Error?
 
     private var replyToMessageId: String?
     private var replyThreadId: String?
     private var draftId: String?
+    private var sendTask: Task<Void, Never>?
+    private var autoSaveTask: Task<Void, Never>?
+    private let templatesKey = "composeTemplates"
 
     var hasContent: Bool {
         !to.isEmpty || !subject.isEmpty || !bodyAttributed.string.isEmpty
@@ -879,6 +1471,7 @@ class ComposeViewModel: ObservableObject {
     }
 
     init(mode: ComposeMode) {
+        loadTemplates()
         switch mode {
         case .new:
             break
@@ -909,6 +1502,7 @@ class ComposeViewModel: ObservableObject {
             to = toAddrs
             subject = subj
             bodyAttributed = Self.attributedBody(from: bodyText)
+            isRecoveredDraft = true
         }
     }
 
@@ -924,6 +1518,7 @@ class ComposeViewModel: ObservableObject {
                 subject: subject,
                 body: plainBody(),
                 bodyHtml: htmlBody(),
+                attachments: mimeAttachments(),
                 inReplyTo: replyToMessageId,
                 threadId: replyThreadId
             )
@@ -957,21 +1552,105 @@ class ComposeViewModel: ObservableObject {
         }
     }
 
+    func queueSendWithUndo() {
+        sendTask?.cancel()
+        showUndoSend = true
+        didSend = false
+
+        sendTask = Task { [weak self] in
+            let delay = await MainActor.run { self?.undoDelaySeconds() ?? 5 }
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled else { return }
+            let success = await self.send()
+            await MainActor.run {
+                self.showUndoSend = false
+                self.didSend = success
+            }
+        }
+    }
+
+    func undoSend() {
+        sendTask?.cancel()
+        showUndoSend = false
+    }
+
+    func scheduleSend(at date: Date) {
+        guard let accountEmail = AuthService.shared.currentAccount?.email else { return }
+        let scheduled = ScheduledSend(
+            id: UUID(),
+            accountEmail: accountEmail,
+            to: to,
+            cc: cc,
+            bcc: bcc,
+            subject: subject,
+            body: plainBody(),
+            bodyHtml: htmlBody(),
+            attachments: scheduledAttachments(),
+            sendAt: date
+        )
+        ScheduledSendManager.shared.schedule(scheduled)
+        BackgroundSyncManager.shared.scheduleNotificationCheck()
+        HapticFeedback.success()
+    }
+
+    func scheduleAutoSave() {
+        autoSaveTask?.cancel()
+        autoSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+            if self.hasContent {
+                await self.saveDraft()
+            }
+        }
+    }
+
+    func addAttachment(data: Data, filename: String, mimeType: String) {
+        let attachment = ComposeAttachment(filename: filename, mimeType: mimeType, data: data)
+        attachments.append(attachment)
+    }
+
+    func removeAttachment(_ attachment: ComposeAttachment) {
+        attachments.removeAll { $0.id == attachment.id }
+    }
+
+    func appendTemplate(_ template: ComposeTemplate) {
+        let newBody = bodyAttributed.string.isEmpty ? template.body : "\(bodyAttributed.string)\n\n\(template.body)"
+        bodyAttributed = Self.attributedBody(from: newBody)
+    }
+
+    func addTemplate(title: String, body: String) {
+        var current = templates
+        current.append(ComposeTemplate(title: title, body: body))
+        templates = current
+        saveTemplates()
+    }
+
+    func removeTemplates(at offsets: IndexSet) {
+        templates.remove(atOffsets: offsets)
+        saveTemplates()
+    }
+
     @MainActor
-    func applyAIDraft(prompt: String, tone: AIDraftTone, length: AIDraftLength, includeSubject: Bool) async {
+    func generateAIDraftPreview(prompt: String, tone: AIDraftTone, length: AIDraftLength, includeSubject: Bool) async {
         isGeneratingDraft = true
         aiDraftError = nil
         defer { isGeneratingDraft = false }
 
         do {
             let draft = try await generateAIDraft(prompt: prompt, tone: tone, length: length)
-            if includeSubject, !draft.subject.isEmpty {
-                subject = draft.subject
-            }
-            bodyAttributed = Self.attributedBody(from: draft.body)
+            pendingAIDraft = draft
+            pendingAIDraftIncludeSubject = includeSubject
         } catch {
             aiDraftError = "Apple Intelligence is unavailable right now."
         }
+    }
+
+    func applyAIDraftResult(_ draft: AIDraftResult, includeSubject: Bool) {
+        if includeSubject, !draft.subject.isEmpty {
+            subject = draft.subject
+        }
+        bodyAttributed = Self.attributedBody(from: draft.body)
+        pendingAIDraft = nil
     }
 
     private func buildQuotedReply(_ email: EmailDetail) -> String {
@@ -1015,6 +1694,18 @@ class ComposeViewModel: ObservableObject {
             return html
         }
         return nil
+    }
+
+    private func mimeAttachments() -> [MIMEAttachment] {
+        attachments.map {
+            MIMEAttachment(filename: $0.filename, mimeType: $0.mimeType, data: $0.data)
+        }
+    }
+
+    private func scheduledAttachments() -> [ScheduledAttachment] {
+        attachments.map {
+            ScheduledAttachment(filename: $0.filename, mimeType: $0.mimeType, data: $0.data)
+        }
     }
 
     private static func attributedBody(from text: String) -> NSAttributedString {
@@ -1068,6 +1759,32 @@ class ComposeViewModel: ObservableObject {
 
     private enum DraftError: Error {
         case unavailable
+    }
+
+    private func loadTemplates() {
+        let accountEmail = AuthService.shared.currentAccount?.email
+        guard let data = AccountDefaults.data(for: templatesKey, accountEmail: accountEmail),
+              let decoded = try? JSONDecoder().decode([ComposeTemplate].self, from: data) else {
+            templates = []
+            return
+        }
+        templates = decoded
+    }
+
+    private func saveTemplates() {
+        let accountEmail = AuthService.shared.currentAccount?.email
+        if let data = try? JSONEncoder().encode(templates) {
+            AccountDefaults.setData(data, for: templatesKey, accountEmail: accountEmail)
+        }
+    }
+
+    private func undoDelaySeconds() -> Int {
+        let accountEmail = AuthService.shared.currentAccount?.email
+        if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
+           let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            return settings.undoSendDelaySeconds
+        }
+        return 5
     }
 }
 

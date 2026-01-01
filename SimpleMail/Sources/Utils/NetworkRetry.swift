@@ -24,8 +24,25 @@ enum NetworkRetry {
             }
         }
 
-        // Check for HTTP 429 (rate limited) or 503 (service unavailable)
-        // These are typically passed as custom errors
+        // Check for rate limiting errors from Gmail/People services
+        if let gmailError = error as? GmailError {
+            switch gmailError {
+            case .rateLimited:
+                return true
+            default:
+                return false
+            }
+        }
+
+        if let peopleError = error as? PeopleError {
+            switch peopleError {
+            case .rateLimited:
+                return true
+            default:
+                return false
+            }
+        }
+
         return false
     }
 

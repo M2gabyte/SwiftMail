@@ -39,6 +39,9 @@
 		A1000032 /* brand_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B1000032 /* brand_registry.json */; };
 		A1000033 /* EmailFilters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000033 /* EmailFilters.swift */; };
 		A1000034 /* AccountDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000034 /* AccountDefaults.swift */; };
+		A1000035 /* ScheduledSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000035 /* ScheduledSendManager.swift */; };
+		A1000036 /* NetworkRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000036 /* NetworkRetry.swift */; };
+		A1000037 /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000037 /* ErrorBanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -88,6 +91,9 @@
 		B1000032 /* brand_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = brand_registry.json; sourceTree = "<group>"; };
 		B1000033 /* EmailFilters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailFilters.swift; sourceTree = "<group>"; };
 		B1000034 /* AccountDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDefaults.swift; sourceTree = "<group>"; };
+		B1000035 /* ScheduledSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledSendManager.swift; sourceTree = "<group>"; };
+		B1000036 /* NetworkRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkRetry.swift; sourceTree = "<group>"; };
+		B1000037 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -161,6 +167,7 @@
 		D0000005 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				D0000012 /* Components */,
 				B1000005 /* InboxView.swift */,
 				B1000006 /* BriefingScreenView.swift */,
 				B1000007 /* EmailDetailView.swift */,
@@ -173,6 +180,14 @@
 				B1000024 /* SmartAvatarView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		D0000012 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				B1000037 /* ErrorBanner.swift */,
+			);
+			path = Components;
 			sourceTree = "<group>";
 		};
 		D0000006 /* ViewModels */ = {
@@ -199,6 +214,7 @@
 				B1000015 /* BackgroundSync.swift */,
 				B1000019 /* EmailCache.swift */,
 				B1000020 /* SnoozeManager.swift */,
+				B1000035 /* ScheduledSendManager.swift */,
 				B1000023 /* PeopleService.swift */,
 				B1000025 /* AvatarService.swift */,
 				B1000029 /* BrandRegistry.swift */,
@@ -223,6 +239,7 @@
 				B1000031 /* Color+Hex.swift */,
 				B1000033 /* EmailFilters.swift */,
 				B1000034 /* AccountDefaults.swift */,
+				B1000036 /* NetworkRetry.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -377,6 +394,9 @@
 				A1000031 /* Color+Hex.swift in Sources */,
 				A1000033 /* EmailFilters.swift in Sources */,
 				A1000034 /* AccountDefaults.swift in Sources */,
+				A1000035 /* ScheduledSendManager.swift in Sources */,
+				A1000036 /* NetworkRetry.swift in Sources */,
+				A1000037 /* ErrorBanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -81,6 +81,9 @@ final class BackgroundSyncManager {
             do {
                 try await performSync()
                 task.setTaskCompleted(success: true)
+            } catch is CancellationError {
+                logger.info("Sync task was cancelled due to expiration")
+                task.setTaskCompleted(success: false)
             } catch {
                 logger.error("Sync failed: \(error.localizedDescription)")
                 task.setTaskCompleted(success: false)
@@ -88,6 +91,7 @@ final class BackgroundSyncManager {
         }
 
         task.expirationHandler = {
+            logger.warning("Sync task expiring - cancelling work")
             syncTask.cancel()
         }
     }
@@ -99,6 +103,9 @@ final class BackgroundSyncManager {
             do {
                 try await checkForNewEmails()
                 task.setTaskCompleted(success: true)
+            } catch is CancellationError {
+                logger.info("Notification task was cancelled due to expiration")
+                task.setTaskCompleted(success: false)
             } catch {
                 logger.error("Notification check failed: \(error.localizedDescription)")
                 task.setTaskCompleted(success: false)
@@ -106,6 +113,7 @@ final class BackgroundSyncManager {
         }
 
         task.expirationHandler = {
+            logger.warning("Notification task expiring - cancelling work")
             notificationTask.cancel()
         }
     }
@@ -117,8 +125,14 @@ final class BackgroundSyncManager {
             return
         }
 
+        // Check for cancellation before network call
+        try Task.checkCancellation()
+
         // Fetch latest emails
         let (emails, _) = try await GmailService.shared.fetchInbox(maxResults: 50)
+
+        // Check for cancellation before cache update
+        try Task.checkCancellation()
 
         // Update local cache (SwiftData)
         await EmailCacheManager.shared.cacheEmails(emails)
@@ -131,6 +145,14 @@ final class BackgroundSyncManager {
             return
         }
 
+        // Check for cancellation before processing
+        try Task.checkCancellation()
+
+        await ScheduledSendManager.shared.processDueSends()
+
+        // Check for cancellation after scheduled sends
+        try Task.checkCancellation()
+
         // Prune old notification keys periodically
         pruneNotificationKeys()
 
@@ -140,12 +162,18 @@ final class BackgroundSyncManager {
             maxResults: 10
         )
 
+        // Check for cancellation before processing notifications
+        try Task.checkCancellation()
+
         let newEmails = emails.filter { email in
             // Check if we've already notified for this email
             !AccountDefaults.bool(for: "notified_\(email.id)", accountEmail: email.accountEmail)
         }
 
         for email in newEmails {
+            // Check for cancellation in the loop
+            if Task.isCancelled { break }
+
             let accountEmail = email.accountEmail
             let settings = loadSettings(accountEmail: accountEmail)
             guard settings.notificationsEnabled else { continue }
@@ -165,11 +193,16 @@ final class BackgroundSyncManager {
     }
 
     private func loadSettings(accountEmail: String?) -> AppSettings {
-        if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
-           let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            return settings
+        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail) else {
+            return AppSettings()
         }
-        return AppSettings()
+
+        do {
+            return try JSONDecoder().decode(AppSettings.self, from: data)
+        } catch {
+            logger.error("Failed to decode app settings: \(error.localizedDescription)")
+            return AppSettings()
+        }
     }
 
     // MARK: - Notification Key Pruning

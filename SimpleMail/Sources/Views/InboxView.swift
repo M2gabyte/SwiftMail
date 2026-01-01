@@ -1,5 +1,8 @@
 import SwiftUI
 import SwiftData
+import OSLog
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxView")
 
 // MARK: - Inbox View
 
@@ -117,9 +120,14 @@ struct InboxView: View {
 
     private func loadSettings() {
         let accountEmail = AuthService.shared.currentAccount?.email
-        if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
-           let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
+        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail) else {
+            return
+        }
+        do {
+            let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             listDensity = settings.listDensity
+        } catch {
+            logger.warning("Failed to decode app settings: \(error.localizedDescription)")
         }
     }
 }

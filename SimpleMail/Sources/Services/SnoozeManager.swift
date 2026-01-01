@@ -25,7 +25,9 @@ final class SnoozeManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.loadSnoozedEmails()
+            Task { @MainActor in
+                self?.loadSnoozedEmails()
+            }
         }
     }
 
@@ -73,6 +75,10 @@ final class SnoozeManager {
     // MARK: - Snooze Email
 
     func snoozeEmail(_ email: Email, until date: Date) async {
+        await snoozeEmail(email.toDTO(), until: date)
+    }
+
+    func snoozeEmail(_ email: EmailDTO, until date: Date) async {
         guard let context = modelContext else {
             logger.error("Cannot snooze email: no model context configured")
             return

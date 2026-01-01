@@ -11,7 +11,15 @@ struct SimpleMailApp: App {
     @StateObject private var authService = AuthService.shared
     @Environment(\.scenePhase) private var scenePhase
 
-    var sharedModelContainer: ModelContainer = {
+    /// Result of ModelContainer initialization - allows graceful error handling instead of fatalError
+    private let modelContainerResult: Result<ModelContainer, Error>
+
+    var sharedModelContainer: ModelContainer? {
+        try? modelContainerResult.get()
+    }
+
+    init() {
+        // Initialize ModelContainer with error handling
         let schema = Schema([
             Email.self,
             EmailDetail.self,
@@ -24,13 +32,13 @@ struct SimpleMailApp: App {
         )
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            self.modelContainerResult = .success(container)
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            logger.error("Failed to create ModelContainer: \(error.localizedDescription)")
+            self.modelContainerResult = .failure(error)
         }
-    }()
 
-    init() {
         // Register background tasks
         BackgroundSyncManager.shared.registerBackgroundTasks()
 
@@ -40,16 +48,20 @@ struct SimpleMailApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(authService)
-                .onOpenURL { url in
-                    handleURL(url)
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .openEmail)) { notification in
-                    handleEmailNotification(notification)
-                }
+            if let container = sharedModelContainer {
+                ContentView()
+                    .environmentObject(authService)
+                    .modelContainer(container)
+                    .onOpenURL { url in
+                        handleURL(url)
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: .openEmail)) { notification in
+                        handleEmailNotification(notification)
+                    }
+            } else {
+                DatabaseErrorView(error: modelContainerResult)
+            }
         }
-        .modelContainer(sharedModelContainer)
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
@@ -126,6 +138,61 @@ struct ContentView: View {
                         await biometricManager.authenticate()
                     }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Database Error View
+
+struct DatabaseErrorView: View {
+    let error: Result<ModelContainer, Error>
+
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                Spacer()
+
+                Image(systemName: "externaldrive.badge.xmark")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.red)
+
+                Text("Database Error")
+                    .font(.title)
+                    .fontWeight(.bold)
+
+                if case .failure(let err) = error {
+                    Text(err.localizedDescription)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                Text("SimpleMail couldn't initialize its local database. Try restarting the app or reinstalling if the problem persists.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                Spacer()
+
+                VStack(spacing: 12) {
+                    Text("Error Code: DB_001")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .monospaced()
+
+                    if let supportURL = URL(string: "mailto:support@simplemail.app?subject=Database%20Error%20DB_001") {
+                        Link("Contact Support", destination: supportURL)
+                            .font(.headline)
+                            .foregroundStyle(.blue)
+                    }
+                }
+                .padding(.bottom, 40)
             }
         }
     }

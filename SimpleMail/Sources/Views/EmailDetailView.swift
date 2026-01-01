@@ -1351,11 +1351,16 @@ class EmailDetailViewModel: ObservableObject {
 
     var autoSummarizeEnabled: Bool {
         let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
-        if let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail),
-           let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            return settings.autoSummarize
+        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
+            return true // Default to enabled
         }
-        return true // Default to enabled
+        do {
+            let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+            return settings.autoSummarize
+        } catch {
+            detailLogger.warning("Failed to decode app settings for auto-summarize: \(error.localizedDescription)")
+            return true // Default to enabled
+        }
     }
 
     private func accountForThread() -> AuthService.Account? {

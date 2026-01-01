@@ -333,8 +333,9 @@ actor PeopleService {
         request.timeoutInterval = requestTimeout
 
         // Use retry logic for transient network failures
+        let frozenRequest = request
         let (data, response) = try await NetworkRetry.withRetry(maxAttempts: 3) {
-            try await URLSession.shared.data(for: request)
+            try await URLSession.shared.data(for: frozenRequest)
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {

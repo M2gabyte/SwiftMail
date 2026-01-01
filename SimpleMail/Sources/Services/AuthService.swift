@@ -2,6 +2,9 @@ import Foundation
 import AuthenticationServices
 import CryptoKit
 import UIKit
+import OSLog
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "AuthService")
 
 extension Notification.Name {
     static let accountDidChange = Notification.Name("accountDidChange")
@@ -28,7 +31,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
 
     // MARK: - Account Model
 
-    struct Account: Identifiable, Codable, Equatable {
+    struct Account: Identifiable, Codable, Equatable, Sendable {
         let id: String
         let email: String
         let name: String
@@ -53,23 +56,15 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     // MARK: - ASWebAuthenticationPresentationContextProviding
 
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        // Use MainActor.assumeIsolated when on main thread, otherwise dispatch sync
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated {
-                guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                      let window = windowScene.windows.first else {
-                    return ASPresentationAnchor()
-                }
-                return window
+        // ASWebAuthenticationSession guarantees this delegate method is called on the main thread.
+        // Use MainActor.assumeIsolated to safely access UIApplication.
+        // Note: We avoid DispatchQueue.main.sync as it risks deadlocks if the assumption ever breaks.
+        MainActor.assumeIsolated {
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let window = windowScene.windows.first else {
+                return ASPresentationAnchor()
             }
-        } else {
-            return DispatchQueue.main.sync {
-                guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                      let window = windowScene.windows.first else {
-                    return ASPresentationAnchor()
-                }
-                return window
-            }
+            return window
         }
     }
 
@@ -241,20 +236,22 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
         // Create new refresh task and store it
         let refreshTask = Task<Account, Error> { [weak self] in
             guard let self = self else { throw AuthError.tokenRefreshFailed }
-
-            defer {
-                // Clean up the task reference when done
-                Task { @MainActor in
-                    self.refreshTasks.removeValue(forKey: account.id)
-                }
-            }
-
             return try await self.performTokenRefresh(for: account, refreshToken: refreshToken)
         }
 
         refreshTasks[account.id] = refreshTask
 
-        return try await refreshTask.value
+        // Await the result and clean up synchronously afterward
+        // This ensures the task reference is removed before returning,
+        // preventing stale task references from being awaited by other callers
+        do {
+            let result = try await refreshTask.value
+            refreshTasks.removeValue(forKey: account.id)
+            return result
+        } catch {
+            refreshTasks.removeValue(forKey: account.id)
+            throw error
+        }
     }
 
     /// Performs the actual token refresh network call
@@ -326,8 +323,22 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     }
 
     func switchAccount(to account: Account) {
+        let previousAccount = currentAccount
         currentAccount = account
         saveAccounts()
+
+        // Clear account-specific caches to prevent data bleed
+        // Note: Email cache is already scoped by accountEmail, but avatar/contact
+        // caches may show stale data briefly during switch
+        if previousAccount?.email.lowercased() != account.email.lowercased() {
+            Task {
+                // Clear avatar cache for immediate visual refresh
+                await AvatarService.shared.clearCache()
+                // PeopleService contacts are account-scoped, but clear for fresh data
+                await PeopleService.shared.clearCache()
+            }
+        }
+
         NotificationCenter.default.post(name: .accountDidChange, object: nil)
     }
 
@@ -389,18 +400,30 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     // MARK: - Persistence
 
     private func loadAccounts() {
-        guard let data = keychain.read(key: "accounts"),
-              let savedAccounts = try? JSONCoding.decoder.decode([Account].self, from: data) else {
+        guard let data = keychain.read(key: "accounts") else {
+            logger.debug("No accounts found in keychain")
             return
         }
-        accounts = savedAccounts
-        currentAccount = savedAccounts.first
-        isAuthenticated = !savedAccounts.isEmpty
+
+        do {
+            let savedAccounts = try JSONCoding.decoder.decode([Account].self, from: data)
+            accounts = savedAccounts
+            currentAccount = savedAccounts.first
+            isAuthenticated = !savedAccounts.isEmpty
+            logger.info("Loaded \(savedAccounts.count) accounts from keychain")
+        } catch {
+            logger.error("Failed to decode accounts from keychain: \(error.localizedDescription)")
+        }
     }
 
     private func saveAccounts() {
-        guard let data = try? JSONCoding.encoder.encode(accounts) else { return }
-        keychain.save(key: "accounts", data: data)
+        do {
+            let data = try JSONCoding.encoder.encode(accounts)
+            keychain.save(key: "accounts", data: data)
+            logger.debug("Saved \(self.accounts.count) accounts to keychain")
+        } catch {
+            logger.error("Failed to encode accounts for keychain: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - PKCE Helpers
@@ -639,8 +662,17 @@ actor KeychainService {
 
 // MARK: - Synchronous Keychain Wrapper (for MainActor contexts)
 
-/// Thread-safe synchronous wrapper using NSLock for use in @MainActor contexts
-/// Uses direct Security framework calls instead of fire-and-forget Tasks
+/// Thread-safe synchronous wrapper for Keychain access.
+///
+/// ## Thread Safety Justification for @unchecked Sendable
+/// This class is marked `@unchecked Sendable` because:
+/// 1. All mutable state access is protected by `NSLock` (lines 645, 672, 690)
+/// 2. The Security framework APIs (SecItemAdd, SecItemCopyMatching, SecItemDelete)
+///    are thread-safe per Apple's documentation
+/// 3. All instance properties are either immutable (`service`) or synchronized (`lock`)
+/// 4. The class uses direct Security framework calls instead of fire-and-forget Tasks
+///
+/// The lock ensures atomicity of keychain operations across concurrent calls from any thread.
 final class KeychainServiceSync: @unchecked Sendable {
     static let shared = KeychainServiceSync()
 

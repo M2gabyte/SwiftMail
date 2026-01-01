@@ -133,6 +133,18 @@ struct SettingsView: View {
                     NavigationLink("Email Signature") {
                         SignatureEditorView(signature: $viewModel.settings.signature)
                     }
+
+                    Picker("Undo Send", selection: $viewModel.settings.undoSendDelaySeconds) {
+                        Text("5 seconds").tag(5)
+                        Text("10 seconds").tag(10)
+                        Text("20 seconds").tag(20)
+                        Text("30 seconds").tag(30)
+                    }
+                    .onChange(of: viewModel.settings.undoSendDelaySeconds) { _, _ in viewModel.saveSettings() }
+
+                    NavigationLink("Scheduled Sends") {
+                        ScheduledSendsView()
+                    }
                 } header: {
                     Text("Compose")
                 }
@@ -317,6 +329,7 @@ struct AppSettings: Codable {
     var autoSummarize: Bool = true
     var smartReplies: Bool = true
     var signature: String = ""
+    var undoSendDelaySeconds: Int = 5
 }
 
 // MARK: - Settings ViewModel
@@ -362,15 +375,26 @@ class SettingsViewModel: ObservableObject {
     }
 
     func loadSettings() {
-        if let data = AccountDefaults.data(for: settingsKeyBase, accountEmail: accountEmail),
-           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            settings = decoded
+        guard let data = AccountDefaults.data(for: settingsKeyBase, accountEmail: accountEmail) else {
+            settingsLogger.debug("No saved settings found, using defaults")
+            return
+        }
+
+        do {
+            settings = try JSONDecoder().decode(AppSettings.self, from: data)
+            settingsLogger.debug("Loaded settings successfully")
+        } catch {
+            settingsLogger.error("Failed to decode settings: \(error.localizedDescription)")
         }
     }
 
     func saveSettings() {
-        if let encoded = try? JSONEncoder().encode(settings) {
+        do {
+            let encoded = try JSONEncoder().encode(settings)
             AccountDefaults.setData(encoded, for: settingsKeyBase, accountEmail: accountEmail)
+            settingsLogger.debug("Saved settings successfully")
+        } catch {
+            settingsLogger.error("Failed to encode settings: \(error.localizedDescription)")
         }
     }
 
@@ -799,6 +823,87 @@ struct BlockedSendersView: View {
         blockedSenders.remove(atOffsets: offsets)
         AccountDefaults.setStringArray(blockedSenders, for: blockedSendersKey, accountEmail: accountEmail)
         HapticFeedback.light()
+    }
+}
+
+struct ScheduledSendsView: View {
+    @State private var scheduled = ScheduledSendManager.shared.loadAll()
+    @State private var rescheduleItem: ScheduledSend?
+    @State private var rescheduleDate = Date().addingTimeInterval(60 * 15)
+
+    var body: some View {
+        List {
+            if scheduled.isEmpty {
+                ContentUnavailableView(
+                    "No Scheduled Emails",
+                    systemImage: "clock",
+                    description: Text("Scheduled sends will appear here.")
+                )
+                .listRowSeparator(.hidden)
+            } else {
+                ForEach(scheduled) { item in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(item.subject.isEmpty ? "(No subject)" : item.subject)
+                            .font(.headline)
+                        Text("To: \(item.to.joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Send at \(item.sendAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            Button("Reschedule") {
+                                rescheduleItem = item
+                                rescheduleDate = max(Date().addingTimeInterval(60), item.sendAt)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button(role: .destructive) {
+                                ScheduledSendManager.shared.remove(id: item.id)
+                                scheduled = ScheduledSendManager.shared.loadAll()
+                            } label: {
+                                Text("Cancel")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .navigationTitle("Scheduled Sends")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $rescheduleItem) { item in
+            NavigationStack {
+                Form {
+                    DatePicker(
+                        "Send at",
+                        selection: $rescheduleDate,
+                        in: Date().addingTimeInterval(60)...,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                }
+                .navigationTitle("Reschedule")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            rescheduleItem = nil
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            ScheduledSendManager.shared.reschedule(id: item.id, date: rescheduleDate)
+                            scheduled = ScheduledSendManager.shared.loadAll()
+                            rescheduleItem = nil
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            scheduled = ScheduledSendManager.shared.loadAll()
+        }
     }
 }
 

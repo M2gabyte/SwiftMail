@@ -1,4 +1,7 @@
 import Foundation
+import OSLog
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "BrandRegistry")
 
 // MARK: - Brand Registry
 
@@ -58,11 +61,25 @@ struct BrandRegistry: Sendable {
 
     private static func loadRegistryData() -> RegistryData? {
         let bundle = BundleLocator.bundle
-        guard let url = bundle.url(forResource: "brand_registry", withExtension: "json"),
-              let data = try? Data(contentsOf: url) else {
+        guard let url = bundle.url(forResource: "brand_registry", withExtension: "json") else {
+            logger.warning("brand_registry.json not found in bundle")
             return nil
         }
-        return try? JSONDecoder().decode(RegistryData.self, from: data)
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            logger.error("Failed to read brand_registry.json: \(error.localizedDescription)")
+            return nil
+        }
+
+        do {
+            return try JSONDecoder().decode(RegistryData.self, from: data)
+        } catch {
+            logger.error("Failed to decode brand_registry.json: \(error.localizedDescription)")
+            return nil
+        }
     }
 }
 
