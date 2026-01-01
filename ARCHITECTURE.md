@@ -1158,9 +1158,14 @@ actor GmailService {
 ---
 
 *Last updated: January 2026*
-*Architecture version: 2.1*
+*Architecture version: 2.2*
 
 **Changelog:**
+- v2.2:
+  - **Email Rendering Fixes:**
+    - Fixed remote images not loading - WKWebView requires baseURL for cross-origin resources
+    - Wired up "Block Remote Images" setting from Privacy & Security to EmailBodyView
+    - Setting now controls whether images load in email body (default: load images)
 - v2.1:
   - **Critical Fixes:**
     - Replaced `fatalError` in SimpleMailApp.swift with graceful ModelContainer error handling
