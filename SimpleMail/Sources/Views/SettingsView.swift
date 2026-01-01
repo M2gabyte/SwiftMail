@@ -344,11 +344,13 @@ class SettingsViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            self.currentAccount = AuthService.shared.currentAccount
-            self.loadSettings()
-            self.lastGmailSettingsSync = AccountDefaults.date(for: self.gmailSyncKeyBase, accountEmail: self.accountEmail)
-            self.calculateCacheSize()
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.currentAccount = AuthService.shared.currentAccount
+                self.loadSettings()
+                self.lastGmailSettingsSync = AccountDefaults.date(for: self.gmailSyncKeyBase, accountEmail: self.accountEmail)
+                self.calculateCacheSize()
+            }
         }
     }
 

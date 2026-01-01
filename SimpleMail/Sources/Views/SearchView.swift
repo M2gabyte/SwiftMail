@@ -308,7 +308,9 @@ class SearchViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.loadRecentSearches()
+            Task { @MainActor in
+                self?.loadRecentSearches()
+            }
         }
     }
 

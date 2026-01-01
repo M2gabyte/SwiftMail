@@ -1,6 +1,9 @@
 import SwiftUI
 import WebKit
 import OSLog
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 private let detailLogger = Logger(subsystem: "com.simplemail.app", category: "EmailDetail")
 
@@ -851,7 +854,11 @@ struct EmailSummaryView: View {
                 summary = try await summarizeWithAppleIntelligence(plainText)
             } catch {
                 // Fallback to extractive summarization
-                summary = extractKeySentences(from: plainText, maxSentences: 3)
+                if isShortEmail(plainText) {
+                    summary = "Short email — summary not needed."
+                } else {
+                    summary = extractKeySentences(from: plainText, maxSentences: 3)
+                }
             }
 
             isGenerating = false
@@ -860,21 +867,42 @@ struct EmailSummaryView: View {
 
     @MainActor
     private func summarizeWithAppleIntelligence(_ text: String) async throws -> String {
-        // TODO: Use Foundation Models framework for on-device summarization
-        // when FoundationModels SDK is available:
-        //
-        // import FoundationModels
-        // let session = LanguageModelSession()
-        // let prompt = "Summarize this email in 2-3 concise sentences:\n\n\(text)"
-        // let response = try await session.respond(to: prompt)
-        // return response.content
-        //
-        // For now, use extractive summarization
-        return extractKeySentences(from: text, maxSentences: 3)
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            let session = LanguageModelSession()
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let limited = String(trimmed.prefix(5000))
+            let prompt = """
+            Summarize this email in 1-2 concise sentences. Focus on the key outcome, dates, amounts, and any action required. Avoid boilerplate and legal footer text.
+
+            Email:
+            \(limited)
+            """
+            let response = try await session.respond(to: prompt)
+            let summaryText = String(describing: response.content)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !summaryText.isEmpty {
+                return summaryText
+            }
+        }
+        #endif
+        throw SummaryError.unavailable
     }
 
     private func stripHTML(_ html: String) -> String {
-        var text = html
+        var text = decodeQuotedPrintable(html)
+
+        // Remove hidden/preheader blocks that often contain filler
+        text = text.replacingOccurrences(
+            of: "<(div|span|p)[^>]*class\\s*=\\s*[\"'][^\"']*preheader[^\"']*[\"'][^>]*>[\\s\\S]*?</\\1>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        text = text.replacingOccurrences(
+            of: "<(div|span|p)[^>]*(display\\s*:\\s*none|visibility\\s*:\\s*hidden)[^>]*>[\\s\\S]*?</\\1>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
 
         // Remove style blocks (including content)
         while let styleStart = text.range(of: "<style", options: .caseInsensitive),
@@ -909,10 +937,13 @@ struct EmailSummaryView: View {
             text.removeSubrange(range)
         }
 
-        // Decode HTML entities
+        // Decode numeric HTML entities (&#123; and &#x1F4A9;)
+        text = decodeNumericEntities(text)
+
+        // Decode named HTML entities
         text = text
-            .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&quot;", with: "\"")
@@ -939,6 +970,24 @@ struct EmailSummaryView: View {
             .replacingOccurrences(of: "&reg;", with: "®")
             .replacingOccurrences(of: "&trade;", with: "™")
 
+        // Collapse any remaining non-breaking space entities (including &amp;nbsp; and &nbsp without semicolons)
+        text = text
+            .replacingOccurrences(of: "&nbsp;", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "&nbsp", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+
+        // Remove invisible/control characters that commonly appear in marketing emails
+        text = text
+            .replacingOccurrences(of: "\u{034F}", with: "") // combining grapheme joiner
+            .replacingOccurrences(of: "\u{00AD}", with: "") // soft hyphen
+
+        // Remove repeated semicolon noise left by entity padding
+        text = text.replacingOccurrences(
+            of: "(?:\\s*;\\s*){2,}",
+            with: " ",
+            options: .regularExpression
+        )
+
         // Clean up whitespace
         text = text
             .components(separatedBy: .whitespacesAndNewlines)
@@ -946,6 +995,90 @@ struct EmailSummaryView: View {
             .joined(separator: " ")
 
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func decodeNumericEntities(_ text: String) -> String {
+        var result = text
+        result = replaceMatches(in: result, pattern: "&#(\\d+);?") { match, nsText in
+            let valueString = nsText.substring(with: match.range(at: 1))
+            guard let value = Int(valueString),
+                  let scalar = UnicodeScalar(value) else {
+                return ""
+            }
+            return String(scalar)
+        }
+        result = replaceMatches(in: result, pattern: "&#x([0-9a-fA-F]+);?") { match, nsText in
+            let valueString = nsText.substring(with: match.range(at: 1))
+            guard let value = Int(valueString, radix: 16),
+                  let scalar = UnicodeScalar(value) else {
+                return ""
+            }
+            return String(scalar)
+        }
+        return result
+    }
+
+    private func decodeQuotedPrintable(_ input: String) -> String {
+        let bytes = Array(input.utf8)
+        var output: [UInt8] = []
+        output.reserveCapacity(bytes.count)
+
+        var index = 0
+        while index < bytes.count {
+            let byte = bytes[index]
+            if byte == 61 { // '='
+                if index + 1 < bytes.count, bytes[index + 1] == 10 {
+                    // Soft line break: "=\n"
+                    index += 2
+                    continue
+                }
+                if index + 2 < bytes.count, bytes[index + 1] == 13, bytes[index + 2] == 10 {
+                    // Soft line break: "=\r\n"
+                    index += 3
+                    continue
+                }
+                if index + 2 < bytes.count,
+                   let high = hexNibble(bytes[index + 1]),
+                   let low = hexNibble(bytes[index + 2]) {
+                    output.append((high << 4) | low)
+                    index += 3
+                    continue
+                }
+            }
+            output.append(byte)
+            index += 1
+        }
+
+        return String(data: Data(output), encoding: .utf8) ?? input
+    }
+
+    private func hexNibble(_ byte: UInt8) -> UInt8? {
+        switch byte {
+        case 48...57: return byte - 48       // 0-9
+        case 65...70: return byte - 55       // A-F
+        case 97...102: return byte - 87      // a-f
+        default: return nil
+        }
+    }
+
+    private func replaceMatches(
+        in text: String,
+        pattern: String,
+        transform: (NSTextCheckingResult, NSString) -> String
+    ) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return text
+        }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+
+        var result = text
+        for match in matches.reversed() {
+            let replacement = transform(match, nsText)
+            result = (result as NSString).replacingCharacters(in: match.range, with: replacement)
+        }
+        return result
     }
 
     private func extractKeySentences(from text: String, maxSentences: Int) -> String {
@@ -1003,6 +1136,27 @@ struct EmailSummaryView: View {
         }
 
         return selectedSentences.joined(separator: " ")
+    }
+
+    private func isShortEmail(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.split(separator: " ")
+        if words.count < 60 {
+            return true
+        }
+        let sentenceEndings = CharacterSet(charactersIn: ".!?")
+        var sentenceCount = 0
+        for char in trimmed.unicodeScalars where sentenceEndings.contains(char) {
+            sentenceCount += 1
+            if sentenceCount >= 3 {
+                return false
+            }
+        }
+        return sentenceCount <= 2
+    }
+
+    private enum SummaryError: Error {
+        case unavailable
     }
 }
 
