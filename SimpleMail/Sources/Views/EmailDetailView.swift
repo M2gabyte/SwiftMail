@@ -168,29 +168,6 @@ struct EmailDetailView: View {
                 viewModel.toggleVIP()
             }
 
-            // Unsubscribe (only shows if List-Unsubscribe header present)
-            if viewModel.canUnsubscribe {
-                Button("Unsubscribe") {
-                    Task { await viewModel.unsubscribe() }
-                }
-            }
-
-            Button("Block Sender", role: .destructive) {
-                Task {
-                    await viewModel.blockSender()
-                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                    dismiss()
-                }
-            }
-
-            Button("Report Spam", role: .destructive) {
-                Task {
-                    await viewModel.reportSpam()
-                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                    dismiss()
-                }
-            }
-
             Button("Move to Trash", role: .destructive) {
                 Task {
                     await viewModel.trash()
