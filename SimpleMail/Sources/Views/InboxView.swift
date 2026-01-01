@@ -199,17 +199,21 @@ struct InboxView: View {
                         }
                     } label: {
                         Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 18))
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .frame(width: 44, height: 44)
+                            .background(.thinMaterial, in: Circle())
                     }
-                    .buttonStyle(.plain)
 
                     BottomSearchPill(text: $searchText, focused: $searchFocused)
 
                     Button { showingCompose = true } label: {
                         Image(systemName: "square.and.pencil")
-                            .font(.system(size: 18))
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .frame(width: 44, height: 44)
+                            .background(.thinMaterial, in: Circle())
                     }
-                    .buttonStyle(.plain)
                     .accessibilityIdentifier("composeButton")
                     .accessibilityLabel("Compose new email")
                 }
