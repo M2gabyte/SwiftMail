@@ -124,8 +124,14 @@ struct SettingsView: View {
                         .onChange(of: viewModel.settings.biometricLock) { _, _ in viewModel.saveSettings() }
                     Toggle("Block Remote Images", isOn: $viewModel.settings.blockRemoteImages)
                         .onChange(of: viewModel.settings.blockRemoteImages) { _, _ in viewModel.saveSettings() }
+                    Toggle("Block Tracking Pixels", isOn: $viewModel.settings.blockTrackingPixels)
+                        .onChange(of: viewModel.settings.blockTrackingPixels) { _, _ in viewModel.saveSettings() }
+                    Toggle("Strip Link Tracking Parameters", isOn: $viewModel.settings.stripTrackingParameters)
+                        .onChange(of: viewModel.settings.stripTrackingParameters) { _, _ in viewModel.saveSettings() }
                 } header: {
                     Text("Privacy & Security")
+                } footer: {
+                    Text("Email content stays on your device. Tracking protection removes hidden pixels and common URL trackers.")
                 }
 
                 // Signature Section
@@ -326,6 +332,8 @@ struct AppSettings: Codable {
     var notifyVIPSenders: Bool = true
     var biometricLock: Bool = false
     var blockRemoteImages: Bool = false
+    var blockTrackingPixels: Bool = true
+    var stripTrackingParameters: Bool = true
     var autoSummarize: Bool = true
     var smartReplies: Bool = true
     var signature: String = ""

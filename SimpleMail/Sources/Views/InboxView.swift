@@ -108,6 +108,10 @@ struct InboxView: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.error != nil)
             .onAppear {
                 loadSettings()
+                viewModel.preloadCachedEmails(
+                    mailbox: viewModel.currentMailbox,
+                    accountEmail: viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
+                )
             }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
                 loadSettings()
@@ -455,9 +459,41 @@ struct EmailListView: View {
         }
         .overlay {
             if isLoading && sections.isEmpty {
-                ProgressView("Loading emails...")
+                InboxSkeletonView()
             }
         }
+    }
+}
+
+struct InboxSkeletonView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(0..<6, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Circle()
+                            .fill(Color(.systemGray5))
+                            .frame(width: 36, height: 36)
+                        VStack(alignment: .leading, spacing: 6) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color(.systemGray5))
+                                .frame(width: 140, height: 12)
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color(.systemGray6))
+                                .frame(width: 220, height: 10)
+                        }
+                    }
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(.systemGray6))
+                        .frame(height: 10)
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+            }
+        }
+        .padding()
     }
 }
 

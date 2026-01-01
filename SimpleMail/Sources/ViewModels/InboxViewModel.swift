@@ -436,6 +436,18 @@ final class InboxViewModel {
         await loadEmails()
     }
 
+    func preloadCachedEmails(mailbox: Mailbox, accountEmail: String?) {
+        guard emails.isEmpty else { return }
+        let cached = EmailCacheManager.shared.loadCachedEmails(
+            mailbox: mailbox,
+            limit: 60,
+            accountEmail: accountEmail
+        )
+        guard !cached.isEmpty else { return }
+        emails = dedupeByThread(cached)
+        updateFilterCounts()
+    }
+
     func archiveEmail(_ email: Email) {
         // Cancel any existing undo task and finalize it
         if let pending = pendingArchive {

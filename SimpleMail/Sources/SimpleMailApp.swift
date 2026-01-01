@@ -101,6 +101,7 @@ struct SimpleMailApp: App {
 
 struct ContentView: View {
     @EnvironmentObject private var authService: AuthService
+    @Environment(\.modelContext) private var modelContext
     @StateObject private var themeManager = ThemeManager.shared
     @StateObject private var biometricManager = BiometricAuthManager.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -138,6 +139,10 @@ struct ContentView: View {
                         await biometricManager.authenticate()
                     }
                 }
+            }
+            .onAppear {
+                EmailCacheManager.shared.configure(with: modelContext)
+                SnoozeManager.shared.configure(with: modelContext)
             }
         }
     }

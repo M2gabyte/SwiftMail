@@ -285,21 +285,22 @@ struct EmailBodyView: View {
     let accountEmail: String?
     @State private var contentHeight: CGFloat = 200
 
-    private var blockImages: Bool {
+    private var settings: AppSettings {
         let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
         guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
-            return false // Default: don't block
+            return AppSettings()
         }
-        do {
-            let settings = try JSONDecoder().decode(AppSettings.self, from: data)
-            return settings.blockRemoteImages
-        } catch {
-            return false
-        }
+        return (try? JSONDecoder().decode(AppSettings.self, from: data)) ?? AppSettings()
     }
 
     var body: some View {
-        EmailBodyWebView(html: html, contentHeight: $contentHeight, blockImages: blockImages)
+        EmailBodyWebView(
+            html: html,
+            contentHeight: $contentHeight,
+            blockImages: settings.blockRemoteImages,
+            blockTrackingPixels: settings.blockTrackingPixels,
+            stripTrackingParameters: settings.stripTrackingParameters
+        )
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: contentHeight)
     }
@@ -485,12 +486,65 @@ enum HTMLSanitizer {
 
         return result
     }
+
+    static func stripTrackingParameters(_ html: String) -> String {
+        let trackingParams: Set<String> = [
+            "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+            "gclid", "fbclid", "mc_eid", "mc_cid", "igshid", "_hsenc", "_hsmi", "mkt_tok"
+        ]
+
+        guard let regex = try? NSRegularExpression(
+            pattern: "href\\s*=\\s*([\"'])(.*?)\\1",
+            options: [.caseInsensitive]
+        ) else {
+            return html
+        }
+
+        let nsRange = NSRange(html.startIndex..., in: html)
+        var output = html
+        var offset = 0
+
+        regex.enumerateMatches(in: html, options: [], range: nsRange) { match, _, _ in
+            guard let match,
+                  let urlRange = Range(match.range(at: 2), in: html) else {
+                return
+            }
+
+            let original = String(html[urlRange])
+            guard var components = URLComponents(string: original),
+                  let items = components.queryItems,
+                  !items.isEmpty else {
+                return
+            }
+
+            let filtered = items.filter { item in
+                !trackingParams.contains(item.name.lowercased())
+            }
+            guard filtered.count != items.count else { return }
+
+            components.queryItems = filtered.isEmpty ? nil : filtered
+            guard let cleaned = components.url?.absoluteString else { return }
+
+            let adjustedRange = NSRange(
+                location: match.range(at: 2).location + offset,
+                length: match.range(at: 2).length
+            )
+            if let swiftRange = Range(adjustedRange, in: output) {
+                output.replaceSubrange(swiftRange, with: cleaned)
+                offset += cleaned.count - original.count
+            }
+        }
+
+        return output
+    }
 }
 
 struct EmailBodyWebView: UIViewRepresentable {
     let html: String
     @Binding var contentHeight: CGFloat
     var blockImages: Bool = true
+    var blockTrackingPixels: Bool = true
+    var stripTrackingParameters: Bool = true
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -519,7 +573,7 @@ struct EmailBodyWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         // Only reload if HTML or blockImages changed
-        let cacheKey = "\(html)_\(blockImages)"
+        let cacheKey = "\(html)_\(blockImages)_\(blockTrackingPixels)_\(stripTrackingParameters)"
         guard context.coordinator.lastHTML != cacheKey else { return }
         context.coordinator.lastHTML = cacheKey
         context.coordinator.contentHeight = $contentHeight
@@ -534,6 +588,18 @@ struct EmailBodyWebView: UIViewRepresentable {
         if blockImages {
             safeHTML = HTMLSanitizer.blockImages(safeHTML)
         }
+        if stripTrackingParameters {
+            safeHTML = HTMLSanitizer.stripTrackingParameters(safeHTML)
+        }
+
+        let trackingCSS = blockTrackingPixels ? """
+                /* Hide tracking pixels and tiny spacer images */
+                img[width="1"], img[height="1"],
+                img[width="0"], img[height="0"],
+                img[style*="display:none"], img[style*="display: none"] {
+                    display: none !important;
+                }
+        """ : ""
 
         let styledHTML = """
         <!DOCTYPE html>
@@ -576,12 +642,7 @@ struct EmailBodyWebView: UIViewRepresentable {
                     margin: 0 !important;
                     padding: 0 !important;
                 }
-                /* Hide tracking pixels and tiny spacer images */
-                img[width="1"], img[height="1"],
-                img[width="0"], img[height="0"],
-                img[style*="display:none"], img[style*="display: none"] {
-                    display: none !important;
-                }
+                \(trackingCSS)
                 img[data-blocked-src] {
                     display: none !important;
                     width: 0 !important;
@@ -1362,6 +1423,20 @@ class EmailDetailViewModel: ObservableObject {
         }
     }
 
+    var trackingProtectionEnabled: Bool {
+        let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
+        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
+            return true
+        }
+        do {
+            let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+            return settings.blockTrackingPixels
+        } catch {
+            detailLogger.warning("Failed to decode app settings for tracking protection: \(error.localizedDescription)")
+            return true
+        }
+    }
+
     private func accountForThread() -> AuthService.Account? {
         guard let accountEmail = messages.first?.accountEmail?.lowercased() else {
             return AuthService.shared.currentAccount
@@ -1429,14 +1504,19 @@ class EmailDetailViewModel: ObservableObject {
                 unsubscribeURL = parseUnsubscribeURL(from: unsubscribeHeader)
             }
 
-            // Detect trackers in all message bodies
-            var allTrackers = Set<String>()
-            for message in messages {
-                let found = detectTrackers(in: message.body)
-                allTrackers.formUnion(found)
+            if trackingProtectionEnabled {
+                // Detect trackers in all message bodies
+                var allTrackers = Set<String>()
+                for message in messages {
+                    let found = detectTrackers(in: message.body)
+                    allTrackers.formUnion(found)
+                }
+                trackerNames = Array(allTrackers).sorted()
+                trackersBlocked = trackerNames.count
+            } else {
+                trackerNames = []
+                trackersBlocked = 0
             }
-            trackerNames = Array(allTrackers).sorted()
-            trackersBlocked = trackerNames.count
 
             // Mark as read
             for message in messages where message.isUnread {

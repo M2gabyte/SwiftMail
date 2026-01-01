@@ -154,8 +154,10 @@ enum SnoozeOption: CaseIterable {
         switch self {
         case .laterToday:
             // 3 hours from now, or 6 PM if it's already late
-            let threeHoursLater = calendar.date(byAdding: .hour, value: 3, to: now)!
-            let sixPM = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: now)!
+            guard let threeHoursLater = calendar.date(byAdding: .hour, value: 3, to: now),
+                  let sixPM = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: now) else {
+                return nil
+            }
 
             if calendar.component(.hour, from: now) >= 15 {
                 // After 3 PM, suggest 6 PM
@@ -165,12 +167,16 @@ enum SnoozeOption: CaseIterable {
 
         case .tonight:
             // 8 PM today
-            let tonight = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: now)!
+            guard let tonight = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: now) else {
+                return nil
+            }
             return tonight > now ? tonight : nil
 
         case .tomorrow:
             // 8 AM tomorrow
-            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
+            guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) else {
+                return nil
+            }
             return calendar.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow)
 
         case .thisWeekend:
@@ -180,7 +186,9 @@ enum SnoozeOption: CaseIterable {
             components.hour = 9
             components.minute = 0
 
-            let saturday = calendar.date(from: components)!
+            guard let saturday = calendar.date(from: components) else {
+                return nil
+            }
 
             // If it's already Saturday or Sunday, use next Saturday
             let weekday = calendar.component(.weekday, from: now)
@@ -196,11 +204,11 @@ enum SnoozeOption: CaseIterable {
             components.hour = 8
             components.minute = 0
 
-            var monday = calendar.date(from: components)!
-
-            // Get next week's Monday
-            monday = calendar.date(byAdding: .weekOfYear, value: 1, to: monday)!
-            return monday
+            guard let monday = calendar.date(from: components),
+                  let nextMonday = calendar.date(byAdding: .weekOfYear, value: 1, to: monday) else {
+                return nil
+            }
+            return nextMonday
 
         case .custom:
             return nil
