@@ -237,7 +237,7 @@ struct EmailMessageCard: View {
                 Divider()
                     .padding(.leading)
 
-                EmailBodyView(html: message.body)
+                EmailBodyView(html: message.body, accountEmail: message.accountEmail)
                     .frame(minHeight: 100)
             }
         }
@@ -282,10 +282,24 @@ private enum MessageDateFormatters {
 
 struct EmailBodyView: View {
     let html: String
+    let accountEmail: String?
     @State private var contentHeight: CGFloat = 200
 
+    private var blockImages: Bool {
+        let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
+        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
+            return false // Default: don't block
+        }
+        do {
+            let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+            return settings.blockRemoteImages
+        } catch {
+            return false
+        }
+    }
+
     var body: some View {
-        EmailBodyWebView(html: html, contentHeight: $contentHeight, blockImages: false)
+        EmailBodyWebView(html: html, contentHeight: $contentHeight, blockImages: blockImages)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: contentHeight)
     }
