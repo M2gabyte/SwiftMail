@@ -115,7 +115,9 @@ struct ContentView: View {
             ZStack {
                 Group {
                     if authService.isAuthenticated {
-                        MainTabView()
+                        NavigationStack {
+                            InboxView()
+                        }
                             .transition(.opacity)
                     } else {
                         SignInView()
@@ -143,6 +145,11 @@ struct ContentView: View {
             .onAppear {
                 EmailCacheManager.shared.configure(with: modelContext)
                 SnoozeManager.shared.configure(with: modelContext)
+            }
+            .task {
+                if authService.isAuthenticated {
+                    await PeopleService.shared.preloadContacts()
+                }
             }
         }
     }
@@ -452,60 +459,6 @@ class BiometricAuthManager: ObservableObject {
         } catch {
             authError = error.localizedDescription
         }
-    }
-}
-
-// MARK: - Main Tab View
-
-struct MainTabView: View {
-    @State private var selectedTab = 0
-    @State private var showingCompose = false
-    @State private var showingSearch = false
-
-    var body: some View {
-        TabView(selection: $selectedTab) {
-            InboxTab(
-                showingCompose: $showingCompose,
-                showingSearch: $showingSearch
-            )
-            .tabItem {
-                Label("Inbox", systemImage: "tray.fill")
-            }
-            .tag(0)
-
-            BriefingScreenView()
-                .tabItem {
-                    Label("Briefing", systemImage: "newspaper.fill")
-                }
-                .tag(1)
-
-            SettingsView()
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
-                }
-                .tag(2)
-        }
-        .sheet(isPresented: $showingCompose) {
-            ComposeView()
-        }
-        .sheet(isPresented: $showingSearch) {
-            SearchView()
-        }
-        .task {
-            // Preload contacts in background for autocomplete
-            await PeopleService.shared.preloadContacts()
-        }
-    }
-}
-
-// MARK: - Inbox Tab
-
-struct InboxTab: View {
-    @Binding var showingCompose: Bool
-    @Binding var showingSearch: Bool
-
-    var body: some View {
-        InboxView()
     }
 }
 

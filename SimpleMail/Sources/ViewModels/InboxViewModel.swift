@@ -73,8 +73,7 @@ final class InboxViewModel {
         emailSections.last?.emails.last?.id
     }
 
-    @discardableResult
-    private func animate(_ animation: Animation? = .default, _ body: () -> Void) -> Void {
+    private func animate(_ animation: Animation? = .default, _ body: () -> Void) {
         withAnimation(animation, body)
     }
 

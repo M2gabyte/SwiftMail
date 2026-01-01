@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 import OSLog
 
 private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxView")
@@ -7,118 +6,245 @@ private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxVie
 // MARK: - Inbox View
 
 struct InboxView: View {
-    @Environment(\.modelContext) private var modelContext
     @State private var viewModel = InboxViewModel()
-    @State private var showingSearch = false
     @State private var showingCompose = false
     @State private var listDensity: ListDensity = .comfortable
+    @State private var showingSettings = false
+    @State private var showingSearch = false
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Sticky Header with Scope Toggle and Pills
-                StickyInboxHeader(
-                    scope: $viewModel.scope,
-                    activeFilter: $viewModel.activeFilter,
-                    filterCounts: viewModel.filterCounts
-                )
+        List {
+            InboxHeaderBlock(
+                scope: $viewModel.scope,
+                activeFilter: $viewModel.activeFilter,
+                filterCounts: viewModel.filterCounts
+            )
+            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 10, trailing: 16))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color(.systemBackground))
 
-                // Email List with Pull to Refresh
-                EmailListView(
-                    sections: viewModel.emailSections,
-                    isLoading: viewModel.isLoading,
-                    isLoadingMore: viewModel.isLoadingMore,
-                    hasMoreEmails: viewModel.hasMoreEmails,
-                    listDensity: listDensity,
-                    showAccountBadge: viewModel.currentMailbox == .allInboxes,
-                    onTap: { email in viewModel.openEmail(email) },
-                    onArchive: { email in viewModel.archiveEmail(email) },
-                    onToggleRead: { email in viewModel.toggleRead(email) },
-                    onLoadMore: { email in
-                        Task { await viewModel.loadMoreIfNeeded(currentEmail: email) }
-                    },
-                    onRefresh: {
-                        await viewModel.refresh()
-                    },
-                    onTrash: { email in viewModel.trashEmail(email) },
-                    onStar: { email in viewModel.starEmail(email) },
-                    onBlockSender: { email in viewModel.blockSender(email) },
-                    onReportSpam: { email in viewModel.reportSpam(email) }
-                )
-            }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    MailboxDropdown(
-                        currentMailbox: viewModel.currentMailbox,
-                        onSelect: { mailbox in viewModel.selectMailbox(mailbox) }
-                    )
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 16) {
-                        Button(action: { showingSearch = true }) {
-                            Image(systemName: "magnifyingglass")
+            ForEach(viewModel.emailSections) { section in
+                Section {
+                    ForEach(section.emails) { email in
+                        EmailRow(
+                            email: email,
+                            isCompact: listDensity == .compact,
+                            showAccountBadge: viewModel.currentMailbox == .allInboxes
+                        )
+                        .listRowBackground(Color(.systemBackground))
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowSeparator(.visible)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button {
+                                viewModel.archiveEmail(email)
+                            } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+                            .tint(.green)
                         }
-                        .accessibilityIdentifier("searchButton")
-                        .accessibilityLabel("Search emails")
-                        .accessibilityHint("Opens email search")
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                viewModel.toggleRead(email)
+                            } label: {
+                                Label(
+                                    email.isUnread ? "Read" : "Unread",
+                                    systemImage: email.isUnread ? "envelope.open" : "envelope.badge"
+                                )
+                            }
+                            .tint(.blue)
+                        }
+                        .contextMenu {
+                            Button {
+                                viewModel.openEmail(email)
+                            } label: {
+                                Label("Open", systemImage: "envelope.open")
+                            }
 
-                        Button(action: { showingCompose = true }) {
-                            Image(systemName: "square.and.pencil")
+                            Button {
+                                viewModel.archiveEmail(email)
+                            } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+
+                            Button {
+                                viewModel.starEmail(email)
+                            } label: {
+                                Label(email.isStarred ? "Unstar" : "Star", systemImage: email.isStarred ? "star.slash" : "star")
+                            }
+
+                            Button {
+                                viewModel.toggleRead(email)
+                            } label: {
+                                Label(email.isUnread ? "Mark as Read" : "Mark as Unread", systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
+                            }
+
+                            Divider()
+
+                            Button(role: .destructive) {
+                                viewModel.blockSender(email)
+                            } label: {
+                                Label("Block Sender", systemImage: "hand.raised")
+                            }
+
+                            Button(role: .destructive) {
+                                viewModel.reportSpam(email)
+                            } label: {
+                                Label("Report Spam", systemImage: "exclamationmark.shield")
+                            }
+
+                            Button(role: .destructive) {
+                                viewModel.trashEmail(email)
+                            } label: {
+                                Label("Trash", systemImage: "trash")
+                            }
                         }
-                        .accessibilityIdentifier("composeButton")
-                        .accessibilityLabel("Compose new email")
-                        .accessibilityHint("Opens email composer")
+                        .onTapGesture {
+                            viewModel.openEmail(email)
+                        }
+                        .onAppear {
+                            Task { await viewModel.loadMoreIfNeeded(currentEmail: email) }
+                        }
                     }
+                } header: {
+                    Text(section.title)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
                 }
             }
-            .navigationDestination(isPresented: $viewModel.showingEmailDetail) {
-                if let email = viewModel.selectedEmail {
-                    EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)
+
+            if viewModel.isLoadingMore {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .padding()
+                    Spacer()
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+
+            if viewModel.hasMoreEmails && !viewModel.isLoadingMore {
+                Button(action: {
+                    if let lastEmail = viewModel.emailSections.last?.emails.last {
+                        Task { await viewModel.loadMoreIfNeeded(currentEmail: lastEmail) }
+                    }
+                }) {
+                    HStack {
+                        Spacer()
+                        Text("Load More")
+                            .font(.subheadline)
+                            .foregroundStyle(.blue)
+                        Spacer()
+                    }
+                    .padding()
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+        }
+        .listStyle(.plain)
+        .listRowSpacing(0)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
+        .listSectionSpacing(6)
+        .accessibilityIdentifier("inboxList")
+        .navigationTitle(viewModel.currentMailbox.rawValue)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleMenu {
+            ForEach(Mailbox.allCases, id: \.self) { mailbox in
+                Button {
+                    viewModel.selectMailbox(mailbox)
+                } label: {
+                    Label(mailbox.rawValue, systemImage: mailbox.icon)
                 }
             }
-            .sheet(isPresented: $showingSearch) {
-                SearchView()
-            }
-            .sheet(isPresented: $showingCompose) {
-                ComposeView()
-            }
-            .overlay(alignment: .bottom) {
-                if viewModel.showingUndoToast {
-                    UndoToast(
-                        message: viewModel.undoToastMessage,
-                        onUndo: { viewModel.undoArchive() }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .padding(.bottom, 16)
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: { showingSettings = true }) {
+                    Image(systemName: "gearshape")
                 }
+                .accessibilityLabel("Settings")
             }
-            .overlay(alignment: .top) {
-                if let error = viewModel.error {
-                    ErrorBanner(
-                        error: error,
-                        onDismiss: { viewModel.error = nil },
-                        onRetry: { Task { await viewModel.loadEmails() } }
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .padding(.top, 8)
+            ToolbarItemGroup(placement: .bottomBar) {
+                Button(action: {
+                    showingSearch = true
+                }) {
+                    Image(systemName: "magnifyingglass")
                 }
+                .accessibilityIdentifier("searchButton")
+                .accessibilityLabel("Search emails")
+
+                Spacer()
+
+                Button(action: { showingCompose = true }) {
+                    Image(systemName: "square.and.pencil")
+                }
+                .accessibilityIdentifier("composeButton")
+                .accessibilityLabel("Compose new email")
             }
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.error != nil)
-            .onAppear {
-                loadSettings()
-                viewModel.preloadCachedEmails(
-                    mailbox: viewModel.currentMailbox,
-                    accountEmail: viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
+        }
+        .toolbarBackground(.visible, for: .bottomBar)
+        .toolbarBackground(.ultraThinMaterial, for: .bottomBar)
+        .navigationDestination(isPresented: $viewModel.showingEmailDetail) {
+            if let email = viewModel.selectedEmail {
+                EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+        }
+        .sheet(isPresented: $showingCompose) {
+            ComposeView()
+        }
+        .fullScreenCover(isPresented: $showingSearch) {
+            SearchSheet(viewModel: viewModel)
+        }
+        .refreshable {
+            await viewModel.refresh()
+        }
+        .overlay(alignment: .bottom) {
+            if viewModel.showingUndoToast {
+                UndoToast(
+                    message: viewModel.undoToastMessage,
+                    onUndo: { viewModel.undoArchive() }
                 )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, 16)
             }
-            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-                loadSettings()
+        }
+        .overlay(alignment: .top) {
+            if let error = viewModel.error {
+                ErrorBanner(
+                    error: error,
+                    onDismiss: { viewModel.error = nil },
+                    onRetry: { Task { await viewModel.loadEmails() } }
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .padding(.top, 8)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in
-                loadSettings()
+        }
+        .overlay {
+            if viewModel.isLoading && viewModel.emailSections.isEmpty {
+                InboxSkeletonView()
             }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.error != nil)
+        .onAppear {
+            loadSettings()
+            viewModel.preloadCachedEmails(
+                mailbox: viewModel.currentMailbox,
+                accountEmail: viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
+            )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            loadSettings()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in
+            loadSettings()
         }
     }
 
@@ -136,28 +262,20 @@ struct InboxView: View {
     }
 }
 
-// MARK: - Sticky Inbox Header
+// MARK: - Inbox Header Block
 
-struct StickyInboxHeader: View {
+struct InboxHeaderBlock: View {
     @Binding var scope: InboxScope
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Greeting + Scope Toggle on same row
-            HStack {
-                Text(greeting)
-                    .font(.title3)
-                    .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(greeting)
+                .font(.title3.weight(.semibold))
 
-                Spacer()
+            ScopeToggle(scope: $scope)
 
-                ScopeToggle(scope: $scope)
-            }
-            .padding(.horizontal)
-
-            // Filter Pills
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(InboxFilter.allCases, id: \.self) { filter in
@@ -177,11 +295,8 @@ struct StickyInboxHeader: View {
                         )
                     }
                 }
-                .padding(.horizontal)
             }
         }
-        .padding(.vertical, 8)
-        .background(Color(.systemBackground))
     }
 
     private var greeting: String {
@@ -208,32 +323,12 @@ struct ScopeToggle: View {
     @Binding var scope: InboxScope
 
     var body: some View {
-        HStack(spacing: 0) {
+        Picker("Scope", selection: $scope) {
             ForEach(InboxScope.allCases, id: \.self) { option in
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        scope = option
-                    }
-                }) {
-                    Text(option.rawValue)
-                        .font(.subheadline)
-                        .fontWeight(scope == option ? .semibold : .regular)
-                        .foregroundStyle(scope == option ? .white : .secondary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(scope == option ? Color.accentColor : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
+                Text(option.rawValue).tag(option)
             }
         }
-        .padding(4)
-        .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
-        )
+        .pickerStyle(.segmented)
     }
 }
 
@@ -301,167 +396,6 @@ struct FilterPill: View {
             )
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Email List View
-
-struct EmailListView: View {
-    let sections: [EmailSection]
-    let isLoading: Bool
-    let isLoadingMore: Bool
-    let hasMoreEmails: Bool
-    let listDensity: ListDensity
-    let showAccountBadge: Bool
-    let onTap: (Email) -> Void
-    let onArchive: (Email) -> Void
-    let onToggleRead: (Email) -> Void
-    let onLoadMore: (Email) -> Void
-    let onRefresh: () async -> Void
-    let onTrash: (Email) -> Void
-    let onStar: (Email) -> Void
-    let onBlockSender: (Email) -> Void
-    let onReportSpam: (Email) -> Void
-
-    var body: some View {
-        List {
-            ForEach(sections) { section in
-                Section {
-                    ForEach(section.emails) { email in
-                        EmailRow(
-                            email: email,
-                            isCompact: listDensity == .compact,
-                            showAccountBadge: showAccountBadge
-                        )
-                            .listRowBackground(Color(.systemBackground))
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button {
-                                    onArchive(email)
-                                } label: {
-                                    Label("Archive", systemImage: "archivebox")
-                                }
-                                .tint(.green)
-                            }
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                Button {
-                                    onToggleRead(email)
-                                } label: {
-                                    Label(
-                                        email.isUnread ? "Read" : "Unread",
-                                        systemImage: email.isUnread ? "envelope.open" : "envelope.badge"
-                                    )
-                                }
-                                .tint(.blue)
-                            }
-                            .contextMenu {
-                                Button {
-                                    onTap(email)
-                                } label: {
-                                    Label("Open", systemImage: "envelope.open")
-                                }
-
-                                Button {
-                                    onArchive(email)
-                                } label: {
-                                    Label("Archive", systemImage: "archivebox")
-                                }
-
-                                Button {
-                                    onStar(email)
-                                } label: {
-                                    Label(email.isStarred ? "Unstar" : "Star", systemImage: email.isStarred ? "star.slash" : "star")
-                                }
-
-                                Button {
-                                    onToggleRead(email)
-                                } label: {
-                                    Label(email.isUnread ? "Mark as Read" : "Mark as Unread", systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
-                                }
-
-                                Divider()
-
-                                Button(role: .destructive) {
-                                    onBlockSender(email)
-                                } label: {
-                                    Label("Block Sender", systemImage: "hand.raised")
-                                }
-
-                                Button(role: .destructive) {
-                                    onReportSpam(email)
-                                } label: {
-                                    Label("Report Spam", systemImage: "exclamationmark.shield")
-                                }
-
-                                Button(role: .destructive) {
-                                    onTrash(email)
-                                } label: {
-                                    Label("Trash", systemImage: "trash")
-                                }
-                            }
-                            .onTapGesture {
-                                onTap(email)
-                            }
-                            .onAppear {
-                                // Trigger pagination when approaching end
-                                onLoadMore(email)
-                            }
-                    }
-                } header: {
-                    Text(section.title)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .textCase(nil)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
-                }
-            }
-
-            // Loading more indicator
-            if isLoadingMore {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                        .padding()
-                    Spacer()
-                }
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            }
-
-            // Load more button (fallback)
-            if hasMoreEmails && !isLoadingMore {
-                Button(action: {
-                    if let lastEmail = sections.last?.emails.last {
-                        onLoadMore(lastEmail)
-                    }
-                }) {
-                    HStack {
-                        Spacer()
-                        Text("Load More")
-                            .font(.subheadline)
-                            .foregroundStyle(.blue)
-                        Spacer()
-                    }
-                    .padding()
-                }
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            }
-        }
-        .listStyle(.plain)
-        .listRowSpacing(0)
-        .scrollContentBackground(.hidden)
-        .background(Color(.systemBackground))
-        .accessibilityIdentifier("inboxList")
-        .refreshable {
-            await onRefresh()
-        }
-        .overlay {
-            if isLoading && sections.isEmpty {
-                InboxSkeletonView()
-            }
-        }
     }
 }
 
@@ -630,30 +564,6 @@ struct EmailRow: View {
     }
 }
 
-// MARK: - Mailbox Dropdown
-
-struct MailboxDropdown: View {
-    let currentMailbox: Mailbox
-    let onSelect: (Mailbox) -> Void
-
-    var body: some View {
-        Menu {
-            ForEach(Mailbox.allCases, id: \.self) { mailbox in
-                Button(action: { onSelect(mailbox) }) {
-                    Label(mailbox.rawValue, systemImage: mailbox.icon)
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text(currentMailbox.rawValue)
-                    .font(.headline)
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-            }
-        }
-    }
-}
-
 enum Mailbox: String, CaseIterable {
     case allInboxes = "All Inboxes"
     case inbox = "Inbox"
@@ -673,34 +583,6 @@ enum Mailbox: String, CaseIterable {
         case .drafts: return "doc"
         case .starred: return "star"
         }
-    }
-}
-
-// MARK: - Floating Nav Pill
-
-struct FloatingNavPill: View {
-    let onSearch: () -> Void
-    let onCompose: () -> Void
-
-    var body: some View {
-        HStack(spacing: 24) {
-            Button(action: onSearch) {
-                Image(systemName: "magnifyingglass")
-                    .font(.title3)
-            }
-            Button(action: onCompose) {
-                Image(systemName: "square.and.pencil")
-                    .font(.title3)
-            }
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 14)
-        .background(
-            Capsule()
-                .fill(.black.opacity(0.8))
-                .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
-        )
     }
 }
 
@@ -771,6 +653,103 @@ struct EmailSection: Identifiable {
     let id: String
     let title: String
     let emails: [Email]
+}
+
+// MARK: - Search Sheet
+
+struct SearchSheet: View {
+    let viewModel: InboxViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var results: [Email] = []
+    @State private var isSearching = false
+    @FocusState private var isSearchFieldFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if results.isEmpty && !isSearching && !query.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                } else if results.isEmpty && query.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.tertiary)
+                        Text("Search your emails")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        Text("Find messages by sender, subject, or content")
+                            .font(.subheadline)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(results) { email in
+                        EmailRow(email: email)
+                            .listRowBackground(Color(.systemBackground))
+                            .onTapGesture {
+                                viewModel.openEmail(email)
+                                dismiss()
+                            }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Search")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search emails")
+            .searchFocused($isSearchFieldFocused)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                isSearchFieldFocused = true
+            }
+            .onChange(of: query) { _, newValue in
+                performSearch(newValue)
+            }
+        }
+    }
+
+    private func performSearch(_ searchQuery: String) {
+        guard !searchQuery.isEmpty else {
+            results = []
+            return
+        }
+
+        isSearching = true
+        Task {
+            // Search cached emails first
+            let cached = await EmailCacheManager.shared.searchCachedEmails(
+                query: searchQuery,
+                accountEmail: AuthService.shared.currentAccount?.email
+            )
+            await MainActor.run {
+                results = cached
+                isSearching = false
+            }
+
+            // Then search via API for more results
+            do {
+                let (apiResults, _) = try await GmailService.shared.fetchInbox(
+                    query: searchQuery,
+                    maxResults: 50
+                )
+                await MainActor.run {
+                    // Merge results, preferring API results
+                    let apiIds = Set(apiResults.map(\.id))
+                    let uniqueCached = cached.filter { !apiIds.contains($0.id) }
+                    results = apiResults.map { Email(dto: $0) } + uniqueCached
+                }
+            } catch {
+                // Keep showing cached results on API error
+            }
+        }
+    }
 }
 
 // MARK: - Preview

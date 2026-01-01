@@ -43,9 +43,7 @@ SimpleMail/
 │   │   ├── InboxView.swift          # Main inbox UI
 │   │   ├── EmailDetailView.swift    # Thread/conversation view
 │   │   ├── ComposeView.swift        # Email composition
-│   │   ├── SearchView.swift         # Search interface
 │   │   ├── SettingsView.swift       # Settings & Gmail sync
-│   │   ├── BriefingScreenView.swift # Daily digest view
 │   │   ├── SnoozePickerSheet.swift  # Snooze time picker
 │   │   ├── AttachmentViewer.swift   # QuickLook attachment preview
 │   │   ├── BatchOperations.swift    # Multi-select & batch actions
@@ -382,7 +380,7 @@ User composes email + sets send time
     ↓
 Create ScheduledSend with all data (to, cc, bcc, subject, body, attachments)
     ↓
-Save to UserDefaults (JSON encoded)
+Save to UserDefaults (metadata) + attachment files to Application Support
     ↓
 Background task checks for due sends
     ↓
@@ -410,13 +408,14 @@ struct ScheduledAttachment: Codable, Identifiable {
     let id: UUID
     let filename: String
     let mimeType: String
-    let dataBase64: String  // Base64-encoded attachment data
+    let dataBase64: String?
+    let filePath: String?
 }
 ```
 
 **Features:**
-- Persists scheduled sends to UserDefaults
-- Attachments stored as base64 to survive app termination
+- Persists scheduled sends to UserDefaults (metadata)
+- Attachments stored as files in Application Support for size safety
 - Processed during background notification checks
 - Proper error logging on encode/decode failures
 
@@ -444,17 +443,14 @@ When expired: Unarchive + notify
 ```
 ContentView
 ├── SignInView (unauthenticated)
-└── MainTabView (authenticated)
-    ├── InboxTab
-    │   └── InboxView
-    │       ├── StickyInboxHeader
-    │       ├── EmailListView
-    │       └── → EmailDetailView (push)
-    │           ├── EmailMessageCard (expandable)
-    │           ├── AttachmentsListView
-    │           └── → ComposeView (sheet)
-    ├── BriefingScreenView
-    └── SettingsView
+└── NavigationStack (authenticated)
+    └── InboxView
+        ├── Scrollable header block (greeting → scope segmented control → triage pills)
+        └── → EmailDetailView (push)
+            ├── EmailMessageCard (expandable)
+            ├── AttachmentsListView
+            └── → ComposeView (sheet)
+    └── SettingsView (sheet)
         ├── VacationResponderView
         ├── LabelsManagementView
         ├── FiltersManagementView
@@ -464,11 +460,13 @@ ContentView
 ### Key UI Components
 
 **InboxView:**
-- Sticky header with scope toggle + filter pills
-- Pull-to-refresh
-- Infinite scroll pagination
-- Swipe actions: trailing = Archive (green), leading = Toggle Read (blue)
-- Multi-select batch mode
+- Single List with scrollable header block (greeting → scope segmented control → triage pills)
+- Native .searchable field activated by bottom toolbar search button
+- Mailbox switching via navigation title menu (.toolbarTitleMenu)
+- Top trailing gear opens Settings (sheet)
+- Bottom toolbar (search + compose) for thumb access
+- Pull-to-refresh + infinite scroll pagination
+- Swipe actions: trailing = Archive (green, full swipe), leading = Toggle Read (blue)
 - Undo toast for archive actions (4-second window)
 
 **EmailDetailView:**
@@ -1242,7 +1240,7 @@ actor GmailService {
   - Personal domain detection to skip brand logos for gmail.com, outlook.com, etc.
   - Domain alias mapping for correct branding (vzw.com → verizon.com, etc.)
   - Added getPhotoURL() and getPhotoURLs() to PeopleService for contact photo lookup
-  - Replaced old AvatarView in InboxView, EmailDetailView, ComposeView, BriefingScreenView, BatchOperations
+  - Replaced old AvatarView in InboxView, EmailDetailView, ComposeView, BatchOperations
   - Deterministic color selection for initials based on email hash
 - v1.6:
   - Fixed email body rendering with dynamic WebView height calculation using JavaScript message handlers

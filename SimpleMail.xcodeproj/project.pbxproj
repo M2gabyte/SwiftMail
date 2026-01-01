@@ -12,11 +12,9 @@
 		A1000003 /* Briefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Briefing.swift */; };
 		A1000004 /* BriefingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000004 /* BriefingEngine.swift */; };
 		A1000005 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000005 /* InboxView.swift */; };
-		A1000006 /* BriefingScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000006 /* BriefingScreenView.swift */; };
 		A1000007 /* EmailDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000007 /* EmailDetailView.swift */; };
 		A1000008 /* ComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000008 /* ComposeView.swift */; };
 		A1000009 /* SnoozePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000009 /* SnoozePickerSheet.swift */; };
-		A1000010 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000010 /* SearchView.swift */; };
 		A1000011 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000011 /* SettingsView.swift */; };
 		A1000012 /* InboxViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012 /* InboxViewModel.swift */; };
 		A1000013 /* GmailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000013 /* GmailService.swift */; };
@@ -62,11 +60,9 @@
 		B1000003 /* Briefing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Briefing.swift; sourceTree = "<group>"; };
 		B1000004 /* BriefingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingEngine.swift; sourceTree = "<group>"; };
 		B1000005 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
-		B1000006 /* BriefingScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingScreenView.swift; sourceTree = "<group>"; };
 		B1000007 /* EmailDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailDetailView.swift; sourceTree = "<group>"; };
 		B1000008 /* ComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeView.swift; sourceTree = "<group>"; };
 		B1000009 /* SnoozePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozePickerSheet.swift; sourceTree = "<group>"; };
-		B1000010 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		B1000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B1000012 /* InboxViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxViewModel.swift; sourceTree = "<group>"; };
 		B1000013 /* GmailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GmailService.swift; sourceTree = "<group>"; };
@@ -169,11 +165,9 @@
 			children = (
 				D0000012 /* Components */,
 				B1000005 /* InboxView.swift */,
-				B1000006 /* BriefingScreenView.swift */,
 				B1000007 /* EmailDetailView.swift */,
 				B1000008 /* ComposeView.swift */,
 				B1000009 /* SnoozePickerSheet.swift */,
-				B1000010 /* SearchView.swift */,
 				B1000011 /* SettingsView.swift */,
 				B1000021 /* AttachmentViewer.swift */,
 				B1000022 /* BatchOperations.swift */,
@@ -369,11 +363,9 @@
 				A1000003 /* Briefing.swift in Sources */,
 				A1000004 /* BriefingEngine.swift in Sources */,
 				A1000005 /* InboxView.swift in Sources */,
-				A1000006 /* BriefingScreenView.swift in Sources */,
 				A1000007 /* EmailDetailView.swift in Sources */,
 				A1000008 /* ComposeView.swift in Sources */,
 				A1000009 /* SnoozePickerSheet.swift in Sources */,
-				A1000010 /* SearchView.swift in Sources */,
 				A1000011 /* SettingsView.swift in Sources */,
 				A1000012 /* InboxViewModel.swift in Sources */,
 				A1000013 /* GmailService.swift in Sources */,
@@ -472,7 +464,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -505,7 +497,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -571,7 +563,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -628,7 +620,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;

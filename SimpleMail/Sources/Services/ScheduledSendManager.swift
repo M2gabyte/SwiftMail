@@ -158,7 +158,7 @@ final class ScheduledSendManager {
 
     private func normalizeAttachments(for send: ScheduledSend) -> ScheduledSend {
         let normalized = send.attachments.map { attachment -> ScheduledAttachment in
-            if let filePath = attachment.filePath {
+            if attachment.filePath != nil {
                 return attachment
             }
             guard let data = attachment.decodedData(),
