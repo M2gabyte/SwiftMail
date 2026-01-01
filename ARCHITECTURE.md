@@ -1156,9 +1156,15 @@ actor GmailService {
 ---
 
 *Last updated: January 2026*
-*Architecture version: 2.3*
+*Architecture version: 2.4*
 
 **Changelog:**
+- v2.4:
+  - **iOS 26 Native Search & Toolbar:**
+    - Search uses native `.searchable` with `@FocusState` binding
+    - Bottom toolbar search button focuses the native search drawer (no separate screen)
+    - Toolbar buttons render with iOS 26 Liquid Glass styling (native behavior)
+    - Removed custom SearchSheet in favor of native `.searchable` pattern
 - v2.3:
   - **Search UI Refactor:**
     - Replaced inline `.searchable` bar with full-screen `SearchSheet`
