@@ -15,11 +15,6 @@ struct InboxView: View {
     @FocusState private var searchFocused: Bool
     @StateObject private var searchHistory = SearchHistoryManager.shared
 
-    /// Whether to show search UI (recent searches, suggestions)
-    private var isSearchActive: Bool {
-        searchFocused || !searchText.isEmpty
-    }
-
     /// Filtered sections based on debounced search text with smart filter support
     private var filteredSections: [EmailSection] {
         let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -54,17 +49,16 @@ struct InboxView: View {
 
     var body: some View {
         List {
-            // Show header only when not actively searching
-            if !isSearchActive {
-                InboxHeaderBlock(
-                    scope: $viewModel.scope,
-                    activeFilter: $viewModel.activeFilter,
-                    filterCounts: viewModel.filterCounts
-                )
-                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 10, trailing: 16))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color(.systemBackground))
-            }
+            // Scrollable header (compact, no card background)
+            InboxHeaderBlock(
+                scope: $viewModel.scope,
+                activeFilter: $viewModel.activeFilter,
+                searchText: $searchText,
+                filterCounts: viewModel.filterCounts
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color(.systemBackground))
 
             // Search suggestions when focused with empty text
             if searchFocused && searchText.isEmpty {
@@ -242,7 +236,24 @@ struct InboxView: View {
         .background(Color(.systemBackground))
         .listSectionSpacing(6)
         .accessibilityIdentifier("inboxList")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(viewModel.currentMailbox.rawValue)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleMenu {
+            // Quick switch favorites
+            Section("Favorites") {
+                ForEach(Mailbox.allCases, id: \.self) { mailbox in
+                    Button {
+                        viewModel.selectMailbox(mailbox)
+                    } label: {
+                        if mailbox == viewModel.currentMailbox {
+                            Label(mailbox.rawValue, systemImage: "checkmark")
+                        } else {
+                            Label(mailbox.rawValue, systemImage: mailbox.icon)
+                        }
+                    }
+                }
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -256,41 +267,18 @@ struct InboxView: View {
                 }
             }
 
-            ToolbarItem(placement: .bottomBar) {
-                HStack(spacing: 12) {
-                    Menu {
-                        ForEach(Mailbox.allCases, id: \.self) { mailbox in
-                            Button {
-                                viewModel.selectMailbox(mailbox)
-                            } label: {
-                                if mailbox == viewModel.currentMailbox {
-                                    Label(mailbox.rawValue, systemImage: "checkmark")
-                                } else {
-                                    Label(mailbox.rawValue, systemImage: mailbox.icon)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .frame(width: 44, height: 44)
-                            .background(.thinMaterial, in: Circle())
-                    }
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
 
-                    BottomSearchPill(text: $searchText, focused: $searchFocused, onSubmit: commitSearch)
-
-                    Button { showingCompose = true } label: {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .frame(width: 44, height: 44)
-                            .background(.thinMaterial, in: Circle())
-                    }
-                    .accessibilityIdentifier("composeButton")
-                    .accessibilityLabel("Compose new email")
+                Button { showingCompose = true } label: {
+                    Image(systemName: "square.and.pencil")
                 }
+                .accessibilityIdentifier("composeButton")
+                .accessibilityLabel("Compose new email")
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 8)
         }
         .navigationDestination(isPresented: $viewModel.showingEmailDetail) {
             if let email = viewModel.selectedEmail {
@@ -376,17 +364,36 @@ struct InboxView: View {
 struct InboxHeaderBlock: View {
     @Binding var scope: InboxScope
     @Binding var activeFilter: InboxFilter?
+    @Binding var searchText: String
     let filterCounts: [InboxFilter: Int]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Band A: Context
+
+            // 1) Greeting (compact)
             Text(greeting)
                 .font(.title3.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
 
-            ScopeToggle(scope: $scope)
+            // 2) Scope segmented control (small + flat)
+            Picker("", selection: $scope) {
+                Text("All").tag(InboxScope.all)
+                Text("People").tag(InboxScope.people)
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.mini)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
 
+            // Band B: Controls
+
+            // 3) Triage chips row (primary visual - quiet filled)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     ForEach(InboxFilter.allCases, id: \.self) { filter in
                         FilterPill(
                             filter: filter,
@@ -404,7 +411,40 @@ struct InboxHeaderBlock: View {
                         )
                     }
                 }
+                .padding(.horizontal, 16)
             }
+            .padding(.bottom, 10)
+
+            // 4) Search field (compact outlined - secondary)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                TextField("Search", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.clear)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.10), lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
         }
     }
 
@@ -421,24 +461,11 @@ struct InboxHeaderBlock: View {
     }
 }
 
-// MARK: - Scope Toggle
+// MARK: - Scope
 
 enum InboxScope: String, CaseIterable {
     case all = "All"
     case people = "People"
-}
-
-struct ScopeToggle: View {
-    @Binding var scope: InboxScope
-
-    var body: some View {
-        Picker("Scope", selection: $scope) {
-            ForEach(InboxScope.allCases, id: \.self) { option in
-                Text(option.rawValue).tag(option)
-            }
-        }
-        .pickerStyle(.segmented)
-    }
 }
 
 // MARK: - Filter Pills
@@ -482,33 +509,27 @@ struct FilterPill: View {
             HStack(spacing: 6) {
                 Image(systemName: filter.icon)
                     .font(.caption)
-                    .foregroundStyle(isActive ? filter.color : .secondary)
+                    .foregroundStyle(isActive ? .primary : .secondary)
                 Text(filter.rawValue)
-                    .font(.subheadline)
+                    .font(isActive ? .subheadline.weight(.semibold) : .subheadline)
                     .foregroundStyle(.primary)
                 if count > 0 {
                     Text("\(count)")
-                        .font(.caption2)
+                        .font(.caption2.monospacedDigit())
                         .fontWeight(.medium)
                         .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.thinMaterial, in: Capsule())
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                Group {
-                    if isActive {
-                        Capsule().fill(.thinMaterial)
-                    } else {
-                        Capsule().fill(Color.clear)
-                    }
-                }
+                Capsule().fill(isActive ? Color.primary.opacity(0.10) : Color.secondary.opacity(0.08))
             )
             .overlay(
-                Capsule().strokeBorder(
-                    .primary.opacity(isActive ? 0.22 : 0.10),
-                    lineWidth: 1
-                )
+                isActive ? Capsule().strokeBorder(.primary.opacity(0.10), lineWidth: 1) : nil
             )
         }
         .buttonStyle(.plain)
