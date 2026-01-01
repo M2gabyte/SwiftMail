@@ -31,6 +31,12 @@
 		A1000024 /* SmartAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000024 /* SmartAvatarView.swift */; };
 		A1000025 /* AvatarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000025 /* AvatarService.swift */; };
 		A1000026 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000026 /* Config.swift */; };
+		A1000027 /* TimeoutConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000027 /* TimeoutConfig.swift */; };
+		A1000028 /* JSONCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000028 /* JSONCoding.swift */; };
+		A1000029 /* BrandRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000029 /* BrandRegistry.swift */; };
+		A1000030 /* DomainNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000030 /* DomainNormalizer.swift */; };
+		A1000031 /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000031 /* Color+Hex.swift */; };
+		A1000032 /* brand_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B1000032 /* brand_registry.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +67,12 @@
 		B1000024 /* SmartAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartAvatarView.swift; sourceTree = "<group>"; };
 		B1000025 /* AvatarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarService.swift; sourceTree = "<group>"; };
 		B1000026 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
+		B1000027 /* TimeoutConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeoutConfig.swift; sourceTree = "<group>"; };
+		B1000028 /* JSONCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONCoding.swift; sourceTree = "<group>"; };
+		B1000029 /* BrandRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandRegistry.swift; sourceTree = "<group>"; };
+		B1000030 /* DomainNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainNormalizer.swift; sourceTree = "<group>"; };
+		B1000031 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
+		B1000032 /* brand_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = brand_registry.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,7 +104,9 @@
 				D0000007 /* Engine */,
 				D0000008 /* Services */,
 				D0000009 /* Config */,
+				D0000010 /* Utils */,
 				B1000016 /* Assets.xcassets */,
+				D0000011 /* Resources */,
 				B1000017 /* Info.plist */,
 				B1000018 /* SimpleMail.entitlements */,
 			);
@@ -159,6 +173,8 @@
 				B1000020 /* SnoozeManager.swift */,
 				B1000023 /* PeopleService.swift */,
 				B1000025 /* AvatarService.swift */,
+				B1000029 /* BrandRegistry.swift */,
+				B1000030 /* DomainNormalizer.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -167,8 +183,26 @@
 			isa = PBXGroup;
 			children = (
 				B1000026 /* Config.swift */,
+				B1000027 /* TimeoutConfig.swift */,
 			);
 			path = Config;
+			sourceTree = "<group>";
+		};
+		D0000010 /* Utils */ = {
+			isa = PBXGroup;
+			children = (
+				B1000028 /* JSONCoding.swift */,
+				B1000031 /* Color+Hex.swift */,
+			);
+			path = Utils;
+			sourceTree = "<group>";
+		};
+		D0000011 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B1000032 /* brand_registry.json */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -230,6 +264,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000016 /* Assets.xcassets in Resources */,
+				A1000032 /* brand_registry.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -263,6 +298,11 @@
 				A1000024 /* SmartAvatarView.swift in Sources */,
 				A1000025 /* AvatarService.swift in Sources */,
 				A1000026 /* Config.swift in Sources */,
+				A1000027 /* TimeoutConfig.swift in Sources */,
+				A1000028 /* JSONCoding.swift in Sources */,
+				A1000029 /* BrandRegistry.swift in Sources */,
+				A1000030 /* DomainNormalizer.swift in Sources */,
+				A1000031 /* Color+Hex.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

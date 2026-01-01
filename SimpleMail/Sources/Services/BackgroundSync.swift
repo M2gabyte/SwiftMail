@@ -121,9 +121,8 @@ final class BackgroundSyncManager {
         let (emails, _) = try await GmailService.shared.fetchInbox(maxResults: 50)
 
         // Update local cache (SwiftData)
-        await MainActor.run {
-            EmailCacheManager.shared.cacheEmails(emails)
-        }
+        let emailDTOs = emails.toDTOs()
+        await EmailCacheManager.shared.cacheEmails(emailDTOs)
 
         logger.info("Synced \(emails.count) emails to cache")
     }

@@ -11,132 +11,204 @@ private let logger = Logger(subsystem: "com.simplemail.app", category: "AvatarSe
 actor AvatarService {
     static let shared = AvatarService()
 
+    private let registry = BrandRegistry.shared
+    private let cacheTTL: TimeInterval = 7 * 24 * 60 * 60
+    private let maxCacheEntries = 1000
+
     // In-memory caches
-    private var photoCache: [String: URL?] = [:]  // email -> photo URL
+    private var resolutionCache: [String: CachedResolution] = [:]
+    private var inFlightTasks: [String: Task<AvatarResolution, Never>] = [:]
     private var brandLogoStatus: [String: Bool] = [:]  // domain -> loaded successfully
 
-    // Personal domains that skip brand logos
-    private let personalDomains: Set<String> = [
-        "gmail.com", "googlemail.com",
-        "outlook.com", "hotmail.com", "live.com", "msn.com",
-        "yahoo.com", "ymail.com",
-        "icloud.com", "me.com", "mac.com",
-        "aol.com",
-        "protonmail.com", "proton.me",
-        "zoho.com",
-        "fastmail.com",
-        "hey.com",
-        "tutanota.com", "tutamail.com"
-    ]
+    // MARK: - Models
 
-    // Domain aliases - map alternate sending domains to primary brand
-    private let domainAliases: [String: String] = [
-        "vzw.com": "verizon.com",
-        "vtext.com": "verizon.com",
-        "bloomberglp.com": "bloomberg.com",
-        "e.flyspirit.com": "spirit.com",
-        "mail.capitalone.com": "capitalone.com",
-        "email.capitalone.com": "capitalone.com",
-        "alerts.chase.com": "chase.com",
-        "chaseonline.com": "chase.com",
-        "em.bankofamerica.com": "bankofamerica.com",
-        "ealerts.bankofamerica.com": "bankofamerica.com",
-        "email.americanexpress.com": "americanexpress.com",
-        "welcome.aexp.com": "americanexpress.com",
-        "alerts.comcast.net": "xfinity.com",
-        "comcast.net": "xfinity.com",
-        "facebookmail.com": "facebook.com",
-        "mail.instagram.com": "instagram.com",
-        "email.uber.com": "uber.com",
-        "uber.com": "uber.com",
-        "lyft.com": "lyft.com",
-        "em.lyft.com": "lyft.com",
-        "doordash.com": "doordash.com",
-        "mail.doordash.com": "doordash.com",
-        "postmates.com": "postmates.com",
-        "email.grubhub.com": "grubhub.com"
-    ]
-
-    // MARK: - Contact Photo
-
-    /// Get cached contact photo URL for an email
-    func getCachedPhoto(for email: String) -> URL?? {
-        let key = email.lowercased()
-        return photoCache[key]
+    struct AvatarResolution: Sendable {
+        let email: String
+        let initials: String
+        let backgroundColorHex: String
+        let brandLogoURL: URL?
+        let contactPhotoURL: URL?
+        let brandDomain: String?
+        let source: AvatarSource
     }
 
-    /// Cache a contact photo URL (or nil for no photo)
-    func cachePhoto(email: String, url: URL?) {
-        let key = email.lowercased()
-        photoCache[key] = url
+    enum AvatarSource: String, Sendable {
+        case contactPhoto
+        case brandLogo
+        case initials
     }
 
-    /// Check if we have already cached a photo lookup (even if nil)
-    func hasPhotoCache(for email: String) -> Bool {
-        let key = email.lowercased()
-        return photoCache.keys.contains(key)
+    private struct CachedResolution: Sendable {
+        var resolution: AvatarResolution
+        var fetchedAt: Date
+        var lastAccessed: Date
     }
 
-    // MARK: - Brand Logo
+    // MARK: - Resolve
 
-    /// Get brand logo URL for an email domain
-    func getBrandLogoURL(for email: String) -> URL? {
-        let domain = extractDomain(from: email)
+    func resolveAvatar(email: String, name: String, accountEmail: String? = nil) async -> AvatarResolution {
+        let accountKey = await currentAccountKey(override: accountEmail)
 
-        guard !isPersonalDomain(domain) else {
-            return nil
+        guard let normalized = DomainNormalizer.normalize(from: email, registry: registry) else {
+            return AvatarResolution(
+                email: email,
+                initials: DomainNormalizer.initials(name: name, email: email),
+                backgroundColorHex: AvatarService.avatarColorHex(for: email),
+                brandLogoURL: nil,
+                contactPhotoURL: nil,
+                brandDomain: nil,
+                source: .initials
+            )
         }
 
-        // Check if we've tried and failed before
-        if brandLogoStatus[domain] == false {
-            return nil
+        let cacheKey = "\(accountKey)|\(normalized.normalizedEmail)"
+
+        if let cached = resolutionCache[cacheKey], !isExpired(cached) {
+            var updated = cached
+            updated.lastAccessed = Date()
+            resolutionCache[cacheKey] = updated
+            return cached.resolution
         }
 
-        // Use domain alias if available
-        let effectiveDomain = domainAliases[domain] ?? domain
+        if let existingTask = inFlightTasks[cacheKey] {
+            return await existingTask.value
+        }
 
-        // Use Google's high-quality favicon service
-        return URL(string: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://\(effectiveDomain)&size=256")
+        let task = Task { [registry] in
+            let initials = DomainNormalizer.initials(name: name, email: normalized.normalizedEmail)
+            let brandDomain = normalized.brandDomain
+
+            var brandLogoURL: URL?
+            var brandColorHex: String?
+
+            if let domain = brandDomain?.lowercased(), brandLogoStatus[domain] != false {
+                brandLogoURL = registry.logoURL(for: domain)
+                brandColorHex = registry.brandColorHex(for: domain)
+            }
+
+            let backgroundHex = brandColorHex ?? AvatarService.avatarColorHex(for: normalized.normalizedEmail)
+            let contactPhotoURL = await PeopleService.shared.getPhotoURL(for: normalized.normalizedEmail)
+
+            let source: AvatarSource
+            if contactPhotoURL != nil {
+                source = .contactPhoto
+            } else if brandLogoURL != nil {
+                source = .brandLogo
+            } else {
+                source = .initials
+            }
+
+            let resolution = AvatarResolution(
+                email: normalized.normalizedEmail,
+                initials: initials,
+                backgroundColorHex: backgroundHex,
+                brandLogoURL: brandLogoURL,
+                contactPhotoURL: contactPhotoURL,
+                brandDomain: brandDomain,
+                source: source
+            )
+
+            cacheResolution(resolution, for: cacheKey)
+            return resolution
+        }
+
+        inFlightTasks[cacheKey] = task
+        let result = await task.value
+        inFlightTasks[cacheKey] = nil
+        return result
     }
 
-    /// Mark whether a brand logo loaded successfully
+    func prefetch(contacts: [(email: String, name: String)], accountEmail: String? = nil) {
+        for contact in contacts {
+            Task {
+                _ = await resolveAvatar(email: contact.email, name: contact.name, accountEmail: accountEmail)
+            }
+        }
+    }
+
+    // MARK: - Brand Logo Status
+
     func markBrandLogoLoaded(_ domain: String, success: Bool) {
-        brandLogoStatus[domain] = success
-    }
-
-    /// Check if a brand logo has been marked as failed
-    func hasBrandLogoFailed(for email: String) -> Bool {
-        let domain = extractDomain(from: email)
-        return brandLogoStatus[domain] == false
-    }
-
-    // MARK: - Domain Helpers
-
-    /// Check if domain is a personal email provider (skip brand logo)
-    func isPersonalDomain(_ domain: String) -> Bool {
-        personalDomains.contains(domain.lowercased())
-    }
-
-    /// Extract domain from email address
-    private func extractDomain(from email: String) -> String {
-        guard let atIndex = email.lastIndex(of: "@") else {
-            return ""
+        let normalized = domain.lowercased()
+        brandLogoStatus[normalized] = success
+        if success == false {
+            removeBrandLogoFromCache(domain: normalized)
         }
-        return String(email[email.index(after: atIndex)...]).lowercased()
+    }
+
+    // MARK: - Cache
+
+    private func cacheResolution(_ resolution: AvatarResolution, for key: String) {
+        let cached = CachedResolution(resolution: resolution, fetchedAt: Date(), lastAccessed: Date())
+        resolutionCache[key] = cached
+        evictIfNeeded()
+    }
+
+    private func isExpired(_ cached: CachedResolution) -> Bool {
+        Date().timeIntervalSince(cached.fetchedAt) > cacheTTL
+    }
+
+    private func evictIfNeeded() {
+        guard resolutionCache.count > maxCacheEntries else { return }
+        let sorted = resolutionCache.sorted { $0.value.lastAccessed < $1.value.lastAccessed }
+        let toRemove = sorted.prefix(resolutionCache.count - maxCacheEntries)
+        for entry in toRemove {
+            resolutionCache.removeValue(forKey: entry.key)
+        }
+    }
+
+    private func removeBrandLogoFromCache(domain: String) {
+        for (key, cached) in resolutionCache {
+            if cached.resolution.brandDomain == domain {
+                let updated = AvatarResolution(
+                    email: cached.resolution.email,
+                    initials: cached.resolution.initials,
+                    backgroundColorHex: cached.resolution.backgroundColorHex,
+                    brandLogoURL: nil,
+                    contactPhotoURL: cached.resolution.contactPhotoURL,
+                    brandDomain: cached.resolution.brandDomain,
+                    source: cached.resolution.contactPhotoURL != nil ? .contactPhoto : .initials
+                )
+                resolutionCache[key] = CachedResolution(
+                    resolution: updated,
+                    fetchedAt: cached.fetchedAt,
+                    lastAccessed: Date()
+                )
+            }
+        }
+    }
+
+    private func currentAccountKey(override: String?) async -> String {
+        if let override = override, !override.isEmpty {
+            return override.lowercased()
+        }
+
+        return await MainActor.run {
+            AuthService.shared.currentAccount?.email.lowercased() ?? "default"
+        }
     }
 
     // MARK: - Deterministic Color
 
-    /// Get a deterministic color index for an email (for initials avatar background)
-    static func colorIndex(for email: String) -> Int {
-        let hash = email.lowercased().hashValue
-        return abs(hash) % 8
+    nonisolated static func avatarColorHex(for email: String) -> String {
+        let palette = [
+            "#1a73e8", "#ea4335", "#34a853", "#fbbc04", "#673ab7",
+            "#e91e63", "#00acc1", "#ff5722", "#607d8b", "#795548"
+        ]
+
+        var hash: Int32 = 0
+        for char in email.utf8 {
+            hash = Int32(char) &+ ((hash << 5) &- hash)
+        }
+        let index = abs(Int(hash)) % palette.count
+        return palette[index]
     }
 
     // MARK: - Clear Cache
 
     func clearCache() {
-        photoCache = [:]
+        resolutionCache = [:]
+        inFlightTasks = [:]
         brandLogoStatus = [:]
         logger.info("Avatar cache cleared")
     }

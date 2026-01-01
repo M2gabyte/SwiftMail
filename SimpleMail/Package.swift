@@ -22,7 +22,10 @@ let package = Package(
             dependencies: [
                 .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS"),
             ],
-            path: "Sources"
+            path: "Sources",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "SimpleMailTests",

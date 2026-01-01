@@ -41,7 +41,7 @@ final class EmailCacheManager: ObservableObject {
 
     // MARK: - Cache Emails
 
-    func cacheEmails(_ emails: [Email]) {
+    func cacheEmails(_ emails: [EmailDTO]) {
         guard let context = modelContext else {
             logger.warning("No model context configured")
             return
@@ -76,6 +76,16 @@ final class EmailCacheManager: ObservableObject {
                 existing.isStarred = email.isStarred
                 existing.labelIds = email.labelIds
                 existing.snippet = email.snippet
+                existing.subject = email.subject
+                existing.from = email.from
+                existing.date = email.date
+                existing.hasAttachments = email.hasAttachments
+                existing.messagesCount = email.messagesCount
+                existing.accountEmail = email.accountEmail
+                existing.listUnsubscribe = email.listUnsubscribe
+                existing.listId = email.listId
+                existing.precedence = email.precedence
+                existing.autoSubmitted = email.autoSubmitted
             } else {
                 // Insert new (create a copy for the context)
                 let cached = Email(
