@@ -53,6 +53,11 @@ final class InboxViewModel {
         return groupEmailsByDate(filteredEmails)
     }
 
+    /// Last visible email after filtering (for pagination trigger)
+    private var lastVisibleEmailId: String? {
+        emailSections.last?.emails.last?.id
+    }
+
     // MARK: - Init
 
     init() {
@@ -94,8 +99,10 @@ final class InboxViewModel {
     // MARK: - Load More (Pagination)
 
     func loadMoreIfNeeded(currentEmail: Email) async {
-        guard let lastEmail = emails.last,
-              lastEmail.id == currentEmail.id,
+        // Check against the last VISIBLE email (after filtering), not the last raw email
+        // This ensures pagination triggers correctly when People filter reduces the list
+        guard let lastVisibleId = lastVisibleEmailId,
+              lastVisibleId == currentEmail.id,
               hasMoreEmails,
               !isLoadingMore else {
             return
@@ -165,6 +172,35 @@ final class InboxViewModel {
         return deduped
     }
 
+    // MARK: - Needs Reply Heuristics
+
+    private static let needsReplyPatterns: [NSRegularExpression] = {
+        let patterns = [
+            "can\\s+you", "could\\s+you", "would\\s+you", "are\\s+you\\s+able",
+            "let\\s+me\\s+know", "please\\s+confirm", "quick\\s+question",
+            "thoughts\\?", "what\\s+do\\s+you\\s+think"
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    }()
+
+    private func isNeedsReplyCandidate(_ email: Email) -> Bool {
+        // Gate out commercial/automated senders to avoid false positives.
+        if EmailFilters.isBulk(email) {
+            return false
+        }
+        if !EmailFilters.looksLikeHumanSender(email) {
+            return false
+        }
+
+        let text = "\(email.subject) \(email.snippet)"
+        if text.contains("?") {
+            return true
+        }
+
+        let range = NSRange(text.startIndex..., in: text)
+        return Self.needsReplyPatterns.contains { $0.firstMatch(in: text, range: range) != nil }
+    }
+
     // MARK: - Filter Counts (Simplified - no actor calls)
 
     private func updateFilterCounts() {
@@ -188,8 +224,7 @@ final class InboxViewModel {
             }
 
             // Needs reply detection (sync)
-            let text = "\(email.subject) \(email.snippet)"
-            if text.contains("?") || text.lowercased().contains("let me know") {
+            if isNeedsReplyCandidate(email) {
                 counts[.needsReply, default: 0] += 1
             }
 
@@ -232,10 +267,7 @@ final class InboxViewModel {
             case .unread:
                 filtered = filtered.filter { $0.isUnread }
             case .needsReply:
-                filtered = filtered.filter { email in
-                    let text = "\(email.subject) \(email.snippet)"
-                    return text.contains("?") || text.lowercased().contains("let me know")
-                }
+                filtered = filtered.filter { isNeedsReplyCandidate($0) }
             case .deadlines:
                 filtered = filtered.filter { email in
                     let text = "\(email.subject) \(email.snippet)".lowercased()
@@ -318,7 +350,7 @@ final class InboxViewModel {
         pendingArchive = PendingArchive(email: email, index: index)
 
         // Optimistic update - remove from list immediately
-        _ = withAnimation(.easeOut(duration: 0.25)) {
+        withAnimation(.easeOut(duration: 0.25)) {
             emails.remove(at: index)
         }
         updateFilterCounts()
@@ -326,7 +358,7 @@ final class InboxViewModel {
 
         // Show undo toast
         undoToastMessage = "Email Archived"
-        _ = withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             showingUndoToast = true
         }
 
@@ -352,7 +384,7 @@ final class InboxViewModel {
         // Restore the email at its original position
         guard let pending = pendingArchive else { return }
 
-        _ = withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             // Insert at original index, clamped to valid range
             let insertIndex = min(pending.index, emails.count)
             emails.insert(pending.email, at: insertIndex)
@@ -366,7 +398,7 @@ final class InboxViewModel {
 
     private func finalizeArchive(_ email: Email) {
         // Hide toast
-        _ = withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(.easeOut(duration: 0.2)) {
             showingUndoToast = false
         }
         pendingArchive = nil
@@ -386,7 +418,7 @@ final class InboxViewModel {
     }
 
     func trashEmail(_ email: Email) {
-        _ = withAnimation {
+        withAnimation {
             emails.removeAll { $0.id == email.id }
         }
         updateFilterCounts()
@@ -428,7 +460,7 @@ final class InboxViewModel {
 
     func snoozeEmail(_ email: Email, until date: Date) {
         // Archive the email optimistically
-        _ = withAnimation {
+        withAnimation {
             emails.removeAll { $0.id == email.id }
         }
         updateFilterCounts()
