@@ -133,24 +133,65 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 - Don't commit `.xcuserstate` files (user-specific Xcode state)
 - Don't commit `.build/` directories
 
-## Design Rules
+## Design Principles
 
-**Use only native SwiftUI primitives.** Do not add:
-- Overlays
-- ZStacks for floating buttons
-- Custom bottom bars
-- Separate Search screens
+### 1. Default to "Apple-native" before inventing UI
+- Prefer system primitives and defaults over custom UI
+- If Apple provides a standard pattern, use it even if a custom version seems "cleaner"
+- Goal is "looks like it shipped with iOS", not "looks like a concept mock"
 
-### Inbox View Structure
-The Inbox must be a single `List` with:
-- **Scrollable header row** - Inside the List, not floating
-- **`.searchable`** - Native search, not a custom screen
-- **`.toolbarTitleMenu`** - For title menu options
-- **`.toolbar`** with:
-  - `.topBarTrailing` - Settings gear icon
-  - `ToolbarItemGroup(.bottomBar)` - Search focus + compose buttons
+### 2. Don't fight the OS — follow current iOS conventions
+- Treat the OS's default visual language as source of truth (e.g., iOS 26 glass/shared toolbar backgrounds)
+- Only override system appearance when it fixes a clear usability issue (legibility, hierarchy, accessibility), not for aesthetics
 
-This keeps the UI native, accessible, and consistent with iOS conventions.
+### 3. Use SwiftUI primitives; avoid custom chrome
+**Use:** `NavigationStack`, `List`, `toolbar`, `.searchable`, `Menu`, `Picker(.segmented)`, `swipeActions`, `.sheet`
+
+**Avoid:** custom bottom bars, floating action buttons, overlay toolbars, any UI that mimics nav bars/toolbars via ZStack overlays
+
+### 4. Toolbars are system toolbars (and should look system)
+- Top actions live in `.toolbar` with correct placements (`.topBarTrailing`, etc.)
+- Bottom actions live in `ToolbarItemGroup(placement: .bottomBar)`
+- Do NOT add custom backgrounds/shadows/clipShapes around toolbar icons
+- Do NOT apply global button styling that changes toolbar item appearance
+
+### 5. Navigation title is the header; don't rebuild it in content
+- Use `.navigationTitle` + `.navigationBarTitleDisplayMode(.large)`
+- Avoid duplicating the title as a giant Text inside the view
+- Mailbox switching uses `.toolbarTitleMenu` rather than a custom picker control
+
+### 6. Search must be native
+- Use `.searchable` for search UX (pull-down drawer behavior)
+- Do NOT create separate "Search screens" unless there is a compelling product requirement (rare)
+- If you include a search button, it should only focus/activate the `.searchable` field
+
+### 7. Custom UI should be quieter than system UI
+- Custom controls (e.g., triage chips) must not compete with OS chrome (toolbars, navigation title)
+- Prefer subtle emphasis (thin material, light strokes, low-contrast backgrounds) over strong filled capsules
+- Keep the number of high-salience controls per screen low
+
+### 8. Use system typography, spacing, and motion
+- Use Apple font styles (`.headline`, `.subheadline`, `.body`, etc.) and standard paddings
+- Avoid heavy shadows and large custom blur effects unless the OS is already doing it
+- Favor "boring" defaults; adjust only when there's a clear readability/hierarchy gain
+
+### 9. Interactions should be standard and fast
+- Use native `swipeActions` for row actions (archive, read/unread, etc.)
+- Avoid custom gesture recognizers when the platform provides the gesture
+- Optimize for one-handed use without adding non-native affordances
+
+### 10. Accessibility and dynamic type are not optional
+- Respect Dynamic Type; avoid fixed heights that truncate content
+- Ensure tappable targets meet minimum size
+- Use semantic labels for icon-only buttons
+
+### 11. Avoid global styling that causes UI drift
+- Do NOT set `.buttonStyle`, `controlSize`, `buttonBorderShape`, or `toolbarRole` globally at the app root unless absolutely required
+- If styling is needed, scope it to the smallest possible view
+
+### 12. Be explicit about platform/version behavior
+- When a behavior differs by iOS version, prefer `#available` gates rather than hacks
+- Document any version-specific decisions briefly in code comments
 
 ## Code Style
 
