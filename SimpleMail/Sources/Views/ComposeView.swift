@@ -266,7 +266,8 @@ struct ComposeView: View {
                 HStack {
                     Text("Subject")
                         .foregroundStyle(.secondary)
-                        .frame(width: 60, alignment: .leading)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
 
                     TextField("", text: $viewModel.subject)
                         .textInputAutocapitalization(.sentences)
