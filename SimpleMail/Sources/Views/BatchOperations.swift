@@ -1,5 +1,8 @@
 import SwiftUI
 import UIKit
+import OSLog
+
+private let batchLogger = Logger(subsystem: "com.simplemail.app", category: "BatchOperations")
 
 // MARK: - Batch Selection Mode
 
@@ -293,9 +296,9 @@ struct PrintEmailButton: View {
 
         printController.present(animated: true) { _, completed, error in
             if completed {
-                print("[Print] Print job completed successfully")
+                batchLogger.info("Print job completed successfully")
             } else if let error = error {
-                print("[Print] Print error: \(error)")
+                batchLogger.error("Print error: \(error.localizedDescription)")
             }
         }
     }

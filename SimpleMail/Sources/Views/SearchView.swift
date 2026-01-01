@@ -1,4 +1,7 @@
 import SwiftUI
+import OSLog
+
+private let searchLogger = Logger(subsystem: "com.simplemail.app", category: "Search")
 
 // MARK: - Search View
 
@@ -293,7 +296,7 @@ class SearchViewModel: ObservableObject {
             results = try await GmailService.shared.search(query: query)
             addToRecent(query)
         } catch {
-            print("Search error: \(error)")
+            searchLogger.error("Search error: \(error.localizedDescription)")
             results = []
         }
     }

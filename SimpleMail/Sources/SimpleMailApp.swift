@@ -2,6 +2,9 @@ import SwiftUI
 import SwiftData
 import BackgroundTasks
 import LocalAuthentication
+import OSLog
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "SimpleMailApp")
 
 @main
 struct SimpleMailApp: App {
@@ -66,7 +69,7 @@ struct SimpleMailApp: App {
 
     private func handleURL(_ url: URL) {
         // Handle OAuth callback
-        print("Received URL: \(url)")
+        logger.debug("Received URL: \(url.absoluteString)")
     }
 
     private func handleEmailNotification(_ notification: Notification) {
@@ -78,7 +81,7 @@ struct SimpleMailApp: App {
 
         // Navigate to email detail
         // This would be handled by the navigation coordinator
-        print("Open email: \(emailId) in thread: \(threadId)")
+        logger.debug("Open email: \(emailId) in thread: \(threadId)")
     }
 }
 

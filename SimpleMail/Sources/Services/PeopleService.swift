@@ -118,7 +118,9 @@ actor PeopleService {
     }
 
     private func fetchContactsPage(token: String, pageToken: String?) async throws -> (contacts: [Contact], nextPageToken: String?) {
-        var components = URLComponents(string: "\(baseURL)/people/me/connections")!
+        guard var components = URLComponents(string: "\(baseURL)/people/me/connections") else {
+            throw PeopleError.invalidURL
+        }
         var queryItems = [
             URLQueryItem(name: "personFields", value: "names,emailAddresses,photos"),
             URLQueryItem(name: "pageSize", value: "100")
@@ -130,7 +132,11 @@ actor PeopleService {
 
         components.queryItems = queryItems
 
-        let response: ConnectionsResponse = try await request(url: components.url!, token: token)
+        guard let url = components.url else {
+            throw PeopleError.invalidURL
+        }
+
+        let response: ConnectionsResponse = try await request(url: url, token: token)
 
         let contacts = parseContacts(from: response.connections ?? [])
         return (contacts, response.nextPageToken)
@@ -138,14 +144,20 @@ actor PeopleService {
 
     /// Fetches "other contacts" - people you've interacted with but aren't saved contacts
     private func fetchOtherContacts(token: String) async throws -> [Contact] {
-        var components = URLComponents(string: "\(baseURL)/otherContacts")!
+        guard var components = URLComponents(string: "\(baseURL)/otherContacts") else {
+            throw PeopleError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "readMask", value: "names,emailAddresses,photos"),
             URLQueryItem(name: "pageSize", value: "100")
         ]
 
+        guard let url = components.url else {
+            throw PeopleError.invalidURL
+        }
+
         do {
-            let response: OtherContactsResponse = try await request(url: components.url!, token: token)
+            let response: OtherContactsResponse = try await request(url: url, token: token)
             return parseOtherContacts(from: response.otherContacts ?? [])
         } catch {
             // Other contacts may not be available for all accounts
@@ -363,6 +375,7 @@ actor PeopleService {
 enum PeopleError: LocalizedError {
     case notAuthenticated
     case invalidResponse
+    case invalidURL
     case permissionDenied
     case rateLimited
     case serverError(Int)
@@ -371,6 +384,7 @@ enum PeopleError: LocalizedError {
         switch self {
         case .notAuthenticated: return "Please sign in to continue"
         case .invalidResponse: return "Invalid response from server"
+        case .invalidURL: return "Invalid URL configuration"
         case .permissionDenied: return "Contacts permission not granted. Please sign out and sign in again."
         case .rateLimited: return "Too many requests. Please wait a moment."
         case .serverError(let code): return "Server error (\(code))"

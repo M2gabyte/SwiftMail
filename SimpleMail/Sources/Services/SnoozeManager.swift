@@ -21,7 +21,9 @@ final class SnoozeManager {
         startSnoozeCheck()
     }
 
-    // Note: Singleton never deinits, timer lives with app lifecycle
+    // Note: Singleton never deinits, timer lives with app lifecycle.
+    // No deinit needed since MainActor-isolated properties can't be
+    // accessed from nonisolated deinit context.
 
     // MARK: - Configuration
 

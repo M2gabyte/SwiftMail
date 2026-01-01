@@ -1,5 +1,8 @@
 import Foundation
 import SwiftData
+import OSLog
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "EmailCache")
 
 // MARK: - Email Cache Manager
 
@@ -27,7 +30,12 @@ final class EmailCacheManager: ObservableObject {
         guard let context = modelContext else { return }
 
         let descriptor = FetchDescriptor<Email>()
-        cachedEmailCount = (try? context.fetchCount(descriptor)) ?? 0
+        do {
+            cachedEmailCount = try context.fetchCount(descriptor)
+        } catch {
+            logger.warning("Failed to fetch cache count: \(error.localizedDescription)")
+            cachedEmailCount = 0
+        }
         lastSyncDate = UserDefaults.standard.object(forKey: "lastEmailSync") as? Date
     }
 
@@ -35,21 +43,34 @@ final class EmailCacheManager: ObservableObject {
 
     func cacheEmails(_ emails: [Email]) {
         guard let context = modelContext else {
-            print("[EmailCache] No model context configured")
+            logger.warning("No model context configured")
             return
         }
+
+        guard !emails.isEmpty else { return }
 
         let fetchedIds = Set(emails.map { $0.id })
         let oldestFetchedDate = emails.map(\.date).min()
 
-        for email in emails {
-            // Check if already exists
-            let emailId = email.id
-            let descriptor = FetchDescriptor<Email>(
-                predicate: #Predicate { $0.id == emailId }
-            )
+        // Batch fetch ALL existing emails by ID to avoid N+1 queries
+        let emailIds = emails.map { $0.id }
+        let batchDescriptor = FetchDescriptor<Email>(
+            predicate: #Predicate { email in emailIds.contains(email.id) }
+        )
 
-            if let existing = try? context.fetch(descriptor).first {
+        let existingEmails: [Email]
+        do {
+            existingEmails = try context.fetch(batchDescriptor)
+        } catch {
+            logger.error("Failed to batch fetch existing emails: \(error.localizedDescription)")
+            return
+        }
+
+        // Create lookup dictionary for O(1) access
+        let existingById = Dictionary(uniqueKeysWithValues: existingEmails.map { ($0.id, $0) })
+
+        for email in emails {
+            if let existing = existingById[email.id] {
                 // Update existing
                 existing.isUnread = email.isUnread
                 existing.isStarred = email.isStarred
@@ -83,9 +104,9 @@ final class EmailCacheManager: ObservableObject {
             try context.save()
             UserDefaults.standard.set(Date(), forKey: "lastEmailSync")
             updateCacheStats()
-            print("[EmailCache] Cached \(emails.count) emails")
+            logger.info("Cached \(emails.count) emails")
         } catch {
-            print("[EmailCache] Failed to cache emails: \(error)")
+            logger.error("Failed to cache emails: \(error.localizedDescription)")
         }
 
         // Cleanup: remove cached inbox emails that no longer exist in the latest fetch window.
@@ -115,8 +136,7 @@ final class EmailCacheManager: ObservableObject {
                 !email.labelIds.contains("SPAM")
             }
         default:
-            if !labelIds.isEmpty {
-                let labelId = labelIds[0]
+            if let labelId = labelIds.first {
                 descriptor.predicate = #Predicate { email in
                     email.labelIds.contains(labelId)
                 }
@@ -126,7 +146,7 @@ final class EmailCacheManager: ObservableObject {
         do {
             return try context.fetch(descriptor)
         } catch {
-            print("[EmailCache] Failed to load cached emails: \(error)")
+            logger.error("Failed to load cached emails: \(error.localizedDescription)")
             return []
         }
     }
@@ -149,7 +169,7 @@ final class EmailCacheManager: ObservableObject {
         do {
             return try context.fetch(descriptor)
         } catch {
-            print("[EmailCache] Failed to search cached emails: \(error)")
+            logger.error("Failed to search cached emails: \(error.localizedDescription)")
             return []
         }
     }
@@ -164,16 +184,15 @@ final class EmailCacheManager: ObservableObject {
             predicate: #Predicate { $0.id == emailId }
         )
 
-        if let cached = try? context.fetch(descriptor).first {
-            cached.isUnread = email.isUnread
-            cached.isStarred = email.isStarred
-            cached.labelIds = email.labelIds
-
-            do {
+        do {
+            if let cached = try context.fetch(descriptor).first {
+                cached.isUnread = email.isUnread
+                cached.isStarred = email.isStarred
+                cached.labelIds = email.labelIds
                 try context.save()
-            } catch {
-                print("[EmailCache] Failed to update email: \(error)")
             }
+        } catch {
+            logger.error("Failed to update email: \(error.localizedDescription)")
         }
     }
 
@@ -187,15 +206,14 @@ final class EmailCacheManager: ObservableObject {
             predicate: #Predicate { $0.id == emailId }
         )
 
-        if let cached = try? context.fetch(descriptor).first {
-            context.delete(cached)
-
-            do {
+        do {
+            if let cached = try context.fetch(descriptor).first {
+                context.delete(cached)
                 try context.save()
                 updateCacheStats()
-            } catch {
-                print("[EmailCache] Failed to delete email: \(error)")
             }
+        } catch {
+            logger.error("Failed to delete email: \(error.localizedDescription)")
         }
     }
 
@@ -210,16 +228,15 @@ final class EmailCacheManager: ObservableObject {
             }
         )
 
-        if let cached = try? context.fetch(descriptor) {
+        do {
+            let cached = try context.fetch(descriptor)
             for email in cached where !fetchedIds.contains(email.id) {
                 context.delete(email)
             }
-            do {
-                try context.save()
-                updateCacheStats()
-            } catch {
-                print("[EmailCache] Failed to remove stale inbox emails: \(error)")
-            }
+            try context.save()
+            updateCacheStats()
+        } catch {
+            logger.error("Failed to remove stale inbox emails: \(error.localizedDescription)")
         }
     }
 
@@ -233,9 +250,9 @@ final class EmailCacheManager: ObservableObject {
             try context.delete(model: EmailDetail.self)
             try context.save()
             updateCacheStats()
-            print("[EmailCache] Cache cleared")
+            logger.info("Cache cleared")
         } catch {
-            print("[EmailCache] Failed to clear cache: \(error)")
+            logger.error("Failed to clear cache: \(error.localizedDescription)")
         }
     }
 
@@ -249,30 +266,33 @@ final class EmailCacheManager: ObservableObject {
             predicate: #Predicate { $0.id == detailId }
         )
 
-        if let existing = try? context.fetch(descriptor).first {
-            existing.body = detail.body
-            existing.isUnread = detail.isUnread
-            existing.isStarred = detail.isStarred
-        } else {
-            let cached = EmailDetail(
-                id: detail.id,
-                threadId: detail.threadId,
-                snippet: detail.snippet,
-                subject: detail.subject,
-                from: detail.from,
-                date: detail.date,
-                isUnread: detail.isUnread,
-                isStarred: detail.isStarred,
-                hasAttachments: detail.hasAttachments,
-                labelIds: detail.labelIds,
-                body: detail.body,
-                to: detail.to,
-                cc: detail.cc
-            )
-            context.insert(cached)
+        do {
+            if let existing = try context.fetch(descriptor).first {
+                existing.body = detail.body
+                existing.isUnread = detail.isUnread
+                existing.isStarred = detail.isStarred
+            } else {
+                let cached = EmailDetail(
+                    id: detail.id,
+                    threadId: detail.threadId,
+                    snippet: detail.snippet,
+                    subject: detail.subject,
+                    from: detail.from,
+                    date: detail.date,
+                    isUnread: detail.isUnread,
+                    isStarred: detail.isStarred,
+                    hasAttachments: detail.hasAttachments,
+                    labelIds: detail.labelIds,
+                    body: detail.body,
+                    to: detail.to,
+                    cc: detail.cc
+                )
+                context.insert(cached)
+            }
+            try context.save()
+        } catch {
+            logger.error("Failed to cache email detail: \(error.localizedDescription)")
         }
-
-        try? context.save()
     }
 
     // MARK: - Load Cached Email Detail
@@ -284,7 +304,12 @@ final class EmailCacheManager: ObservableObject {
             predicate: #Predicate { $0.id == emailId }
         )
 
-        return try? context.fetch(descriptor).first
+        do {
+            return try context.fetch(descriptor).first
+        } catch {
+            logger.error("Failed to load cached email detail: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // MARK: - Helpers

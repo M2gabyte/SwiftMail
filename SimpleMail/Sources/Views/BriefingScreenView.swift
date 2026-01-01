@@ -1,4 +1,7 @@
 import SwiftUI
+import OSLog
+
+private let briefingLogger = Logger(subsystem: "com.simplemail.app", category: "Briefing")
 
 // MARK: - Briefing Screen View
 
@@ -338,15 +341,15 @@ class BriefingViewModel: ObservableObject {
     }
 
     func openItem(_ item: BriefingItem) {
-        print("Open item: \(item.subject)")
+        briefingLogger.debug("Open item: \(item.subject)")
     }
 
     func viewAllInSection(_ section: BriefingSection) {
-        print("View all in: \(section.title)")
+        briefingLogger.debug("View all in: \(section.title)")
     }
 
     func performBulkAction(for section: BriefingSection) {
-        print("Bulk action for: \(section.title)")
+        briefingLogger.debug("Bulk action for: \(section.title)")
     }
 
     private func createMockEmails() -> [Email] {

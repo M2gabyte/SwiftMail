@@ -14,8 +14,8 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     @Published var accounts: [Account] = []
 
     private let keychain = KeychainServiceSync.shared
-    private let clientId = "328102220939-s1mjoq2mpsc1dh4c3kkudq3npmg8vusb.apps.googleusercontent.com"
-    private let redirectUri = "com.googleusercontent.apps.328102220939-s1mjoq2mpsc1dh4c3kkudq3npmg8vusb:/oauth2callback"
+    private let clientId = Config.googleClientId
+    private let redirectUri = Config.googleRedirectUri
 
     private var codeVerifier: String?
 
@@ -194,10 +194,23 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     }
 
     private func fetchUserInfo(accessToken: String) async throws -> UserInfo {
-        var request = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v2/userinfo")!)
+        guard let url = URL(string: "https://www.googleapis.com/oauth2/v2/userinfo") else {
+            throw AuthError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw AuthError.userInfoFetchFailed(httpResponse.statusCode)
+        }
+
         return try JSONDecoder().decode(UserInfo.self, from: data)
     }
 
@@ -240,8 +253,10 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     // MARK: - Account Management
 
     func addAccount(_ account: Account) {
-        accounts.removeAll { $0.email == account.email }
-        accounts.append(account)
+        // Atomic update - create new array in single operation to avoid race conditions
+        var updatedAccounts = accounts.filter { $0.email != account.email }
+        updatedAccounts.append(account)
+        accounts = updatedAccounts
         currentAccount = account
         isAuthenticated = true
         saveAccounts()
@@ -349,6 +364,11 @@ enum AuthError: LocalizedError {
     case tokenExchangeFailed
     case tokenRefreshFailed
     case sessionStartFailed
+    case invalidResponse
+    case userInfoFetchFailed(Int)
+    case invalidRefreshToken
+    case refreshTokenRevoked
+    case rateLimited
 
     var errorDescription: String? {
         switch self {
@@ -359,6 +379,11 @@ enum AuthError: LocalizedError {
         case .tokenExchangeFailed: return "Failed to exchange authorization code"
         case .tokenRefreshFailed: return "Failed to refresh access token"
         case .sessionStartFailed: return "Failed to start authentication session"
+        case .invalidResponse: return "Invalid response from server"
+        case .userInfoFetchFailed(let code): return "Failed to fetch user info (HTTP \(code))"
+        case .invalidRefreshToken: return "Refresh token is invalid"
+        case .refreshTokenRevoked: return "Access has been revoked. Please sign in again."
+        case .rateLimited: return "Too many requests. Please wait a moment."
         }
     }
 }
@@ -521,23 +546,50 @@ actor KeychainService {
 
 // MARK: - Synchronous Keychain Wrapper (for MainActor contexts)
 
-/// Synchronous wrapper for KeychainService for use in @MainActor contexts
-/// Use sparingly - prefer async access when possible
-final class KeychainServiceSync {
+/// Thread-safe synchronous wrapper using NSLock for use in @MainActor contexts
+/// Uses direct Security framework calls instead of fire-and-forget Tasks
+final class KeychainServiceSync: @unchecked Sendable {
     static let shared = KeychainServiceSync()
+
+    private let lock = NSLock()
+    private let service = "com.simplemail.app"
+
     private init() {}
 
     func save(key: String, data: Data) {
-        Task {
-            try? await KeychainService.shared.save(key: key, data: data)
+        lock.lock()
+        defer { lock.unlock() }
+
+        // Delete existing item first
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+
+        // Add new item
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        if status != errSecSuccess {
+            keychainLogger.error("KeychainServiceSync save failed for key '\(key)': \(status)")
         }
     }
 
     func read(key: String) -> Data? {
-        // For synchronous read, we need to use the underlying Security APIs directly
+        lock.lock()
+        defer { lock.unlock() }
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.simplemail.app",
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
@@ -549,8 +601,18 @@ final class KeychainServiceSync {
     }
 
     func delete(key: String) {
-        Task {
-            await KeychainService.shared.delete(key: key)
+        lock.lock()
+        defer { lock.unlock() }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            keychainLogger.warning("KeychainServiceSync delete failed for key '\(key)': \(status)")
         }
     }
 }

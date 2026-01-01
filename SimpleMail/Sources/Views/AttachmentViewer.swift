@@ -1,6 +1,9 @@
 import SwiftUI
 import QuickLook
 import UniformTypeIdentifiers
+import OSLog
+
+private let attachmentLogger = Logger(subsystem: "com.simplemail.app", category: "Attachments")
 
 // MARK: - Attachment Model
 
@@ -196,7 +199,7 @@ class AttachmentViewModel: ObservableObject {
 
         } catch {
             self.error = error
-            print("[AttachmentViewModel] Download failed: \(error)")
+            attachmentLogger.error("Download failed: \(error.localizedDescription)")
         }
 
         downloadingIds.remove(attachment.id)

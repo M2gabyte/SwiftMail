@@ -256,11 +256,29 @@ struct RecipientField: View {
 
     private func addRecipient() {
         let trimmed = pendingInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty && trimmed.contains("@") {
+        if isValidEmail(trimmed) {
             recipients.append(trimmed)
             pendingInput = ""
             showingSuggestions = false
         }
+    }
+
+    /// Validates email format: local@domain.tld
+    private func isValidEmail(_ email: String) -> Bool {
+        let parts = email.split(separator: "@")
+        guard parts.count == 2,
+              !parts[0].isEmpty,
+              !parts[1].isEmpty else {
+            return false
+        }
+        let domain = String(parts[1])
+        // Domain must have at least one dot, not start/end with dot
+        guard domain.contains("."),
+              !domain.hasPrefix("."),
+              !domain.hasSuffix(".") else {
+            return false
+        }
+        return true
     }
 
     private func selectContact(_ contact: PeopleService.Contact) {
@@ -428,10 +446,28 @@ class ComposeViewModel: ObservableObject {
 
     private func addPendingRecipient(_ pending: inout String, to recipients: inout [String]) {
         let trimmed = pending.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty && trimmed.contains("@") {
+        if isValidEmail(trimmed) {
             recipients.append(trimmed)
             pending = ""
         }
+    }
+
+    /// Validates email format: local@domain.tld
+    private func isValidEmail(_ email: String) -> Bool {
+        let parts = email.split(separator: "@")
+        guard parts.count == 2,
+              !parts[0].isEmpty,
+              !parts[1].isEmpty else {
+            return false
+        }
+        let domain = String(parts[1])
+        // Domain must have at least one dot, not start/end with dot
+        guard domain.contains("."),
+              !domain.hasPrefix("."),
+              !domain.hasSuffix(".") else {
+            return false
+        }
+        return true
     }
 
     init(mode: ComposeMode) {

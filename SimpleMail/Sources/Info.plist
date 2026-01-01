@@ -82,6 +82,12 @@
 		<string>com.simplemail.app.notification</string>
 	</array>
 
+	<!-- OAuth Configuration (set via build settings for production) -->
+	<key>GOOGLE_CLIENT_ID</key>
+	<string>$(GOOGLE_CLIENT_ID)</string>
+	<key>GOOGLE_REDIRECT_URI</key>
+	<string>$(GOOGLE_REDIRECT_URI)</string>
+
 	<!-- Privacy Descriptions -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>SimpleMail uses Face ID to protect your email privacy.</string>

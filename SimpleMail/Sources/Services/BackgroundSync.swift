@@ -2,6 +2,9 @@ import Foundation
 import BackgroundTasks
 import UserNotifications
 import SwiftData
+import OSLog
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "BackgroundSync")
 
 // MARK: - Background Sync Manager
 
@@ -39,9 +42,9 @@ final class BackgroundSyncManager {
 
         do {
             try BGTaskScheduler.shared.submit(request)
-            print("[BackgroundSync] Scheduled sync task")
+            logger.info("Scheduled sync task")
         } catch {
-            print("[BackgroundSync] Failed to schedule sync: \(error)")
+            logger.error("Failed to schedule sync: \(error.localizedDescription)")
         }
     }
 
@@ -53,9 +56,9 @@ final class BackgroundSyncManager {
 
         do {
             try BGTaskScheduler.shared.submit(request)
-            print("[BackgroundSync] Scheduled notification check")
+            logger.info("Scheduled notification check")
         } catch {
-            print("[BackgroundSync] Failed to schedule notification check: \(error)")
+            logger.error("Failed to schedule notification check: \(error.localizedDescription)")
         }
     }
 
@@ -69,7 +72,7 @@ final class BackgroundSyncManager {
                 try await performSync()
                 task.setTaskCompleted(success: true)
             } catch {
-                print("[BackgroundSync] Sync failed: \(error)")
+                logger.error("Sync failed: \(error.localizedDescription)")
                 task.setTaskCompleted(success: false)
             }
         }
@@ -87,7 +90,7 @@ final class BackgroundSyncManager {
                 try await checkForNewEmails()
                 task.setTaskCompleted(success: true)
             } catch {
-                print("[BackgroundSync] Notification check failed: \(error)")
+                logger.error("Notification check failed: \(error.localizedDescription)")
                 task.setTaskCompleted(success: false)
             }
         }
@@ -112,7 +115,7 @@ final class BackgroundSyncManager {
             EmailCacheManager.shared.cacheEmails(emails)
         }
 
-        print("[BackgroundSync] Synced \(emails.count) emails to cache")
+        logger.info("Synced \(emails.count) emails to cache")
     }
 
     private func checkForNewEmails() async throws {
@@ -195,9 +198,9 @@ final class BackgroundSyncManager {
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            print("[BackgroundSync] Sent \(isVIP ? "VIP " : "")notification for: \(email.subject)")
+            logger.info("Sent \(isVIP ? "VIP " : "")notification for: \(email.subject)")
         } catch {
-            print("[BackgroundSync] Failed to send notification: \(error)")
+            logger.error("Failed to send notification: \(error.localizedDescription)")
         }
     }
 
@@ -216,7 +219,7 @@ final class BackgroundSyncManager {
 
             return granted
         } catch {
-            print("[BackgroundSync] Notification permission error: \(error)")
+            logger.error("Notification permission error: \(error.localizedDescription)")
             return false
         }
     }

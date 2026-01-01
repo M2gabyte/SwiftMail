@@ -1,4 +1,7 @@
 import SwiftUI
+import OSLog
+
+private let settingsLogger = Logger(subsystem: "com.simplemail.app", category: "Settings")
 
 // MARK: - Settings View
 
@@ -359,7 +362,7 @@ class SettingsViewModel: ObservableObject {
 
             HapticFeedback.success()
         } catch {
-            print("[Settings] Failed to sync Gmail settings: \(error)")
+            settingsLogger.error("Failed to sync Gmail settings: \(error.localizedDescription)")
             HapticFeedback.error()
         }
     }
@@ -979,7 +982,7 @@ class LabelsManagementViewModel: ObservableObject {
             systemLabels = labels.filter { $0.type == "system" }
             userLabels = labels.filter { $0.type == "user" }
         } catch {
-            print("[Labels] Failed to load: \(error)")
+            settingsLogger.error("Failed to load labels: \(error.localizedDescription)")
         }
     }
 

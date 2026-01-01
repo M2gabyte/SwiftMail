@@ -260,7 +260,9 @@ actor GmailService: GmailAPIProvider {
 
         let token = try await getAccessToken()
 
-        var components = URLComponents(string: "\(baseURL)/users/me/messages")!
+        guard var components = URLComponents(string: "\(baseURL)/users/me/messages") else {
+            throw GmailError.invalidURL
+        }
         var queryItems = [
             URLQueryItem(name: "maxResults", value: String(maxResults))
         ]
@@ -279,8 +281,12 @@ actor GmailService: GmailAPIProvider {
 
         components.queryItems = queryItems
 
+        guard let url = components.url else {
+            throw GmailError.invalidURL
+        }
+
         let listResponse: MessageListResponse = try await request(
-            url: components.url!,
+            url: url,
             token: token
         )
 
@@ -331,7 +337,9 @@ actor GmailService: GmailAPIProvider {
     }
 
     private func fetchSingleEmail(messageId: String, token: String) async throws -> Email? {
-        let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Id&metadataHeaders=Precedence&metadataHeaders=Auto-Submitted&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=In-Reply-To")!
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Id&metadataHeaders=Precedence&metadataHeaders=Auto-Submitted&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=In-Reply-To") else {
+            throw GmailError.invalidURL
+        }
 
         let message: MessageResponse = try await request(url: url, token: token)
         return parseEmail(from: message)
@@ -341,7 +349,9 @@ actor GmailService: GmailAPIProvider {
 
     func fetchEmailDetail(messageId: String) async throws -> EmailDetail {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)?format=full")!
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)?format=full") else {
+            throw GmailError.invalidURL
+        }
 
         let message: MessageResponse = try await request(url: url, token: token)
         var emailDetail = parseEmailDetail(from: message)
@@ -356,7 +366,9 @@ actor GmailService: GmailAPIProvider {
 
     func fetchThread(threadId: String) async throws -> [EmailDetail] {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/threads/\(threadId)?format=full")!
+        guard let url = URL(string: "\(baseURL)/users/me/threads/\(threadId)?format=full") else {
+            throw GmailError.invalidURL
+        }
 
         let thread: ThreadResponse = try await request(url: url, token: token)
 
@@ -496,7 +508,9 @@ actor GmailService: GmailAPIProvider {
 
     func fetchLabels() async throws -> [GmailLabel] {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/labels")!
+        guard let url = URL(string: "\(baseURL)/users/me/labels") else {
+            throw GmailError.invalidURL
+        }
 
         let response: LabelsResponse = try await request(url: url, token: token)
         return response.labels ?? []
@@ -530,7 +544,9 @@ actor GmailService: GmailAPIProvider {
 
     func trash(messageId: String) async throws {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/trash")!
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/trash") else {
+            throw GmailError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -546,7 +562,9 @@ actor GmailService: GmailAPIProvider {
 
     func untrash(messageId: String) async throws {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/untrash")!
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/untrash") else {
+            throw GmailError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -562,7 +580,9 @@ actor GmailService: GmailAPIProvider {
 
     func permanentlyDelete(messageId: String) async throws {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)")!
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)") else {
+            throw GmailError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
@@ -598,7 +618,9 @@ actor GmailService: GmailAPIProvider {
         removeLabels: [String] = []
     ) async throws {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/modify")!
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/modify") else {
+            throw GmailError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -635,7 +657,9 @@ actor GmailService: GmailAPIProvider {
         logger.info("Sending email to \(to.count) recipients")
 
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/messages/send")!
+        guard let url = URL(string: "\(baseURL)/users/me/messages/send") else {
+            throw GmailError.invalidURL
+        }
 
         // Use the type-safe MIME builder
         let mimeMessage = MIMEMessage(
@@ -699,10 +723,16 @@ actor GmailService: GmailAPIProvider {
         let method: String
 
         if let draftId = existingDraftId {
-            url = URL(string: "\(baseURL)/users/me/drafts/\(draftId)")!
+            guard let draftUrl = URL(string: "\(baseURL)/users/me/drafts/\(draftId)") else {
+                throw GmailError.invalidURL
+            }
+            url = draftUrl
             method = "PUT"
         } else {
-            url = URL(string: "\(baseURL)/users/me/drafts")!
+            guard let draftsUrl = URL(string: "\(baseURL)/users/me/drafts") else {
+                throw GmailError.invalidURL
+            }
+            url = draftsUrl
             method = "POST"
         }
 
@@ -732,7 +762,9 @@ actor GmailService: GmailAPIProvider {
 
     func fetchDrafts() async throws -> [Draft] {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/drafts")!
+        guard let url = URL(string: "\(baseURL)/users/me/drafts") else {
+            throw GmailError.invalidURL
+        }
 
         let response: DraftsListResponse = try await request(url: url, token: token)
         return response.drafts ?? []
@@ -740,7 +772,9 @@ actor GmailService: GmailAPIProvider {
 
     func deleteDraft(draftId: String) async throws {
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/drafts/\(draftId)")!
+        guard let url = URL(string: "\(baseURL)/users/me/drafts/\(draftId)") else {
+            throw GmailError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
@@ -760,7 +794,9 @@ actor GmailService: GmailAPIProvider {
         logger.info("Fetching attachment \(attachmentId) from message \(messageId)")
 
         let token = try await getAccessToken()
-        let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/attachments/\(attachmentId)")!
+        guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)/attachments/\(attachmentId)") else {
+            throw GmailError.invalidURL
+        }
 
         let response: AttachmentResponse = try await request(url: url, token: token)
 
@@ -777,7 +813,9 @@ actor GmailService: GmailAPIProvider {
 
     func getHistory(startHistoryId: String) async throws -> HistoryResponse {
         let token = try await getAccessToken()
-        var components = URLComponents(string: "\(baseURL)/users/me/history")!
+        guard var components = URLComponents(string: "\(baseURL)/users/me/history") else {
+            throw GmailError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "startHistoryId", value: startHistoryId),
             URLQueryItem(name: "historyTypes", value: "messageAdded"),
@@ -786,7 +824,11 @@ actor GmailService: GmailAPIProvider {
             URLQueryItem(name: "historyTypes", value: "labelRemoved")
         ]
 
-        return try await request(url: components.url!, token: token)
+        guard let url = components.url else {
+            throw GmailError.invalidURL
+        }
+
+        return try await request(url: url, token: token)
     }
 
     // MARK: - Request Helper
@@ -997,7 +1039,7 @@ actor GmailService: GmailAPIProvider {
                 return true
             }
             if let subparts = part.parts {
-                return subparts.contains { $0.filename != nil && !$0.filename!.isEmpty }
+                return subparts.contains { $0.filename?.isEmpty == false }
             }
             return false
         }
@@ -1072,6 +1114,7 @@ actor GmailService: GmailAPIProvider {
 enum GmailError: LocalizedError {
     case notAuthenticated
     case invalidResponse
+    case invalidURL
     case rateLimited
     case notFound
     case serverError(Int)
@@ -1082,6 +1125,7 @@ enum GmailError: LocalizedError {
         switch self {
         case .notAuthenticated: return "Please sign in to continue"
         case .invalidResponse: return "Invalid response from server"
+        case .invalidURL: return "Invalid URL configuration"
         case .rateLimited: return "Too many requests. Please wait a moment."
         case .notFound: return "Email not found"
         case .serverError(let code): return "Server error (\(code))"
