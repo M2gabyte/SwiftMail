@@ -16,12 +16,23 @@ struct BottomSearchPill: View {
                 .submitLabel(.search)
                 .focused($focused)
 
-            Button(action: {}) {
-                Image(systemName: "mic")
-                    .font(.system(size: 16, weight: .regular))
+            if text.isEmpty {
+                Button(action: {}) {
+                    Image(systemName: "mic")
+                        .font(.system(size: 16, weight: .regular))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            } else {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .regular))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
