@@ -133,6 +133,25 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 - Don't commit `.xcuserstate` files (user-specific Xcode state)
 - Don't commit `.build/` directories
 
+## Design Rules
+
+**Use only native SwiftUI primitives.** Do not add:
+- Overlays
+- ZStacks for floating buttons
+- Custom bottom bars
+- Separate Search screens
+
+### Inbox View Structure
+The Inbox must be a single `List` with:
+- **Scrollable header row** - Inside the List, not floating
+- **`.searchable`** - Native search, not a custom screen
+- **`.toolbarTitleMenu`** - For title menu options
+- **`.toolbar`** with:
+  - `.topBarTrailing` - Settings gear icon
+  - `ToolbarItemGroup(.bottomBar)` - Search focus + compose buttons
+
+This keeps the UI native, accessible, and consistent with iOS conventions.
+
 ## Code Style
 
 ### SwiftUI Views
