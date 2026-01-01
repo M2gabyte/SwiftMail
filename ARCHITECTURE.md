@@ -67,7 +67,8 @@ SimpleMail/
 │   │
 │   ├── Utils/
 │   │   ├── JSONCoding.swift         # Shared JSON encoders/decoders
-│   │   └── Color+Hex.swift          # Hex string to Color utilities
+│   │   ├── Color+Hex.swift          # Hex string to Color utilities
+│   │   └── EmailFilters.swift       # Email classification (human/bulk detection)
 │   │
 │   ├── Resources/
 │   │   └── brand_registry.json      # Domain registry data
@@ -258,7 +259,7 @@ struct InboxView: View {
 **Filtering Pipeline:**
 ```
 emails
-  → applyFilters(scope: all/people)
+  → applyFilters(scope: all/people)    # People uses EmailFilters.filterForPeopleScope()
   → applyFilters(filter: unread/needsReply/etc)
   → groupEmailsByDate(today/yesterday/thisWeek/earlier)
   → display as sections
@@ -474,7 +475,57 @@ https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,S
 - Overlays contact photo (highest priority).
 - On logo failure, marks domain as failed and re-resolves to drop the logo.
 
-### 10. Theme Manager (SimpleMailApp.swift)
+### 10. Email Filters (EmailFilters.swift)
+
+**Pure Functions for Email Classification:**
+```swift
+enum EmailFilters {
+    /// Detects if sender looks like a real person
+    static func looksLikeHumanSender(_ email: Email) -> Bool
+
+    /// Detects if email is bulk/newsletter/automated
+    static func isBulk(_ email: Email) -> Bool
+
+    /// Filters emails to only show those from real people
+    static func filterForPeopleScope(_ emails: [Email]) -> [Email]
+}
+```
+
+**looksLikeHumanSender() Detection:**
+| Signal | Type | Examples |
+|--------|------|----------|
+| No-reply patterns | Negative | noreply@, notifications@, alerts@ |
+| Brand sender names | Negative | "LinkedIn Team", "Uber" |
+| "via" patterns | Negative | "John via Calendly" |
+| Personal domains | Positive | gmail.com, icloud.com, outlook.com |
+| First+Last name | Positive | "Chelsea Hart" (2-4 words) |
+| Single-word names | Negative | "Experian", "Bloomberg" |
+
+**isBulk() Detection:**
+| Signal | Source | Examples |
+|--------|--------|----------|
+| Gmail categories | Labels | CATEGORY_PROMOTIONS, CATEGORY_SOCIAL |
+| List headers | Headers | List-Unsubscribe, List-ID |
+| Precedence header | Headers | bulk, list, junk |
+| Auto-Submitted | Headers | anything except "no" |
+| Marketing domains | Email | mailchimp.com, sendgrid.net |
+| Brand sender patterns | Name | "The X Team", "X.com" |
+
+**filterForPeopleScope() Logic:**
+```
+Keep email if:
+  (looksLikeHumanSender(email) AND !isBulk(email))
+  OR email.labelIds.contains("SENT")  // Conversation evidence
+```
+
+**Usage in InboxViewModel:**
+```swift
+if scope == .people {
+    filtered = EmailFilters.filterForPeopleScope(filtered)
+}
+```
+
+### 11. Theme Manager (SimpleMailApp.swift)
 
 **Appearance Settings:**
 ```swift
@@ -503,7 +554,7 @@ enum AppTheme: String, Codable {
 - Applied via `.preferredColorScheme()` on root view
 - Immediate UI update on change
 
-### 11. Biometric Authentication (SimpleMailApp.swift)
+### 12. Biometric Authentication (SimpleMailApp.swift)
 
 **Face ID / Touch ID Lock:**
 ```swift
@@ -893,9 +944,16 @@ actor GmailService {
 ---
 
 *Last updated: December 2025*
-*Architecture version: 1.8*
+*Architecture version: 1.9*
 
 **Changelog:**
+- v1.9:
+  - Added EmailFilters utility for People scope filtering (ported from React briefingEngine)
+  - looksLikeHumanSender(): Detects real people vs automated senders
+  - isBulk(): Detects newsletters/marketing/automated emails using Gmail categories, headers, domains
+  - filterForPeopleScope(): Combines both + keeps conversation threads (SENT label)
+  - InboxViewModel now uses EmailFilters.filterForPeopleScope() for People tab
+  - Replaces simplified inline check with sophisticated detection matching React implementation
 - v1.8:
   - Added Config directory with Config.swift (OAuth from Info.plist) and TimeoutConfig.swift (centralized timeouts)
   - Fixed KeychainServiceSync to use NSLock for proper thread-safe synchronous access
