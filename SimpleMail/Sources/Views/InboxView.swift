@@ -215,9 +215,6 @@ struct InboxView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            Color.clear.frame(height: 44)
-        }
         .navigationDestination(isPresented: $viewModel.showingEmailDetail) {
             if let email = viewModel.selectedEmail {
                 EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)

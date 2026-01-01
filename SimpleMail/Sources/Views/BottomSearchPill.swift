@@ -33,6 +33,14 @@ struct BottomSearchPill: View {
 }
 
 #Preview {
-    BottomSearchPill(text: .constant(""), focused: FocusState<Bool>().projectedValue)
-        .padding()
+    struct PreviewWrapper: View {
+        @State private var text = ""
+        @FocusState private var focused: Bool
+
+        var body: some View {
+            BottomSearchPill(text: $text, focused: $focused)
+                .padding()
+        }
+    }
+    return PreviewWrapper()
 }
