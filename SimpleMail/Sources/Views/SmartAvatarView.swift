@@ -2,9 +2,9 @@ import SwiftUI
 
 // MARK: - Smart Avatar View
 
-/// Avatar with intelligent fallback chain:
+/// Avatar with intelligent fallback chain matching React Native implementation:
 /// 1. Contact Photo (from Google People API) - highest priority
-/// 2. Brand Logo (for business domains)
+/// 2. Brand Logo (for business domains) with white background
 /// 3. Initials + Deterministic Color (fallback)
 struct SmartAvatarView: View {
     let email: String
@@ -12,148 +12,141 @@ struct SmartAvatarView: View {
     var size: CGFloat = 40
 
     @State private var contactPhotoURL: URL?
-    @State private var brandLogoFailed = false
-    @State private var showBrandLogo = false
+    @State private var brandLogoError = false
+
+    private var brandDomain: String? {
+        BrandAssets.getBrandDomain(from: "\(name) <\(email)>")
+    }
 
     var body: some View {
         ZStack {
             // Layer 1: Colored circle with initials (always present as base)
-            InitialsAvatarView(
-                name: name,
-                email: email,
-                size: size
-            )
+            initialsView
 
-            // Layer 2: Brand logo (if business domain and loaded successfully)
-            if showBrandLogo && !brandLogoFailed, let brandURL = brandLogoURL {
-                // White background circle to handle transparent favicons
-                Circle()
-                    .fill(.white)
-                    .frame(width: size, height: size)
-
-                AsyncImage(url: brandURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(Circle())
-                            .frame(width: size, height: size)
-                    case .failure:
-                        Color.clear
-                            .onAppear {
-                                brandLogoFailed = true
-                            }
-                    case .empty:
-                        // Loading - show nothing, initials visible underneath
-                        Color.clear
-                    @unknown default:
-                        Color.clear
-                    }
-                }
-                .frame(width: size, height: size)
+            // Layer 2: Brand logo (for business emails)
+            if let domain = brandDomain, !brandLogoError {
+                brandLogoView(for: domain)
             }
 
-            // Layer 3: Contact photo (highest priority, overlays everything)
+            // Layer 3: Contact photo (highest priority)
             if let photoURL = contactPhotoURL {
                 AsyncImage(url: photoURL) { phase in
-                    switch phase {
-                    case .success(let image):
+                    if case .success(let image) = phase {
                         image
                             .resizable()
                             .scaledToFill()
                             .frame(width: size, height: size)
                             .clipShape(Circle())
-                    case .failure, .empty:
-                        Color.clear
-                    @unknown default:
-                        Color.clear
                     }
                 }
-                .frame(width: size, height: size)
             }
         }
         .frame(width: size, height: size)
-        .onAppear {
-            // Determine if we should try to load brand logo
-            showBrandLogo = !isPersonalDomain && !domain.isEmpty
-        }
         .task {
             await loadContactPhoto()
         }
     }
 
+    // MARK: - Initials View
+
+    private var initialsView: some View {
+        ZStack {
+            Circle()
+                .fill(brandDomain != nil ? BrandAssets.getBrandColor(brandDomain!) ?? backgroundColor : backgroundColor)
+
+            Text(initials)
+                .font(.system(size: size * 0.4, weight: .semibold))
+                .foregroundColor(.white)
+        }
+    }
+
+    // MARK: - Brand Logo View
+
+    @ViewBuilder
+    private func brandLogoView(for domain: String) -> some View {
+        let logoURL = BrandAssets.getBrandLogoUrl(domain)
+
+        // White background circle
+        Circle()
+            .fill(.white)
+            .frame(width: size, height: size)
+
+        AsyncImage(url: logoURL) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size * 0.75, height: size * 0.75)
+            case .failure:
+                Color.clear
+                    .onAppear { brandLogoError = true }
+            case .empty:
+                // Loading - white circle shows, which is fine
+                EmptyView()
+            @unknown default:
+                EmptyView()
+            }
+        }
+    }
+
     // MARK: - Computed Properties
 
-    private var domain: String {
-        guard let atIndex = email.lastIndex(of: "@") else { return "" }
-        return String(email[email.index(after: atIndex)...]).lowercased()
+    private var initials: String {
+        let words = name.split(separator: " ")
+        if words.count >= 2 {
+            return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
+        }
+        // Match React: single letter for single names
+        if !name.isEmpty {
+            return String(name.prefix(1)).uppercased()
+        }
+        if let atIndex = email.firstIndex(of: "@") {
+            return String(email[..<atIndex].prefix(1)).uppercased()
+        }
+        return "?"
     }
 
-    private var isPersonalDomain: Bool {
-        let personalDomains: Set<String> = [
-            "gmail.com", "googlemail.com",
-            "outlook.com", "hotmail.com", "live.com", "msn.com",
-            "yahoo.com", "ymail.com",
-            "icloud.com", "me.com", "mac.com",
-            "aol.com",
-            "protonmail.com", "proton.me",
-            "zoho.com",
-            "fastmail.com",
-            "hey.com",
-            "tutanota.com", "tutamail.com"
-        ]
-        return personalDomains.contains(domain)
-    }
+    /// Avatar colors - exact match to React's AVATAR_COLORS array
+    private static let avatarColors: [Color] = [
+        Color(hex: "#1a73e8")!,  // Blue
+        Color(hex: "#ea4335")!,  // Red
+        Color(hex: "#34a853")!,  // Green
+        Color(hex: "#fbbc04")!,  // Yellow
+        Color(hex: "#673ab7")!,  // Deep Purple
+        Color(hex: "#e91e63")!,  // Pink
+        Color(hex: "#00acc1")!,  // Cyan
+        Color(hex: "#ff5722")!,  // Deep Orange
+        Color(hex: "#607d8b")!,  // Blue Grey
+        Color(hex: "#795548")!,  // Brown
+    ]
 
-    private var brandLogoURL: URL? {
-        guard !domain.isEmpty else { return nil }
-        // Use domain aliases if available
-        let effectiveDomain = domainAliases[domain] ?? domain
-        return URL(string: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://\(effectiveDomain)&size=128")
-    }
-
-    // Common domain aliases for better brand recognition
-    private var domainAliases: [String: String] {
-        [
-            "vzw.com": "verizon.com",
-            "vtext.com": "verizon.com",
-            "bloomberglp.com": "bloomberg.com",
-            "e.flyspirit.com": "spirit.com",
-            "mail.capitalone.com": "capitalone.com",
-            "email.capitalone.com": "capitalone.com",
-            "alerts.chase.com": "chase.com",
-            "chaseonline.com": "chase.com",
-            "em.bankofamerica.com": "bankofamerica.com",
-            "ealerts.bankofamerica.com": "bankofamerica.com",
-            "email.americanexpress.com": "americanexpress.com",
-            "welcome.aexp.com": "americanexpress.com",
-            "alerts.comcast.net": "xfinity.com",
-            "comcast.net": "xfinity.com",
-            "facebookmail.com": "facebook.com",
-            "mail.instagram.com": "instagram.com",
-            "email.uber.com": "uber.com",
-            "em.lyft.com": "lyft.com",
-            "mail.doordash.com": "doordash.com",
-            "email.grubhub.com": "grubhub.com"
-        ]
+    private var backgroundColor: Color {
+        // Match React's hash algorithm exactly:
+        // let hash = 0;
+        // for (let i = 0; i < email.length; i++) {
+        //   hash = email.charCodeAt(i) + ((hash << 5) - hash);
+        // }
+        var hash: Int32 = 0
+        for char in email.utf8 {
+            hash = Int32(char) &+ ((hash << 5) &- hash)
+        }
+        let index = abs(Int(hash)) % Self.avatarColors.count
+        return Self.avatarColors[index]
     }
 
     // MARK: - Load Contact Photo
 
     private func loadContactPhoto() async {
-        // Check cache first
         if let cached = await AvatarService.shared.getCachedPhoto(for: email) {
             contactPhotoURL = cached
             return
         }
 
-        // Check if already cached (even if nil)
         if await AvatarService.shared.hasPhotoCache(for: email) {
             return
         }
 
-        // Look up in People service
         if let photoURL = await PeopleService.shared.getPhotoURL(for: email) {
             await AvatarService.shared.cachePhoto(email: email, url: photoURL)
             contactPhotoURL = photoURL
@@ -163,80 +156,169 @@ struct SmartAvatarView: View {
     }
 }
 
-// MARK: - Initials Avatar View
+// MARK: - Brand Assets (ported from React Native)
 
-/// Simple initials avatar with deterministic background color
-struct InitialsAvatarView: View {
-    let name: String
-    let email: String
-    var size: CGFloat = 40
-
-    private let colors: [Color] = [
-        Color(red: 0.2, green: 0.5, blue: 0.9),   // Blue
-        Color(red: 0.2, green: 0.7, blue: 0.4),   // Green
-        Color(red: 0.95, green: 0.5, blue: 0.2),  // Orange
-        Color(red: 0.6, green: 0.3, blue: 0.8),   // Purple
-        Color(red: 0.9, green: 0.3, blue: 0.5),   // Pink
-        Color(red: 0.2, green: 0.6, blue: 0.6),   // Teal
-        Color(red: 0.3, green: 0.3, blue: 0.7),   // Indigo
-        Color(red: 0.2, green: 0.7, blue: 0.8)    // Cyan
+enum BrandAssets {
+    // Direct logo URLs for brands with poor Google favicons
+    private static let logoOverrides: [String: String] = [
+        "capitalone.com": "https://www.capitalone.com/apple-touch-icon.png",
+        "sofi.com": "https://d1kag2khia5c8r.cloudfront.net/apple-touch-icon.png",
+        "vanguard.com": "https://www.vanguard.com/apple-touch-icon.png",
+        "southwest.com": "https://www.southwest.com/apple-touch-icon.png",
+        "spirit.com": "https://www.spirit.com/apple-touch-icon.png",
     ]
 
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(backgroundColor)
+    // Map alternate sending domains to their parent brand
+    private static let domainAliases: [String: String] = [
+        // Verizon
+        "vzw.com": "verizon.com",
+        "vtext.com": "verizon.com",
+        "verizonwireless.com": "verizon.com",
+        // Bloomberg
+        "bloomberglp.com": "bloomberg.com",
+        "bloom.bg": "bloomberg.com",
+        // Capital One
+        "capitalone-email.com": "capitalone.com",
+        "cofemail.com": "capitalone.com",
+        // Chase
+        "chase-email.com": "chase.com",
+        "jpmorgan.com": "chase.com",
+        // Amazon
+        "amazonses.com": "amazon.com",
+        // Google
+        "youtube.com": "google.com",
+        "googlemail.com": "google.com",
+        // Meta
+        "facebookmail.com": "facebook.com",
+        "fb.com": "facebook.com",
+        "instagrammail.com": "instagram.com",
+        // Microsoft
+        "microsoftonline.com": "microsoft.com",
+        "office365.com": "microsoft.com",
+        // Apple
+        "apple.news": "apple.com",
+        // PayPal
+        "paypal.de": "paypal.com",
+        // LinkedIn
+        "linkedin-email.com": "linkedin.com",
+        "e.linkedin.com": "linkedin.com",
+        // Airlines
+        "email.aa.com": "aa.com",
+        "americanairlines.com": "aa.com",
+        "email.spirit.com": "spirit.com",
+        // WSJ
+        "dowjones.com": "wsj.com",
+    ]
 
-            Text(initials)
-                .font(.system(size: size * 0.4, weight: .semibold))
-                .foregroundStyle(.white)
+    // Brand colors for background while loading
+    private static let brandColors: [String: Color] = [
+        "airbnb.com": Color(hex: "#FF5A5F")!,
+        "amazon.com": Color(hex: "#FF9900")!,
+        "apple.com": Color(hex: "#000000")!,
+        "bloomberg.com": Color(hex: "#000000")!,
+        "google.com": Color(hex: "#4285F4")!,
+        "github.com": Color(hex: "#24292E")!,
+        "netflix.com": Color(hex: "#E50914")!,
+        "spotify.com": Color(hex: "#1DB954")!,
+        "linkedin.com": Color(hex: "#0A66C2")!,
+        "slack.com": Color(hex: "#4A154B")!,
+        "twitter.com": Color(hex: "#000000")!,
+        "x.com": Color(hex: "#000000")!,
+        "stripe.com": Color(hex: "#635BFF")!,
+        "uber.com": Color(hex: "#000000")!,
+        "facebook.com": Color(hex: "#1877F2")!,
+        "instagram.com": Color(hex: "#E4405F")!,
+        "microsoft.com": Color(hex: "#00A4EF")!,
+        "verizon.com": Color(hex: "#CD040B")!,
+        "chase.com": Color(hex: "#117ACA")!,
+        "paypal.com": Color(hex: "#003087")!,
+        "aa.com": Color(hex: "#0078D2")!,
+        "delta.com": Color(hex: "#DA291C")!,
+        "united.com": Color(hex: "#005DAA")!,
+        "southwest.com": Color(hex: "#304CB2")!,
+        "spirit.com": Color(hex: "#FFEC00")!,
+        "wsj.com": Color(hex: "#000000")!,
+    ]
+
+    // Personal email domains (no brand logo)
+    private static let personalDomains: Set<String> = [
+        "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+        "aol.com", "icloud.com", "me.com", "mac.com",
+        "protonmail.com", "proton.me", "fastmail.com",
+        "live.com", "msn.com", "ymail.com",
+    ]
+
+    /// Extract domain from "Name <email>" format
+    static func getBrandDomain(from: String) -> String? {
+        // Extract email from angle brackets if present
+        let email: String
+        if let match = from.range(of: "<([^>]+)>", options: .regularExpression) {
+            email = String(from[match]).replacingOccurrences(of: "<", with: "").replacingOccurrences(of: ">", with: "")
+        } else if from.contains("@") {
+            email = from
+        } else {
+            return nil
         }
-        .frame(width: size, height: size)
+
+        // Get domain part
+        guard let atIndex = email.lastIndex(of: "@") else { return nil }
+        var domain = String(email[email.index(after: atIndex)...]).lowercased()
+
+        // Check aliases first
+        if let aliased = domainAliases[domain] {
+            domain = aliased
+        }
+
+        // Extract root domain (e.g., mail.google.com -> google.com)
+        let parts = domain.split(separator: ".")
+        if parts.count >= 2 {
+            domain = parts.suffix(2).joined(separator: ".")
+        }
+
+        // Apply aliases again for root domain
+        if let aliased = domainAliases[domain] {
+            domain = aliased
+        }
+
+        // Skip personal email domains
+        if personalDomains.contains(domain) {
+            return nil
+        }
+
+        return domain
     }
 
-    private var initials: String {
-        // Try to get initials from name
-        let words = name.split(separator: " ")
-        if words.count >= 2 {
-            return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
+    /// Get logo URL for domain
+    static func getBrandLogoUrl(_ domain: String) -> URL? {
+        // Check for override
+        if let override = logoOverrides[domain] {
+            return URL(string: override)
         }
-        if !name.isEmpty {
-            return String(name.prefix(2)).uppercased()
-        }
-
-        // Fall back to email
-        if let atIndex = email.firstIndex(of: "@") {
-            return String(email[..<atIndex].prefix(2)).uppercased()
-        }
-        return "?"
+        // Use Google's favicon service
+        return URL(string: "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://\(domain)&size=256")
     }
 
-    private var backgroundColor: Color {
-        // Use a stable hash based on email
-        var hash = 0
-        for char in email.lowercased() {
-            hash = 31 &* hash &+ Int(char.asciiValue ?? 0)
-        }
-        let index = abs(hash) % colors.count
-        return colors[index]
+    /// Get brand color for loading state
+    static func getBrandColor(_ domain: String) -> Color? {
+        return brandColors[domain]
     }
 }
+
+// Note: Color.init(hex:) is defined in SettingsView.swift
 
 // MARK: - Preview
 
 #Preview {
-    VStack(spacing: 20) {
-        // Personal email - should show initials only
-        SmartAvatarView(email: "john.doe@gmail.com", name: "John Doe", size: 60)
-
-        // Business email - should show brand logo
-        SmartAvatarView(email: "support@apple.com", name: "Apple Support", size: 60)
-
-        // LinkedIn
-        SmartAvatarView(email: "jobs@linkedin.com", name: "LinkedIn", size: 60)
-
-        // Unknown domain - should show initials
-        SmartAvatarView(email: "someone@randomdomain.xyz", name: "Someone", size: 60)
+    VStack(spacing: 16) {
+        HStack(spacing: 16) {
+            SmartAvatarView(email: "john@gmail.com", name: "John Doe", size: 50)
+            SmartAvatarView(email: "jane@outlook.com", name: "Jane Smith", size: 50)
+        }
+        HStack(spacing: 16) {
+            SmartAvatarView(email: "support@apple.com", name: "Apple", size: 50)
+            SmartAvatarView(email: "jobs@linkedin.com", name: "LinkedIn", size: 50)
+            SmartAvatarView(email: "news@bloomberg.com", name: "Bloomberg", size: 50)
+        }
     }
     .padding()
 }
