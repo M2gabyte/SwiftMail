@@ -208,12 +208,9 @@ struct MIMEMessage: Sendable {
 // MARK: - Gmail API Protocol (for testability)
 
 /// Protocol for Gmail API operations - enables mocking for unit tests
-/// Note: SwiftData @Model types are not Sendable, so we use @preconcurrency
-/// to suppress warnings until full migration to DTOs
-@preconcurrency
 protocol GmailAPIProvider {
-    func fetchInbox(query: String?, maxResults: Int, pageToken: String?, labelIds: [String]) async throws -> (emails: [Email], nextPageToken: String?)
-    func fetchThread(threadId: String) async throws -> [EmailDetail]
+    func fetchInbox(query: String?, maxResults: Int, pageToken: String?, labelIds: [String]) async throws -> (emails: [EmailDTO], nextPageToken: String?)
+    func fetchThread(threadId: String) async throws -> [EmailDetailDTO]
     func sendEmail(to: [String], cc: [String], bcc: [String], subject: String, body: String, bodyHtml: String?, inReplyTo: String?, references: String?, threadId: String?) async throws -> String
     func archive(messageId: String) async throws
     func markAsRead(messageId: String) async throws
@@ -221,7 +218,7 @@ protocol GmailAPIProvider {
     func star(messageId: String) async throws
     func unstar(messageId: String) async throws
     func trash(messageId: String) async throws
-    func search(query: String, maxResults: Int) async throws -> [Email]
+    func search(query: String, maxResults: Int) async throws -> [EmailDTO]
 }
 
 // MARK: - Gmail Service Logger
@@ -255,10 +252,16 @@ actor GmailService: GmailAPIProvider {
         maxResults: Int = 50,
         pageToken: String? = nil,
         labelIds: [String] = ["INBOX"]
-    ) async throws -> (emails: [Email], nextPageToken: String?) {
+    ) async throws -> (emails: [EmailDTO], nextPageToken: String?) {
         logger.info("Fetching inbox: labels=\(labelIds), max=\(maxResults), page=\(pageToken ?? "first")")
 
-        let token = try await getAccessToken()
+        // Get current account for scoping
+        guard let account = await AuthService.shared.currentAccount else {
+            throw GmailError.notAuthenticated
+        }
+        let accountEmail = account.email
+        let refreshedAccount = try await AuthService.shared.refreshTokenIfNeeded(for: account)
+        let token = refreshedAccount.accessToken
 
         guard var components = URLComponents(string: "\(baseURL)/users/me/messages") else {
             throw GmailError.invalidURL
@@ -298,7 +301,8 @@ actor GmailService: GmailAPIProvider {
         // Fetch details in batches
         let emails = try await fetchEmailDetails(
             messageIds: messageRefs.map(\.id),
-            token: token
+            token: token,
+            accountEmail: accountEmail
         )
 
         logger.info("Fetched \(emails.count) emails, hasMore=\(listResponse.nextPageToken != nil)")
@@ -306,25 +310,39 @@ actor GmailService: GmailAPIProvider {
     }
 
     // MARK: - Fetch Email Details (Batched)
+    // Handles per-message errors gracefully - one failing message won't cancel the batch
 
-    private func fetchEmailDetails(messageIds: [String], token: String) async throws -> [Email] {
-        var emails: [Email] = []
+    private func fetchEmailDetails(messageIds: [String], token: String, accountEmail: String) async throws -> [EmailDTO] {
+        var emails: [EmailDTO] = []
 
         for batchStart in stride(from: 0, to: messageIds.count, by: batchSize) {
             let batchEnd = min(batchStart + batchSize, messageIds.count)
             let batch = Array(messageIds[batchStart..<batchEnd])
 
-            let batchResults = try await withThrowingTaskGroup(of: Email?.self) { group in
+            // Use TaskGroup with Result to handle per-message errors gracefully
+            let batchResults = await withTaskGroup(of: Result<EmailDTO, Error>.self) { group in
                 for messageId in batch {
                     group.addTask {
-                        try await self.fetchSingleEmail(messageId: messageId, token: token)
+                        do {
+                            if let email = try await self.fetchSingleEmail(messageId: messageId, token: token, accountEmail: accountEmail) {
+                                return .success(email)
+                            } else {
+                                return .failure(GmailError.notFound)
+                            }
+                        } catch {
+                            return .failure(error)
+                        }
                     }
                 }
 
-                var results: [Email] = []
-                for try await email in group {
-                    if let email = email {
+                var results: [EmailDTO] = []
+                for await result in group {
+                    switch result {
+                    case .success(let email):
                         results.append(email)
+                    case .failure(let error):
+                        // Log but don't fail the entire batch
+                        logger.warning("Failed to fetch single email: \(error.localizedDescription)")
                     }
                 }
                 return results
@@ -336,18 +354,18 @@ actor GmailService: GmailAPIProvider {
         return emails.sorted { $0.date > $1.date }
     }
 
-    private func fetchSingleEmail(messageId: String, token: String) async throws -> Email? {
+    private func fetchSingleEmail(messageId: String, token: String, accountEmail: String) async throws -> EmailDTO? {
         guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Id&metadataHeaders=Precedence&metadataHeaders=Auto-Submitted&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=In-Reply-To") else {
             throw GmailError.invalidURL
         }
 
         let message: MessageResponse = try await request(url: url, token: token)
-        return parseEmail(from: message)
+        return parseEmail(from: message, accountEmail: accountEmail)
     }
 
     // MARK: - Fetch Full Email (with body)
 
-    func fetchEmailDetail(messageId: String) async throws -> EmailDetail {
+    func fetchEmailDetail(messageId: String) async throws -> EmailDetailDTO {
         let token = try await getAccessToken()
         guard let url = URL(string: "\(baseURL)/users/me/messages/\(messageId)?format=full") else {
             throw GmailError.invalidURL
@@ -364,7 +382,7 @@ actor GmailService: GmailAPIProvider {
 
     // MARK: - Fetch Thread
 
-    func fetchThread(threadId: String) async throws -> [EmailDetail] {
+    func fetchThread(threadId: String) async throws -> [EmailDetailDTO] {
         let token = try await getAccessToken()
         guard let url = URL(string: "\(baseURL)/users/me/threads/\(threadId)?format=full") else {
             throw GmailError.invalidURL
@@ -375,7 +393,7 @@ actor GmailService: GmailAPIProvider {
         guard let messages = thread.messages else { return [] }
 
         // Parse all messages and fetch body attachments if needed
-        var emailDetails: [EmailDetail] = []
+        var emailDetails: [EmailDetailDTO] = []
         for message in messages {
             var emailDetail = parseEmailDetail(from: message)
             emailDetail = try await fetchBodyAttachmentIfNeeded(for: emailDetail, from: message, token: token)
@@ -389,10 +407,10 @@ actor GmailService: GmailAPIProvider {
 
     /// Fetches body content if it's stored as an attachment rather than inline
     private func fetchBodyAttachmentIfNeeded(
-        for emailDetail: EmailDetail,
+        for emailDetail: EmailDetailDTO,
         from message: MessageResponse,
         token: String
-    ) async throws -> EmailDetail {
+    ) async throws -> EmailDetailDTO {
         // If body is already populated with non-whitespace content, no need to fetch
         let trimmedBody = emailDetail.body.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedBody.isEmpty {
@@ -425,7 +443,7 @@ actor GmailService: GmailAPIProvider {
         }
 
         // Create updated EmailDetail with the fetched body
-        return EmailDetail(
+        return EmailDetailDTO(
             id: emailDetail.id,
             threadId: emailDetail.threadId,
             snippet: emailDetail.snippet,
@@ -495,7 +513,7 @@ actor GmailService: GmailAPIProvider {
 
     // MARK: - Search
 
-    func search(query: String, maxResults: Int = 50) async throws -> [Email] {
+    func search(query: String, maxResults: Int = 50) async throws -> [EmailDTO] {
         let (emails, _) = try await fetchInbox(
             query: query,
             maxResults: maxResults,
@@ -870,7 +888,7 @@ actor GmailService: GmailAPIProvider {
 
     // MARK: - Parsing (nonisolated - no actor state access)
 
-    private nonisolated func parseEmail(from message: MessageResponse) -> Email {
+    private nonisolated func parseEmail(from message: MessageResponse, accountEmail: String) -> EmailDTO {
         var from = ""
         var subject = ""
         var listUnsubscribe: String?
@@ -904,7 +922,7 @@ actor GmailService: GmailAPIProvider {
             }
         }
 
-        let email = Email(
+        let email = EmailDTO(
             id: message.id,
             threadId: message.threadId,
             snippet: decodeHTMLEntities(message.snippet ?? ""),
@@ -914,18 +932,19 @@ actor GmailService: GmailAPIProvider {
             isUnread: message.labelIds?.contains("UNREAD") ?? false,
             isStarred: message.labelIds?.contains("STARRED") ?? false,
             hasAttachments: hasAttachments(message.payload),
-            labelIds: message.labelIds ?? []
+            labelIds: message.labelIds ?? [],
+            messagesCount: 1,
+            accountEmail: accountEmail,
+            listUnsubscribe: listUnsubscribe,
+            listId: listId,
+            precedence: precedence,
+            autoSubmitted: autoSubmitted
         )
-
-        email.listUnsubscribe = listUnsubscribe
-        email.listId = listId
-        email.precedence = precedence
-        email.autoSubmitted = autoSubmitted
 
         return email
     }
 
-    private nonisolated func parseEmailDetail(from message: MessageResponse) -> EmailDetail {
+    private nonisolated func parseEmailDetail(from message: MessageResponse) -> EmailDetailDTO {
         var from = ""
         var to: [String] = []
         var cc: [String] = []
@@ -958,7 +977,7 @@ actor GmailService: GmailAPIProvider {
 
         let body = extractBody(from: message.payload)
 
-        return EmailDetail(
+        return EmailDetailDTO(
             id: message.id,
             threadId: message.threadId,
             snippet: decodeHTMLEntities(message.snippet ?? ""),
@@ -976,8 +995,49 @@ actor GmailService: GmailAPIProvider {
         )
     }
 
+    /// Parse RFC 2822 address list, handling quoted display names with commas
+    /// e.g., "Doe, John" <john@example.com>, jane@example.com
     private nonisolated func parseAddressList(_ value: String) -> [String] {
-        value.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+        var addresses: [String] = []
+        var current = ""
+        var inQuotes = false
+        var inAngleBrackets = false
+
+        for char in value {
+            switch char {
+            case "\"":
+                inQuotes.toggle()
+                current.append(char)
+            case "<":
+                inAngleBrackets = true
+                current.append(char)
+            case ">":
+                inAngleBrackets = false
+                current.append(char)
+            case ",":
+                if inQuotes || inAngleBrackets {
+                    // Comma inside quotes or angle brackets, keep it
+                    current.append(char)
+                } else {
+                    // Address separator
+                    let trimmed = current.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty {
+                        addresses.append(trimmed)
+                    }
+                    current = ""
+                }
+            default:
+                current.append(char)
+            }
+        }
+
+        // Don't forget the last address
+        let trimmed = current.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            addresses.append(trimmed)
+        }
+
+        return addresses
     }
 
     private nonisolated func decodeHTMLEntities(_ string: String) -> String {

@@ -41,11 +41,13 @@ struct EmailDetailView: View {
                         .padding(.top, 8)
                     }
 
-                    // Action Badges Row (Unsubscribe, Block, Spam)
+                    // Action Badges Row (Trackers, Unsubscribe, Block, Spam)
                     EmailActionBadgesView(
                         canUnsubscribe: viewModel.canUnsubscribe,
                         senderName: viewModel.senderName ?? "sender",
                         isReply: viewModel.subject.lowercased().hasPrefix("re:"),
+                        trackersBlocked: viewModel.trackersBlocked,
+                        trackerNames: viewModel.trackerNames,
                         onUnsubscribe: {
                             Task { await viewModel.unsubscribe() }
                         },
@@ -693,66 +695,91 @@ struct EmailSummaryView: View {
     }
 }
 
-// MARK: - Email Action Badges View (Unsubscribe, Block, Spam)
+// MARK: - Email Action Badges View (Unsubscribe, Block, Spam, Trackers)
 
 struct EmailActionBadgesView: View {
     let canUnsubscribe: Bool
     let senderName: String
     let isReply: Bool
+    let trackersBlocked: Int
+    let trackerNames: [String]
     let onUnsubscribe: () -> Void
     let onBlockSender: () -> Void
     let onReportSpam: () -> Void
 
     @State private var showBlockConfirm = false
     @State private var showSpamConfirm = false
+    @State private var showTrackersInfo = false
 
     var body: some View {
-        // Only show if there are actions to display
-        if canUnsubscribe || !isReply {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    // Unsubscribe button
-                    if canUnsubscribe {
-                        Button(action: onUnsubscribe) {
-                            Text("Unsubscribe")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    // Block Sender button
+        // Always show the action buttons row
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                // Trackers Blocked badge (green, like React version)
+                if trackersBlocked > 0 {
                     Button {
-                        showBlockConfirm = true
+                        showTrackersInfo = true
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: "hand.raised")
+                            Image(systemName: "shield.checkered")
                                 .font(.caption2)
-                            Text("Block")
+                            Text("\(trackersBlocked) blocked")
                                 .font(.caption)
                                 .fontWeight(.medium)
                         }
-                        .foregroundStyle(.red.opacity(0.8))
-                        .padding(.horizontal, 12)
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                                .fill(Color.green.opacity(0.1))
                         )
                     }
                     .buttonStyle(.plain)
+                }
 
-                    // Report Spam button (only for non-replies, like React version)
-                    if !isReply {
-                        Button {
-                            showSpamConfirm = true
+                // Unsubscribe button
+                if canUnsubscribe {
+                    Button(action: onUnsubscribe) {
+                        Text("Unsubscribe")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Block Sender button
+                Button {
+                    showBlockConfirm = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "hand.raised")
+                            .font(.caption2)
+                        Text("Block")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(.red.opacity(0.8))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+
+                // Report Spam button (only for non-replies, like React version)
+                if !isReply {
+                    Button {
+                        showSpamConfirm = true
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "exclamationmark.shield")
@@ -787,7 +814,11 @@ struct EmailActionBadgesView: View {
             } message: {
                 Text("This email will be moved to your spam folder.")
             }
-        }
+            .alert("Trackers Blocked", isPresented: $showTrackersInfo) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("SimpleMail blocked \(trackersBlocked) tracking pixel\(trackersBlocked > 1 ? "s" : "") that would have notified the sender when you opened this email.\n\nBlocked: \(trackerNames.joined(separator: ", "))")
+            }
     }
 }
 
@@ -803,6 +834,44 @@ class EmailDetailViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: Error?
     @Published var unsubscribeURL: URL?
+    @Published var trackersBlocked: Int = 0
+    @Published var trackerNames: [String] = []
+
+    // Known tracker domains (common email tracking pixels)
+    private static let trackerDomains: [String: String] = [
+        "mailchimp.com": "Mailchimp",
+        "list-manage.com": "Mailchimp",
+        "sendgrid.net": "SendGrid",
+        "hubspot.com": "HubSpot",
+        "hs-analytics.net": "HubSpot",
+        "mailgun.com": "Mailgun",
+        "postmarkapp.com": "Postmark",
+        "constantcontact.com": "Constant Contact",
+        "klaviyo.com": "Klaviyo",
+        "sailthru.com": "Sailthru",
+        "braze.com": "Braze",
+        "iterable.com": "Iterable",
+        "customer.io": "Customer.io",
+        "intercom-mail.com": "Intercom",
+        "drip.com": "Drip",
+        "convertkit.com": "ConvertKit",
+        "getresponse.com": "GetResponse",
+        "sendinblue.com": "Sendinblue",
+        "amazonses.com": "Amazon SES",
+        "sparkpostmail.com": "SparkPost",
+        "rsgsv.net": "Mailchimp",
+        "mcsv.net": "Mailchimp",
+        "doubleclick.net": "Google",
+        "google-analytics.com": "Google Analytics",
+        "facebook.com": "Facebook",
+        "linkedin.com": "LinkedIn",
+        "twitter.com": "Twitter",
+        "marketo.com": "Marketo",
+        "pardot.com": "Pardot",
+        "eloqua.com": "Eloqua",
+        "mixpanel.com": "Mixpanel",
+        "segment.io": "Segment"
+    ]
 
     var subject: String {
         messages.first?.subject ?? ""
@@ -848,6 +917,38 @@ class EmailDetailViewModel: ObservableObject {
         self.threadId = threadId
     }
 
+    // Detect tracking pixels in email HTML
+    private func detectTrackers(in html: String) -> [String] {
+        var foundTrackers = Set<String>()
+
+        // Pattern for 1x1 pixel images (common tracker format)
+        let pixelPatterns = [
+            "<img[^>]*width\\s*=\\s*[\"']?1[\"']?[^>]*height\\s*=\\s*[\"']?1[\"']?[^>]*>",
+            "<img[^>]*height\\s*=\\s*[\"']?1[\"']?[^>]*width\\s*=\\s*[\"']?1[\"']?[^>]*>",
+            "<img[^>]*style\\s*=\\s*[\"'][^\"']*display\\s*:\\s*none[^\"']*[\"'][^>]*>"
+        ]
+
+        // Check for known tracker domains in image URLs
+        for (domain, name) in Self.trackerDomains {
+            if html.lowercased().contains(domain) {
+                foundTrackers.insert(name)
+            }
+        }
+
+        // Count 1x1 pixel images
+        for pattern in pixelPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let range = NSRange(html.startIndex..., in: html)
+                let matches = regex.numberOfMatches(in: html, range: range)
+                if matches > 0 && foundTrackers.isEmpty {
+                    foundTrackers.insert("Tracking Pixel")
+                }
+            }
+        }
+
+        return Array(foundTrackers).sorted()
+    }
+
     func loadThread() async {
         isLoading = true
         defer { isLoading = false }
@@ -864,6 +965,15 @@ class EmailDetailViewModel: ObservableObject {
             if let unsubscribeHeader = messages.last?.listUnsubscribe {
                 unsubscribeURL = parseUnsubscribeURL(from: unsubscribeHeader)
             }
+
+            // Detect trackers in all message bodies
+            var allTrackers = Set<String>()
+            for message in messages {
+                let found = detectTrackers(in: message.body)
+                allTrackers.formUnion(found)
+            }
+            trackerNames = Array(allTrackers).sorted()
+            trackersBlocked = trackerNames.count
 
             // Mark as read
             for message in messages where message.isUnread {

@@ -211,6 +211,29 @@ final class InboxViewModel {
     }()
 
     private func isNeedsReplyCandidate(_ email: Email) -> Bool {
+        // Skip emails the user sent
+        if email.labelIds.contains("SENT") {
+            return false
+        }
+
+        // Skip if this is a reply FROM the user (subject starts with Re: and has SENT in thread)
+        // This is a heuristic - if the email is a "Re:" and the user has SENT emails, likely replied
+        if email.subject.lowercased().hasPrefix("re:") {
+            // Check if there's any indication user participated in thread
+            // messagesCount > 1 often means back-and-forth (user may have replied)
+            if email.messagesCount > 1 {
+                return false
+            }
+        }
+
+        // Skip emails from the user's own account
+        if let accountEmail = email.accountEmail {
+            let senderEmail = email.senderEmail.lowercased()
+            if senderEmail == accountEmail.lowercased() {
+                return false
+            }
+        }
+
         // Gate out commercial/automated senders to avoid false positives.
         if EmailFilters.isBulk(email) {
             return false
