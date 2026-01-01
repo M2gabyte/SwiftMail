@@ -40,6 +40,10 @@
 		A1000035 /* ScheduledSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000035 /* ScheduledSendManager.swift */; };
 		A1000036 /* NetworkRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000036 /* NetworkRetry.swift */; };
 		A1000037 /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000037 /* ErrorBanner.swift */; };
+		A1000038 /* SearchHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000038 /* SearchHistoryManager.swift */; };
+		A1000039 /* SpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000039 /* SpeechRecognizer.swift */; };
+		A1000040 /* SearchFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000040 /* SearchFilter.swift */; };
+		A1000041 /* BottomSearchPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000041 /* BottomSearchPill.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -90,6 +94,10 @@
 		B1000035 /* ScheduledSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledSendManager.swift; sourceTree = "<group>"; };
 		B1000036 /* NetworkRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkRetry.swift; sourceTree = "<group>"; };
 		B1000037 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
+		B1000038 /* SearchHistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchHistoryManager.swift; sourceTree = "<group>"; };
+		B1000039 /* SpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognizer.swift; sourceTree = "<group>"; };
+		B1000040 /* SearchFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFilter.swift; sourceTree = "<group>"; };
+		B1000041 /* BottomSearchPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSearchPill.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -156,6 +164,7 @@
 			children = (
 				B1000002 /* Email.swift */,
 				B1000003 /* Briefing.swift */,
+				B1000040 /* SearchFilter.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -172,6 +181,7 @@
 				B1000021 /* AttachmentViewer.swift */,
 				B1000022 /* BatchOperations.swift */,
 				B1000024 /* SmartAvatarView.swift */,
+				B1000041 /* BottomSearchPill.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -213,6 +223,8 @@
 				B1000025 /* AvatarService.swift */,
 				B1000029 /* BrandRegistry.swift */,
 				B1000030 /* DomainNormalizer.swift */,
+				B1000038 /* SearchHistoryManager.swift */,
+				B1000039 /* SpeechRecognizer.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -389,6 +401,10 @@
 				A1000035 /* ScheduledSendManager.swift in Sources */,
 				A1000036 /* NetworkRetry.swift in Sources */,
 				A1000037 /* ErrorBanner.swift in Sources */,
+				A1000038 /* SearchHistoryManager.swift in Sources */,
+				A1000039 /* SpeechRecognizer.swift in Sources */,
+				A1000040 /* SearchFilter.swift in Sources */,
+				A1000041 /* BottomSearchPill.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
