@@ -72,7 +72,9 @@ struct EmailDetailView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .bottomBar) {
-                // Reply Menu (left side)
+                Spacer()
+
+                // Reply Menu
                 Menu {
                     Button(action: { showingReplySheet = true }) {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
@@ -85,12 +87,13 @@ struct EmailDetailView: View {
                     }
                 } label: {
                     Image(systemName: "arrowshape.turn.up.left")
-                        .font(.title3)
+                        .font(.title2)
                 }
 
                 Spacer()
+                    .frame(width: 32)
 
-                // Archive (right side)
+                // Archive
                 Button(action: {
                     Task {
                         await viewModel.archive()
@@ -98,8 +101,10 @@ struct EmailDetailView: View {
                     }
                 }) {
                     Image(systemName: "archivebox")
-                        .font(.title3)
+                        .font(.title2)
                 }
+
+                Spacer()
             }
         }
         .sheet(isPresented: $showingReplySheet) {
