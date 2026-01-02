@@ -23,6 +23,7 @@ struct InboxView: View {
     @State private var showingMoveDialog = false
     @State private var scope: InboxScope = .all
     @State private var scrollOffset: CGFloat = 0
+    private var pendingSendManager = PendingSendManager.shared
 
     private var isHeaderCollapsed: Bool {
         scrollOffset > 50
@@ -129,6 +130,10 @@ struct InboxView: View {
         .searchToolbarBehavior(.minimize)
         .overlay { overlayContent }
         .overlay(alignment: .bottom) { bulkToastContent }
+        .overlay(alignment: .bottom) {
+            undoSendToastContent
+                .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
+        }
         .sheet(isPresented: $showingSettings) { SettingsView() }
         .sheet(isPresented: $showingCompose) { ComposeView() }
         .sheet(isPresented: $showingBulkSnooze) {
@@ -412,6 +417,17 @@ struct InboxView: View {
                 onRetry: { viewModel.retryPendingMutations() }
             )
             .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
+    private var undoSendToastContent: some View {
+        if pendingSendManager.isPending {
+            UndoSendToast(onUndo: {
+                pendingSendManager.undoSend()
+            })
             .padding(.bottom, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }

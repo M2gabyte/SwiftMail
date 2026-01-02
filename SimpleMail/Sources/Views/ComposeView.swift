@@ -72,15 +72,6 @@ struct ComposeView: View {
     private func applyOverlays<V: View>(to view: V) -> some View {
         view
             .overlay { composeOverlay }
-            .overlay(alignment: Alignment.bottom) {
-                if viewModel.showUndoSend {
-                    UndoSendToast(
-                        onUndo: { viewModel.undoSend() }
-                    )
-                    .padding(.bottom, 56)
-                    .transition(.move(edge: Edge.bottom).combined(with: .opacity))
-                }
-            }
     }
 
     private func applySheets<V: View>(to view: V) -> some View {
@@ -196,12 +187,6 @@ struct ComposeView: View {
                 if newValue {
                     showingAttachmentOptions = true
                     viewModel.showAttachmentPicker = false
-                }
-            }
-            .onChange(of: viewModel.didSend) { _, newValue in
-                if newValue {
-                    dismiss()
-                    viewModel.didSend = false
                 }
             }
             .onChange(of: viewModel.subject) { _, _ in
@@ -323,12 +308,11 @@ struct ComposeView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(viewModel.canSend ? .blue : .gray)
-            }
-            .disabled(!viewModel.canSend)
+            SendButton(
+                canSend: viewModel.canSend,
+                onSend: send,
+                onSchedule: { showingScheduleSheet = true }
+            )
             .accessibilityIdentifier("sendButton")
         }
 
@@ -386,6 +370,7 @@ struct ComposeView: View {
         viewModel.finalizeRecipients()
 
         viewModel.queueSendWithUndo()
+        dismiss()
     }
 }
 
@@ -1412,6 +1397,38 @@ struct StatusOverlay: View {
     }
 }
 
+// MARK: - Send Button with Long Press
+
+struct SendButton: View {
+    let canSend: Bool
+    let onSend: () -> Void
+    let onSchedule: () -> Void
+
+    @State private var isPressed = false
+
+    var body: some View {
+        Image(systemName: "arrow.up.circle.fill")
+            .font(.title2)
+            .foregroundStyle(canSend ? .blue : .gray)
+            .opacity(isPressed ? 0.6 : 1.0)
+            .onTapGesture {
+                guard canSend else { return }
+                onSend()
+            }
+            .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
+                guard canSend else { return }
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    isPressed = pressing
+                }
+            }, perform: {
+                guard canSend else { return }
+                HapticFeedback.medium()
+                onSchedule()
+            })
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: isPressed)
+    }
+}
+
 // MARK: - Undo Send Toast
 
 struct UndoSendToast: View {
@@ -1471,8 +1488,6 @@ class ComposeViewModel: ObservableObject {
     @Published var isSending = false
     @Published var isGeneratingDraft = false
     @Published var aiDraftError: String?
-    @Published var showUndoSend = false
-    @Published var didSend = false
     @Published var isRecoveredDraft = false
     @Published var pendingAIDraft: AIDraftResult?
     @Published var pendingAIDraftIncludeSubject = true
@@ -1481,7 +1496,6 @@ class ComposeViewModel: ObservableObject {
     private var replyToMessageId: String?
     private var replyThreadId: String?
     private var draftId: String?
-    private var sendTask: Task<Void, Never>?
     private var autoSaveTask: Task<Void, Never>?
     private let templatesKey = "composeTemplates"
 
@@ -1610,25 +1624,20 @@ class ComposeViewModel: ObservableObject {
     }
 
     func queueSendWithUndo() {
-        sendTask?.cancel()
-        showUndoSend = true
-        didSend = false
-
-        sendTask = Task { [weak self] in
-            let delay = await MainActor.run { self?.undoDelaySeconds() ?? 5 }
-            try? await Task.sleep(for: .seconds(delay))
-            guard let self, !Task.isCancelled else { return }
-            let success = await self.send()
-            await MainActor.run {
-                self.showUndoSend = false
-                self.didSend = success
-            }
-        }
-    }
-
-    func undoSend() {
-        sendTask?.cancel()
-        showUndoSend = false
+        let pendingEmail = PendingSendManager.PendingEmail(
+            to: to,
+            cc: cc,
+            bcc: bcc,
+            subject: subject,
+            body: plainBody(),
+            bodyHtml: htmlBody(),
+            attachments: mimeAttachments(),
+            inReplyTo: replyToMessageId,
+            threadId: replyThreadId,
+            draftId: draftId,
+            delaySeconds: undoDelaySeconds()
+        )
+        PendingSendManager.shared.queueSend(pendingEmail)
     }
 
     func scheduleSend(at date: Date) {
