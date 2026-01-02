@@ -509,7 +509,7 @@ struct FilterPill: View {
             HStack(spacing: 6) {
                 Image(systemName: filter.icon)
                     .font(.caption)
-                    .foregroundStyle(isActive ? .primary : .secondary)
+                    .foregroundStyle(filter.color)
                 Text(filter.rawValue)
                     .font(isActive ? .subheadline.weight(.semibold) : .subheadline)
                     .foregroundStyle(.primary)
@@ -526,10 +526,10 @@ struct FilterPill: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                Capsule().fill(isActive ? Color.primary.opacity(0.10) : Color.secondary.opacity(0.08))
+                Capsule().fill(isActive ? filter.color.opacity(0.15) : Color.secondary.opacity(0.08))
             )
             .overlay(
-                isActive ? Capsule().strokeBorder(.primary.opacity(0.10), lineWidth: 1) : nil
+                Capsule().strokeBorder(isActive ? filter.color.opacity(0.3) : .primary.opacity(0.08), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
