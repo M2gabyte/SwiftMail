@@ -123,7 +123,6 @@ struct InboxView: View {
         }
         .searchToolbarBehavior(.minimize)
         .overlay { overlayContent }
-        .overlay(alignment: .bottomTrailing) { composeFAB }
         .sheet(isPresented: $showingSettings) { SettingsView() }
         .sheet(isPresented: $showingCompose) { ComposeView() }
         .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
@@ -166,16 +165,26 @@ struct InboxView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 104) }
     }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        DefaultToolbarItem(kind: .search, placement: .bottomBar)
-
         ToolbarItem(placement: .topBarTrailing) {
             Button { showingSettings = true } label: {
                 Image(systemName: "gearshape")
+            }
+        }
+
+        DefaultToolbarItem(kind: .search, placement: .bottomBar)
+
+        ToolbarItem(placement: .bottomBar) {
+            Spacer()
+        }
+
+        ToolbarItem(placement: .bottomBar) {
+            Button { showingCompose = true } label: {
+                Image(systemName: "square.and.pencil")
+                    .accessibilityLabel("Compose")
             }
         }
     }
@@ -236,25 +245,6 @@ struct InboxView: View {
                     .searchCompletion("\(suggestion.prefix)\(searchText)")
                 }
             }
-        }
-    }
-
-    // Floating compose button (thumb-first)
-    @ViewBuilder
-    private var composeFAB: some View {
-        if !isSearching {
-            Button { showingCompose = true } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.title2)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(Circle().fill(Color.accentColor))
-                    .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
-            }
-            .padding(.trailing, 20)
-            .padding(.bottom, 24)
-            .transition(.scale.combined(with: .opacity))
         }
     }
 
