@@ -237,7 +237,7 @@ struct InboxView: View {
         .listSectionSpacing(6)
         .accessibilityIdentifier("inboxList")
         .navigationTitle(viewModel.currentMailbox.rawValue)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarTitleMenu {
             // Quick switch favorites
             Section("Favorites") {
