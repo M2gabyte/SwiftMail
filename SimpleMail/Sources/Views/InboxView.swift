@@ -22,6 +22,11 @@ struct InboxView: View {
     @State private var showingBulkSnooze = false
     @State private var showingMoveDialog = false
     @State private var scope: InboxScope = .all
+    @State private var scrollOffset: CGFloat = 0
+
+    private var isHeaderCollapsed: Bool {
+        scrollOffset > 50
+    }
 
     /// Sections to display - either search results or filtered inbox
     private var displaySections: [EmailSection] {
@@ -103,17 +108,12 @@ struct InboxView: View {
     }
 
     var body: some View {
-        ZStack {
-            inboxList
-        }
-        .navigationTitle(viewModel.currentMailbox.rawValue)
-        .navigationBarTitleDisplayMode(.large)
+        inboxList
+            .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(.bar, for: .navigationBar)
-        .toolbarTitleMenu { mailboxMenuContent }
         .toolbar { toolbarContent }
-        .toolbarBackground(.visible, for: .bottomBar)
-        .toolbarBackground(.bar, for: .bottomBar)
         .searchable(text: $searchText, prompt: "Search")
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled(true)
@@ -183,17 +183,20 @@ struct InboxView: View {
     // MARK: - Extracted View Components
 
     private var inboxList: some View {
-        List(selection: $selectedThreadIds) {
-            // Filter chips row (tight spacing)
-            InboxHeaderBlock(
-                scope: scopeBinding,
-                activeFilter: $viewModel.activeFilter,
-                filterCounts: viewModel.filterCounts
-            )
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        ScrollViewReader { proxy in
+            List(selection: $selectedThreadIds) {
+                Section {
+                    InboxHeaderBlock(
+                        scope: scopeBinding,
+                        activeFilter: $viewModel.activeFilter,
+                        filterCounts: viewModel.filterCounts,
+                        isCollapsed: isHeaderCollapsed
+                    )
+                }
+                .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .listSectionSeparator(.hidden)
+                .listSectionSpacing(0)
 
             ForEach(displaySections) { section in
                 Section {
@@ -229,13 +232,17 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.editMode, $editMode)
+            .simultaneousGesture(
+                DragGesture()
+                    .onChanged { value in
+                        scrollOffset = -value.translation.height
+                    }
+            )
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.top, 0, for: .scrollContent)
-        .contentMargins(.bottom, 8, for: .scrollContent)
-        .scrollClipDisabled(false)
-        .environment(\.editMode, $editMode)
     }
 
     @ToolbarContentBuilder
@@ -265,6 +272,8 @@ struct InboxView: View {
                     HStack(spacing: 6) {
                         Image(systemName: viewModel.currentMailbox.icon)
                             .font(.body)
+                        Text(viewModel.currentMailbox.rawValue)
+                            .font(.subheadline.weight(.medium))
                         Image(systemName: "chevron.down")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
@@ -671,44 +680,55 @@ struct InboxHeaderBlock: View {
     @Binding var scope: InboxScope
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
+    let isCollapsed: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
+            // All/People segmented control - always visible
             Picker("", selection: $scope) {
                 Text(InboxScope.all.rawValue).tag(InboxScope.all)
                 Text(InboxScope.people.rawValue).tag(InboxScope.people)
             }
             .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 2)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    let filters = scope == .people ? [InboxFilter.unread, .needsReply] : InboxFilter.allCases
-                    ForEach(filters, id: \.self) { filter in
-                        FilterPill(
-                            filter: filter,
-                            count: filterCounts[filter] ?? 0,
-                            isActive: activeFilter == filter,
-                            onTap: {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    activeFilter = activeFilter == filter ? nil : filter
+            // Filter pills - hide when collapsed
+            if !isCollapsed {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        let filters = scope == .people ? [InboxFilter.unread, .needsReply] : InboxFilter.allCases
+                        ForEach(filters, id: \.self) { filter in
+                            FilterPill(
+                                filter: filter,
+                                count: filterCounts[filter] ?? 0,
+                                isActive: activeFilter == filter,
+                                onTap: {
+                                    withAnimation(.easeInOut(duration: 0.15)) {
+                                        activeFilter = activeFilter == filter ? nil : filter
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
+                    .padding(.top, 2)
+                    .padding(.bottom, 4)
+                    .padding(.leading, 8)
                 }
-                .padding(.vertical, 6)
-                .padding(.leading, 8)
-            }
-            .overlay(alignment: .trailing) {
-                LinearGradient(
-                    colors: [Color.clear, Color(.systemBackground)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 24)
-                .allowsHitTesting(false)
+                .overlay(alignment: .trailing) {
+                    LinearGradient(
+                        colors: [Color.clear, Color(.systemBackground)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 24)
+                    .allowsHitTesting(false)
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: isCollapsed)
     }
 }
 

@@ -44,6 +44,11 @@ These are **decisions**, not suggestions. Do not "improve" them without an expli
 - No separate "Search screen" for inbox search. Use `.searchable`.
 - Do not rebuild the navigation title inside content.
 
+### Feature Changes
+- **NEVER remove features or functionality without explicit user permission.**
+- If a feature causes issues, fix the issue - don't remove the feature.
+- If you're uncertain how to fix something, ask the user before removing functionality.
+
 ### Testing
 - Do not reintroduce old UI (e.g., tabs) to satisfy tests. Update tests only when explicitly asked.
 

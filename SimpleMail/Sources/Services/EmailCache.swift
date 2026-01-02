@@ -36,20 +36,13 @@ final class EmailCacheManager: ObservableObject {
 
     func configureIfNeeded() {
         guard modelContext == nil else { return }
-        do {
-            let schema = Schema([
-                Email.self,
-                EmailDetail.self,
-                SnoozedEmail.self,
-                SenderPreference.self
-            ])
-            let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-            let container = try ModelContainer(for: schema, configurations: [configuration])
-            modelContext = ModelContext(container)
-            updateCacheStats()
-        } catch {
-            logger.error("Failed to configure cache context: \(error.localizedDescription)")
-        }
+        // Log warning instead of creating a potentially inconsistent context
+        logger.warning("EmailCache accessed before configure() was called - operations will be skipped")
+    }
+
+    /// Whether the cache is properly configured
+    var isConfigured: Bool {
+        modelContext != nil
     }
 
     // MARK: - Cache Statistics
@@ -191,39 +184,43 @@ final class EmailCacheManager: ObservableObject {
         if modelContext == nil {
             configureIfNeeded()
         }
-        guard let context = modelContext else { return [] }
+        guard let context = modelContext else {
+            logger.warning("ModelContext not available for loadCachedEmails")
+            return []
+        }
 
         let labelIds = labelIdsForMailbox(mailbox)
 
-        var descriptor = FetchDescriptor<Email>(
+        let descriptor = FetchDescriptor<Email>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        descriptor.fetchLimit = limit
-
-        // Filter by label or archive rules if needed
-        switch mailbox {
-        case .archive:
-            descriptor.predicate = #Predicate { email in
-                !email.labelIds.contains("INBOX") &&
-                !email.labelIds.contains("TRASH") &&
-                !email.labelIds.contains("SPAM")
-            }
-        default:
-            if let labelId = labelIds.first {
-                descriptor.predicate = #Predicate { email in
-                    email.labelIds.contains(labelId)
-                }
-            }
-        }
 
         do {
-            let results = try context.fetch(descriptor)
-            if let accountEmail = accountEmail?.lowercased() {
-                return results.filter { $0.accountEmail == accountEmail }
+            var results = try context.fetch(descriptor)
+
+            // Filter by mailbox in Swift to avoid predicate crashes
+            switch mailbox {
+            case .archive:
+                results = results.filter { email in
+                    !email.labelIds.contains("INBOX") &&
+                    !email.labelIds.contains("TRASH") &&
+                    !email.labelIds.contains("SPAM")
+                }
+            default:
+                if let labelId = labelIds.first {
+                    results = results.filter { $0.labelIds.contains(labelId) }
+                }
             }
-            return results
+
+            // Filter by account
+            if let accountEmail = accountEmail?.lowercased() {
+                results = results.filter { $0.accountEmail?.lowercased() == accountEmail }
+            }
+
+            // Apply limit
+            return Array(results.prefix(limit))
         } catch {
-            logger.error("Failed to load cached emails: \(error.localizedDescription)")
+            logger.error("Failed to load cached emails: \(error.localizedDescription), mailbox: \(mailbox.rawValue)")
             return []
         }
     }
