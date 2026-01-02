@@ -2,6 +2,7 @@ import SwiftUI
 import OSLog
 
 private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxView")
+typealias SelectionID = String
 
 // MARK: - Inbox View
 
@@ -14,13 +15,28 @@ struct InboxView: View {
     @State private var debouncedSearchText = ""
     @StateObject private var searchHistory = SearchHistoryManager.shared
     @Environment(\.isSearching) private var isSearching
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var editMode: EditMode = .inactive
+    @State private var isSelectionMode = false
+    @State private var selectedThreadIds = Set<SelectionID>()
+    @State private var showingBulkSnooze = false
+    @State private var showingMoveDialog = false
+    @State private var scope: InboxScope = .all
 
-    /// Filtered sections based on debounced search text with smart filter support
-    private var filteredSections: [EmailSection] {
+    /// Sections to display - either search results or filtered inbox
+    private var displaySections: [EmailSection] {
+        // If server search is active, show search results
+        if viewModel.isSearchActive {
+            let emails = viewModel.searchResults
+            guard !emails.isEmpty else { return [] }
+            return [EmailSection(id: "search", title: "Search Results", emails: emails)]
+        }
+
+        // Otherwise show normal inbox with local filtering
         let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return viewModel.emailSections }
 
-        // Parse smart filters
+        // Parse smart filters for local filtering (while typing, before submit)
         let filter = SearchFilter.parse(query)
 
         return viewModel.emailSections.compactMap { section in
@@ -52,7 +68,7 @@ struct InboxView: View {
 
     /// Email row with all actions - extracted to help compiler
     @ViewBuilder
-    private func emailRowView(for email: Email) -> some View {
+    private func emailRowView(for email: Email, isSelectionMode: Bool) -> some View {
         EmailRow(
             email: email,
             isCompact: listDensity == .compact,
@@ -75,33 +91,14 @@ struct InboxView: View {
             }
             .tint(.blue)
         }
-        .contextMenu {
-            Button { viewModel.openEmail(email) } label: {
-                Label("Open", systemImage: "envelope.open")
-            }
-            Button { viewModel.archiveEmail(email) } label: {
-                Label("Archive", systemImage: "archivebox")
-            }
-            Button { viewModel.starEmail(email) } label: {
-                Label(email.isStarred ? "Unstar" : "Star",
-                      systemImage: email.isStarred ? "star.slash" : "star")
-            }
-            Button { viewModel.toggleRead(email) } label: {
-                Label(email.isUnread ? "Mark as Read" : "Mark as Unread",
-                      systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
-            }
-            Divider()
-            Button(role: .destructive) { viewModel.blockSender(email) } label: {
-                Label("Block Sender", systemImage: "hand.raised")
-            }
-            Button(role: .destructive) { viewModel.reportSpam(email) } label: {
-                Label("Report Spam", systemImage: "exclamationmark.shield")
-            }
-            Button(role: .destructive) { viewModel.trashEmail(email) } label: {
-                Label("Trash", systemImage: "trash")
+        .onTapGesture {
+            if !isSelectionMode {
+                viewModel.openEmail(email)
             }
         }
-        .onTapGesture { viewModel.openEmail(email) }
+        .onLongPressGesture {
+            enterSelectionMode(selecting: email.threadId)
+        }
         .onAppear { Task { await viewModel.loadMoreIfNeeded(currentEmail: email) } }
     }
 
@@ -111,7 +108,12 @@ struct InboxView: View {
         }
         .navigationTitle(viewModel.currentMailbox.rawValue)
         .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.bar, for: .navigationBar)
+        .toolbarTitleMenu { mailboxMenuContent }
         .toolbar { toolbarContent }
+        .toolbarBackground(.visible, for: .bottomBar)
+        .toolbarBackground(.bar, for: .bottomBar)
         .searchable(text: $searchText, prompt: "Search")
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled(true)
@@ -119,14 +121,60 @@ struct InboxView: View {
         .onSubmit(of: .search) {
             commitSearch()
             debouncedSearchText = searchText
+            // Perform server-side search
+            Task {
+                await viewModel.performSearch(query: searchText)
+            }
         }
         .searchToolbarBehavior(.minimize)
         .overlay { overlayContent }
+        .overlay(alignment: .bottom) { bulkToastContent }
         .sheet(isPresented: $showingSettings) { SettingsView() }
         .sheet(isPresented: $showingCompose) { ComposeView() }
+        .sheet(isPresented: $showingBulkSnooze) {
+            SnoozePickerSheet { date in
+                performBulkSnooze(until: date)
+            }
+        }
+        .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
+            Button("Inbox") { performBulkMove(to: .inbox) }
+            Button("Archive") { performBulkArchive() }
+            Button("Trash", role: .destructive) { performBulkTrash() }
+            Button("Cancel", role: .cancel) { }
+        }
         .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
         .refreshable { await viewModel.refresh() }
         .task(id: searchText) { await debounceSearch() }
+        .onChange(of: searchText) { _, newValue in
+            // Clear server search when search text is cleared
+            if newValue.isEmpty && viewModel.isSearchActive {
+                viewModel.clearSearch()
+            }
+        }
+        .onChange(of: viewModel.scope) { _, newValue in
+            if let active = viewModel.activeFilter,
+               !availableFilters(for: newValue).contains(active) {
+                viewModel.activeFilter = nil
+            }
+        }
+        .onChange(of: viewModel.currentMailbox) { _, _ in
+            exitSelectionMode()
+        }
+        .onChange(of: viewModel.activeFilter) { _, _ in
+            exitSelectionMode()
+        }
+        .onChange(of: viewModel.emails) { _, _ in
+            let valid = Set(viewModel.emails.map { $0.threadId })
+            selectedThreadIds = selectedThreadIds.intersection(valid)
+            if selectedThreadIds.isEmpty && isSelectionMode {
+                exitSelectionMode()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                exitSelectionMode()
+            }
+        }
         .onAppear { handleAppear() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() }
         .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() }
@@ -135,24 +183,44 @@ struct InboxView: View {
     // MARK: - Extracted View Components
 
     private var inboxList: some View {
-        List {
+        List(selection: $selectedThreadIds) {
             // Filter chips row (tight spacing)
-            InboxHeaderBlock(activeFilter: $viewModel.activeFilter, filterCounts: viewModel.filterCounts)
+            InboxHeaderBlock(
+                scope: scopeBinding,
+                activeFilter: $viewModel.activeFilter,
+                filterCounts: viewModel.filterCounts
+            )
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
+                .listSectionSeparator(.hidden)
 
-            ForEach(filteredSections) { section in
+            ForEach(displaySections) { section in
                 Section {
                     ForEach(section.emails) { email in
-                        emailRowView(for: email)
+                        emailRowView(for: email, isSelectionMode: isSelectionMode)
+                            .tag(email.threadId)
+                            .padding(.top, email.id == section.emails.first?.id ? 6 : 0)
                     }
                 } header: {
-                    // Section headers: increased contrast
-                    Text(section.title)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.primary.opacity(0.72))
-                        .textCase(nil)
+                    // Section headers: fully opaque native iOS bar
+                    VStack(spacing: 0) {
+                        Text(section.title)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 10)
+                            .padding(.bottom, 7)
+
+                        // Hairline bottom divider (native 1px)
+                        Rectangle()
+                            .fill(Color(.separator).opacity(0.8))
+                            .frame(height: 1.0 / UIScreen.main.scale)
+                    }
+                    .background(Color(.systemBackground))
+                    .listRowInsets(EdgeInsets())
                 }
             }
 
@@ -164,51 +232,268 @@ struct InboxView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .contentMargins(.bottom, 8, for: .scrollContent)
+        .scrollClipDisabled(false)
+        .environment(\.editMode, $editMode)
     }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Menu {
-                mailboxMenuContent
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: viewModel.currentMailbox.icon)
-                        .font(.body)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+        if isSelectionMode {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Cancel") { exitSelectionMode() }
+            }
+
+            ToolbarItem(placement: .principal) {
+                Text("\(selectedThreadIds.count) Selected")
+                    .font(.headline)
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Select All") { selectAllVisibleThreads() }
+            }
+
+            ToolbarItemGroup(placement: .bottomBar) {
+                bulkActionBar
+            }
+        } else {
+            ToolbarItem(placement: .topBarLeading) {
+                Menu {
+                    mailboxMenuContent
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: viewModel.currentMailbox.icon)
+                            .font(.body)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityLabel("Mailbox selector")
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingSettings = true } label: {
+                    Image(systemName: "gearshape")
                 }
             }
-        }
 
-        ToolbarItem(placement: .topBarTrailing) {
-            Button { showingSettings = true } label: {
-                Image(systemName: "gearshape")
+            DefaultToolbarItem(kind: .search, placement: .bottomBar)
+
+            ToolbarItem(placement: .bottomBar) {
+                Spacer()
             }
-        }
 
-        DefaultToolbarItem(kind: .search, placement: .bottomBar)
-
-        ToolbarItem(placement: .bottomBar) {
-            Spacer()
-        }
-
-        ToolbarItem(placement: .bottomBar) {
-            Button { showingCompose = true } label: {
-                Image(systemName: "square.and.pencil")
-                    .accessibilityLabel("Compose")
+            ToolbarItem(placement: .bottomBar) {
+                Button { showingCompose = true } label: {
+                    Image(systemName: "square.and.pencil")
+                        .accessibilityLabel("Compose")
+                }
             }
         }
     }
 
     @ViewBuilder
     private var mailboxMenuContent: some View {
-        ForEach(Mailbox.allCases, id: \.self) { mailbox in
+        let accounts = AuthService.shared.accounts
+
+        Button {
+            viewModel.selectMailbox(.allInboxes)
+        } label: {
+            Label(
+                "Unified Inbox",
+                systemImage: viewModel.currentMailbox == .allInboxes ? "checkmark" : "tray.full"
+            )
+        }
+
+        if accounts.count > 1 {
+            ForEach(accounts, id: \.id) { account in
+                Button {
+                    AuthService.shared.switchAccount(to: account)
+                    if viewModel.currentMailbox == .allInboxes {
+                        viewModel.selectMailbox(.inbox)
+                    }
+                } label: {
+                    HStack {
+                        Text(account.email)
+                        if viewModel.currentMailbox != .allInboxes,
+                           account.id == AuthService.shared.currentAccount?.id {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+                .disabled(viewModel.currentMailbox == .allInboxes)
+            }
+        }
+
+        Divider()
+
+        ForEach(Mailbox.allCases.filter { $0 != .allInboxes }, id: \.self) { mailbox in
             Button { viewModel.selectMailbox(mailbox) } label: {
                 Label(mailbox.rawValue, systemImage: mailbox == viewModel.currentMailbox ? "checkmark" : mailbox.icon)
             }
         }
+    }
+
+    private var selectedEmails: [Email] {
+        viewModel.emails.filter { selectedThreadIds.contains($0.threadId) }
+    }
+
+    private var shouldMarkRead: Bool {
+        selectedEmails.contains { $0.isUnread }
+    }
+
+    private var shouldStar: Bool {
+        selectedEmails.contains { !$0.isStarred }
+    }
+
+    @ViewBuilder
+    private var bulkActionBar: some View {
+        Button { performBulkArchive() } label: {
+            Image(systemName: "archivebox")
+        }
+        .disabled(selectedThreadIds.isEmpty)
+
+        Button { performBulkTrash() } label: {
+            Image(systemName: "trash")
+        }
+        .disabled(selectedThreadIds.isEmpty)
+
+        Button {
+            if shouldMarkRead {
+                performBulkMarkRead()
+            } else {
+                performBulkMarkUnread()
+            }
+        } label: {
+            Image(systemName: shouldMarkRead ? "envelope.open" : "envelope.badge")
+        }
+        .disabled(selectedThreadIds.isEmpty)
+
+        Button {
+            if shouldStar {
+                performBulkStar()
+            } else {
+                performBulkUnstar()
+            }
+        } label: {
+            Image(systemName: shouldStar ? "star" : "star.slash")
+        }
+        .disabled(selectedThreadIds.isEmpty)
+
+        Button { showingMoveDialog = true } label: {
+            Image(systemName: "folder")
+        }
+        .disabled(selectedThreadIds.isEmpty)
+
+        Button { showingBulkSnooze = true } label: {
+            Image(systemName: "clock")
+        }
+        .disabled(selectedThreadIds.isEmpty)
+    }
+
+    @ViewBuilder
+    private var bulkToastContent: some View {
+        if let message = viewModel.bulkToastMessage {
+            BulkActionToast(
+                message: message,
+                isError: viewModel.bulkToastIsError,
+                showsRetry: viewModel.bulkToastShowsRetry,
+                onRetry: { viewModel.retryPendingMutations() }
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    private func enterSelectionMode(selecting threadId: SelectionID) {
+        if !isSelectionMode {
+            isSelectionMode = true
+            editMode = .active
+        }
+        selectedThreadIds.insert(threadId)
+    }
+
+    private func exitSelectionMode() {
+        isSelectionMode = false
+        editMode = .inactive
+        selectedThreadIds.removeAll()
+    }
+
+    private func selectAllVisibleThreads() {
+        let visible = displaySections.flatMap { $0.emails.map(\.threadId) }
+        selectedThreadIds = Set(visible)
+        if !selectedThreadIds.isEmpty {
+            isSelectionMode = true
+            editMode = .active
+        }
+    }
+
+    private func performBulkArchive() {
+        viewModel.bulkArchive(threadIds: selectedThreadIds)
+        exitSelectionMode()
+    }
+
+    private func performBulkTrash() {
+        viewModel.bulkTrash(threadIds: selectedThreadIds)
+        exitSelectionMode()
+    }
+
+    private func performBulkMarkRead() {
+        viewModel.bulkMarkRead(threadIds: selectedThreadIds)
+        exitSelectionMode()
+    }
+
+    private func performBulkMarkUnread() {
+        viewModel.bulkMarkUnread(threadIds: selectedThreadIds)
+        exitSelectionMode()
+    }
+
+    private func performBulkStar() {
+        viewModel.bulkStar(threadIds: selectedThreadIds)
+        exitSelectionMode()
+    }
+
+    private func performBulkUnstar() {
+        viewModel.bulkUnstar(threadIds: selectedThreadIds)
+        exitSelectionMode()
+    }
+
+    private func performBulkMove(to mailbox: Mailbox) {
+        switch mailbox {
+        case .inbox:
+            viewModel.bulkMoveToInbox(threadIds: selectedThreadIds)
+        case .archive:
+            viewModel.bulkArchive(threadIds: selectedThreadIds)
+        case .trash:
+            viewModel.bulkTrash(threadIds: selectedThreadIds)
+        default:
+            viewModel.bulkMoveToInbox(threadIds: selectedThreadIds)
+        }
+        exitSelectionMode()
+    }
+
+    private func performBulkSnooze(until date: Date) {
+        viewModel.bulkSnooze(threadIds: selectedThreadIds, until: date)
+        exitSelectionMode()
+    }
+
+    private var scopeBinding: Binding<InboxScope> {
+        Binding(
+            get: { viewModel.scope },
+            set: { newValue in
+                viewModel.scope = newValue
+            }
+        )
+    }
+
+    private func availableFilters(for scope: InboxScope) -> [InboxFilter] {
+        if scope == .people {
+            return [.unread, .needsReply]
+        }
+        return InboxFilter.allCases
     }
 
     @ViewBuilder
@@ -263,7 +548,47 @@ struct InboxView: View {
 
     @ViewBuilder
     private var overlayContent: some View {
-        if viewModel.isLoading && viewModel.emailSections.isEmpty {
+        if viewModel.isSearching {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Searching...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.systemBackground).opacity(0.8))
+        } else if viewModel.isSearchActive && viewModel.searchResults.isEmpty {
+            ContentUnavailableView(
+                "No Results",
+                systemImage: "magnifyingglass",
+                description: Text("No emails found for \"\(viewModel.currentSearchQuery)\"")
+            )
+        } else if let error = viewModel.error, viewModel.emailSections.isEmpty {
+            VStack(spacing: 16) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.secondary)
+                Text("Unable to Load")
+                    .font(.title2.bold())
+                Text(error.localizedDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Try Again") {
+                    Task {
+                        await viewModel.refresh()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding()
+        } else if displaySections.isEmpty && !viewModel.isLoading {
+            ContentUnavailableView(
+                emptyStateTitle,
+                systemImage: emptyStateIcon,
+                description: Text(emptyStateDescription)
+            )
+        } else if viewModel.isLoading && viewModel.emailSections.isEmpty {
             InboxSkeletonView()
         }
     }
@@ -308,32 +633,81 @@ struct InboxView: View {
             logger.warning("Failed to decode app settings: \(error.localizedDescription)")
         }
     }
+
+    private var emptyStateTitle: String {
+        if let filter = viewModel.activeFilter {
+            return "No \(filter.rawValue)"
+        }
+        if viewModel.scope == .people {
+            return "No People"
+        }
+        return "Inbox Zero"
+    }
+
+    private var emptyStateDescription: String {
+        if let _ = viewModel.activeFilter {
+            return "No emails match this filter right now."
+        }
+        if viewModel.scope == .people {
+            return "No person-to-person emails yet."
+        }
+        return "You're all caught up."
+    }
+
+    private var emptyStateIcon: String {
+        if viewModel.scope == .people {
+            return "person.2"
+        }
+        if viewModel.activeFilter != nil {
+            return "line.3.horizontal.decrease.circle"
+        }
+        return "tray"
+    }
 }
 
 // MARK: - Inbox Header Block (Tight Filter Chips)
 
 struct InboxHeaderBlock: View {
+    @Binding var scope: InboxScope
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(InboxFilter.allCases, id: \.self) { filter in
-                    FilterPill(
-                        filter: filter,
-                        count: filterCounts[filter] ?? 0,
-                        isActive: activeFilter == filter,
-                        onTap: {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                activeFilter = activeFilter == filter ? nil : filter
-                            }
-                        }
-                    )
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("", selection: $scope) {
+                Text(InboxScope.all.rawValue).tag(InboxScope.all)
+                Text(InboxScope.people.rawValue).tag(InboxScope.people)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 6)
+            .pickerStyle(.segmented)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    let filters = scope == .people ? [InboxFilter.unread, .needsReply] : InboxFilter.allCases
+                    ForEach(filters, id: \.self) { filter in
+                        FilterPill(
+                            filter: filter,
+                            count: filterCounts[filter] ?? 0,
+                            isActive: activeFilter == filter,
+                            onTap: {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    activeFilter = activeFilter == filter ? nil : filter
+                                }
+                            }
+                        )
+                    }
+                }
+                .padding(.vertical, 6)
+                .padding(.leading, 8)
+            }
+            .overlay(alignment: .trailing) {
+                LinearGradient(
+                    colors: [Color.clear, Color(.systemBackground)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 24)
+                .allowsHitTesting(false)
+            }
         }
     }
 }
@@ -614,6 +988,7 @@ struct EmailRow: View {
                                 .frame(width: 8, height: 8)
                         }
                     }
+                    .frame(minWidth: 78, alignment: .trailing)
                 }
 
                 // Subject line
@@ -693,6 +1068,44 @@ struct UndoToast: View {
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
         )
         .padding(.horizontal, 16)
+    }
+}
+
+struct BulkActionToast: View {
+    let message: String
+    let isError: Bool
+    let showsRetry: Bool
+    let onRetry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.9))
+
+            Text(message)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+
+            Spacer()
+
+            if showsRetry {
+                Button("Retry") {
+                    onRetry()
+                }
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.yellow)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isError ? Color.red.opacity(0.9) : Color(.darkGray))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+        )
     }
 }
 
