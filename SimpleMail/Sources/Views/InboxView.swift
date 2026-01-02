@@ -111,7 +111,6 @@ struct InboxView: View {
         }
         .navigationTitle(viewModel.currentMailbox.rawValue)
         .navigationBarTitleDisplayMode(.large)
-        .toolbarTitleMenu { mailboxMenuContent }
         .toolbar { toolbarContent }
         .searchable(text: $searchText, prompt: "Search")
         .textInputAutocapitalization(.never)
@@ -169,6 +168,20 @@ struct InboxView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Menu {
+                mailboxMenuContent
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: viewModel.currentMailbox.icon)
+                        .font(.body)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
         ToolbarItem(placement: .topBarTrailing) {
             Button { showingSettings = true } label: {
                 Image(systemName: "gearshape")
