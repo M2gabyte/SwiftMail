@@ -238,7 +238,7 @@ struct InboxView: View {
         .accessibilityIdentifier("inboxList")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Section("Mailboxes") {
                         ForEach(Mailbox.allCases, id: \.self) { mailbox in
@@ -256,7 +256,7 @@ struct InboxView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(viewModel.currentMailbox.rawValue)
-                            .font(.headline)
+                            .font(.title2.weight(.bold))
                             .foregroundStyle(.primary)
                         Image(systemName: "chevron.down")
                             .font(.caption.weight(.semibold))
