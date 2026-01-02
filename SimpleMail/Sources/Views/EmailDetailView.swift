@@ -108,10 +108,6 @@ struct EmailDetailView: View {
         }
         .toolbar {
             ToolbarItem(placement: .bottomBar) {
-                Spacer()
-            }
-
-            ToolbarItem(placement: .bottomBar) {
                 // Reply Menu
                 Menu {
                     Button(action: { showingReplySheet = true }) {
@@ -126,6 +122,10 @@ struct EmailDetailView: View {
                 } label: {
                     Image(systemName: "arrowshape.turn.up.left")
                 }
+            }
+
+            ToolbarItem(placement: .bottomBar) {
+                Spacer()
             }
 
             ToolbarItem(placement: .bottomBar) {
