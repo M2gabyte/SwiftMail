@@ -699,17 +699,32 @@ struct EmailBodyWebView: UIViewRepresentable {
                     );
                     window.webkit.messageHandlers.heightHandler.postMessage(height);
                 }
+                function setupImageListeners() {
+                    document.querySelectorAll('img').forEach(function(img) {
+                        if (img.complete) {
+                            scheduleHeight();
+                        } else {
+                            img.addEventListener('load', scheduleHeight);
+                            img.addEventListener('error', scheduleHeight);
+                        }
+                    });
+                }
                 // Post height after load and after images load
                 window.onload = function() {
                     collapseEmptySpacers();
+                    setupImageListeners();
                     postHeight();
-                    // Recheck after a delay for dynamic content
+                    // Recheck after delays for dynamic content and slow-loading images
                     setTimeout(postHeight, 100);
-                    setTimeout(postHeight, 500);
+                    setTimeout(postHeight, 300);
+                    setTimeout(postHeight, 600);
+                    setTimeout(postHeight, 1000);
+                    setTimeout(postHeight, 2000);
                 };
-                // Also post height when images load
+                // Also post height when DOM is ready
                 document.addEventListener('DOMContentLoaded', function() {
                     collapseEmptySpacers();
+                    setupImageListeners();
                     postHeight();
                 });
                 if (window.ResizeObserver) {
@@ -760,8 +775,8 @@ struct EmailBodyWebView: UIViewRepresentable {
             }
 
             DispatchQueue.main.async {
-                // Add some padding and minimum height
-                self.contentHeight?.wrappedValue = max(100, height + 20)
+                // Add padding for safety margin and minimum height
+                self.contentHeight?.wrappedValue = max(100, height + 40)
             }
         }
 
