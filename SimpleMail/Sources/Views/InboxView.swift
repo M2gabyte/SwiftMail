@@ -13,6 +13,7 @@ struct InboxView: View {
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
     @StateObject private var searchHistory = SearchHistoryManager.shared
+    @Environment(\.isSearching) private var isSearching
 
     /// Filtered sections based on debounced search text with smart filter support
     private var filteredSections: [EmailSection] {
@@ -34,9 +35,12 @@ struct InboxView: View {
     /// Save search to history when user commits
     private func commitSearch() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !query.isEmpty {
-            searchHistory.addSearch(query)
+        // Don't save bare prefixes or too-short queries to history
+        guard query.count >= 2,
+              !SearchFilter.suggestions.contains(where: { query == $0.prefix }) else {
+            return
         }
+        searchHistory.addSearch(query)
     }
 
     /// Terms to highlight in search results
@@ -56,7 +60,7 @@ struct InboxView: View {
             highlightTerms: highlightTerms
         )
         .listRowBackground(Color(.systemBackground))
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
         .listRowSeparator(.visible)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button { viewModel.archiveEmail(email) } label: {
@@ -101,36 +105,33 @@ struct InboxView: View {
         .onAppear { Task { await viewModel.loadMoreIfNeeded(currentEmail: email) } }
     }
 
-    @State private var isSearchActive = false
-
     var body: some View {
-        inboxList
-            .navigationTitle(viewModel.currentMailbox.rawValue)
-            .navigationBarTitleDisplayMode(.large)
-            .toolbarTitleMenu { mailboxMenuContent }
-            .toolbar { toolbarContent }
-            .overlay { overlayContent }
-            .overlay(alignment: .bottomTrailing) { composeFAB }
-            .sheet(isPresented: $showingSettings) { SettingsView() }
-            .sheet(isPresented: $showingCompose) { ComposeView() }
-            .sheet(isPresented: $isSearchActive) {
-                SearchSheet(
-                    searchText: $searchText,
-                    debouncedText: $debouncedSearchText,
-                    isPresented: $isSearchActive,
-                    emails: viewModel.emailSections.flatMap { $0.emails },
-                    onSelectEmail: { email in
-                        isSearchActive = false
-                        viewModel.openEmail(email)
-                    }
-                )
-            }
-            .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
-            .refreshable { await viewModel.refresh() }
-            .task(id: searchText) { await debounceSearch() }
-            .onAppear { handleAppear() }
-            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() }
-            .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() }
+        ZStack {
+            inboxList
+        }
+        .navigationTitle(viewModel.currentMailbox.rawValue)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleMenu { mailboxMenuContent }
+        .toolbar { toolbarContent }
+        .searchable(text: $searchText, prompt: "Search")
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled(true)
+        .searchSuggestions { searchSuggestionsContent }
+        .onSubmit(of: .search) {
+            commitSearch()
+            debouncedSearchText = searchText
+        }
+        .searchToolbarBehavior(.minimize)
+        .overlay { overlayContent }
+        .overlay(alignment: .bottomTrailing) { composeFAB }
+        .sheet(isPresented: $showingSettings) { SettingsView() }
+        .sheet(isPresented: $showingCompose) { ComposeView() }
+        .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
+        .refreshable { await viewModel.refresh() }
+        .task(id: searchText) { await debounceSearch() }
+        .onAppear { handleAppear() }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() }
+        .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() }
     }
 
     // MARK: - Extracted View Components
@@ -152,7 +153,7 @@ struct InboxView: View {
                     // Section headers: increased contrast
                     Text(section.title)
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.primary.opacity(0.6))
+                        .foregroundStyle(.primary.opacity(0.72))
                         .textCase(nil)
                 }
             }
@@ -165,16 +166,13 @@ struct InboxView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 80) }
+        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 104) }
     }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Button { isSearchActive = true } label: {
-                Image(systemName: "magnifyingglass")
-            }
-        }
+        DefaultToolbarItem(kind: .search, placement: .bottomBar)
+
         ToolbarItem(placement: .topBarTrailing) {
             Button { showingSettings = true } label: {
                 Image(systemName: "gearshape")
@@ -191,10 +189,60 @@ struct InboxView: View {
         }
     }
 
+    @ViewBuilder
+    private var searchSuggestionsContent: some View {
+        if searchText.isEmpty {
+            // Search Filters section
+            Section("Search Filters") {
+                ForEach(SearchFilter.suggestions, id: \.prefix) { suggestion in
+                    Button {
+                        searchText = suggestion.prefix
+                    } label: {
+                        Label(suggestion.description, systemImage: suggestion.icon)
+                    }
+                    .searchCompletion(suggestion.prefix)
+                }
+            }
+
+            // Recent searches section
+            if !searchHistory.recentSearches.isEmpty {
+                Section {
+                    ForEach(searchHistory.recentSearches.prefix(5), id: \.self) { query in
+                        Button {
+                            searchText = query
+                        } label: {
+                            Label(query, systemImage: "clock.arrow.circlepath")
+                        }
+                        .searchCompletion(query)
+                    }
+                } header: {
+                    HStack {
+                        Text("Recent")
+                        Spacer()
+                        Button("Clear") { searchHistory.clearHistory() }
+                            .font(.caption)
+                    }
+                }
+            }
+        } else if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !searchText.contains(":") {
+            // Typing suggestions - show smart filter options
+            Section("Try") {
+                ForEach(SearchFilter.suggestions.prefix(3), id: \.prefix) { suggestion in
+                    Button {
+                        searchText = "\(suggestion.prefix)\(searchText)"
+                    } label: {
+                        Label("\(suggestion.prefix)\(searchText)", systemImage: suggestion.icon)
+                    }
+                    .searchCompletion("\(suggestion.prefix)\(searchText)")
+                }
+            }
+        }
+    }
+
     // Floating compose button (thumb-first)
     @ViewBuilder
     private var composeFAB: some View {
-        if !isSearchActive {
+        if !isSearching {
             Button { showingCompose = true } label: {
                 Image(systemName: "square.and.pencil")
                     .font(.title2)
@@ -207,7 +255,6 @@ struct InboxView: View {
             .padding(.trailing, 20)
             .padding(.bottom, 24)
             .transition(.scale.combined(with: .opacity))
-            .animation(.easeInOut(duration: 0.2), value: isSearchActive)
         }
     }
 
@@ -226,6 +273,12 @@ struct InboxView: View {
     }
 
     private func debounceSearch() async {
+        // Instant clear for empty search
+        if searchText.isEmpty {
+            debouncedSearchText = ""
+            return
+        }
+        // Debounce non-empty search
         do {
             try await Task.sleep(for: .milliseconds(300))
             debouncedSearchText = searchText
@@ -330,28 +383,34 @@ struct FilterPill: View {
             HStack(spacing: 5) {
                 Image(systemName: filter.icon)
                     .font(.caption2)
-                    .foregroundStyle(filter.color.opacity(isActive ? 1.0 : 0.6))
+                    .foregroundStyle(isActive ? filter.color : filter.color.opacity(0.6))
 
                 Text(filter.rawValue)
                     .font(.subheadline)
                     .fontWeight(isActive ? .semibold : .regular)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isActive ? .primary : Color.primary.opacity(0.82))
 
                 // Count badge (compact, only when > 0)
                 if count > 0 {
                     Text("\(count)")
-                        .font(.caption2.monospacedDigit())
-                        .fontWeight(.medium)
-                        .foregroundStyle(isActive ? filter.color : .secondary)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color(.systemGray5))
+                        .clipShape(Capsule())
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(
-                Capsule().fill(isActive ? filter.color.opacity(0.15) : Color(.systemGray6))
+                Capsule().fill(isActive ? filter.color.opacity(0.16) : Color(.systemGray6))
             )
             .overlay(
-                isActive ? Capsule().strokeBorder(filter.color.opacity(0.3), lineWidth: 1) : nil
+                Capsule().strokeBorder(
+                    isActive ? filter.color.opacity(0.35) : Color(.separator).opacity(0.55),
+                    lineWidth: 1
+                )
             )
         }
         .buttonStyle(.plain)
@@ -666,197 +725,6 @@ struct EmailSection: Identifiable {
     let emails: [Email]
 }
 
-// MARK: - Search Suggestions
-
-struct SearchSuggestionsSection: View {
-    let recentSearches: [String]
-    let onSelectSearch: (String) -> Void
-    let onRemoveSearch: (String) -> Void
-    let onClearHistory: () -> Void
-
-    var body: some View {
-        // Smart filter suggestions
-        Section {
-            ForEach(SearchFilter.suggestions, id: \.prefix) { suggestion in
-                Button {
-                    onSelectSearch(suggestion.prefix)
-                } label: {
-                    Label(suggestion.description, systemImage: suggestion.icon)
-                        .foregroundStyle(.primary)
-                }
-            }
-        } header: {
-            Text("Search Filters")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-                .textCase(nil)
-        }
-        .listRowBackground(Color(.systemBackground))
-
-        // Recent searches
-        if !recentSearches.isEmpty {
-            Section {
-                ForEach(recentSearches, id: \.self) { search in
-                    HStack {
-                        Button {
-                            onSelectSearch(search)
-                        } label: {
-                            Label(search, systemImage: "clock.arrow.circlepath")
-                                .foregroundStyle(.primary)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            onRemoveSearch(search)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            } header: {
-                HStack {
-                    Text("Recent")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                        .textCase(nil)
-
-                    Spacer()
-
-                    Button("Clear") {
-                        onClearHistory()
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-                }
-            }
-            .listRowBackground(Color(.systemBackground))
-        }
-    }
-}
-
-struct FilterSuggestionsRow: View {
-    let query: String
-    let onSelect: (String) -> Void
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(SearchFilter.suggestions.prefix(3), id: \.prefix) { suggestion in
-                    Button {
-                        onSelect("\(suggestion.prefix)\(query)")
-                    } label: {
-                        Label("\(suggestion.prefix)\(query)", systemImage: suggestion.icon)
-                            .font(.caption)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color(.systemGray6))
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.primary)
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-        .listRowInsets(EdgeInsets())
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-    }
-}
-
-// MARK: - Search Sheet
-
-struct SearchSheet: View {
-    @Binding var searchText: String
-    @Binding var debouncedText: String
-    @Binding var isPresented: Bool
-    let emails: [Email]
-    let onSelectEmail: (Email) -> Void
-
-    @FocusState private var isFocused: Bool
-    @StateObject private var searchHistory = SearchHistoryManager.shared
-
-    private var filteredEmails: [Email] {
-        let query = debouncedText.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return [] }
-        return emails.filter { email in
-            email.senderName.lowercased().contains(query) ||
-            email.senderEmail.lowercased().contains(query) ||
-            email.subject.lowercased().contains(query) ||
-            email.snippet.lowercased().contains(query)
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if debouncedText.isEmpty {
-                    // Recent searches
-                    if !searchHistory.recentSearches.isEmpty {
-                        Section("Recent") {
-                            ForEach(searchHistory.recentSearches.prefix(5), id: \.self) { query in
-                                Button {
-                                    searchText = query
-                                    debouncedText = query
-                                } label: {
-                                    Label(query, systemImage: "clock.arrow.circlepath")
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // Search results
-                    ForEach(filteredEmails.prefix(20)) { email in
-                        Button { onSelectEmail(email) } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(email.senderName)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Text(email.subject)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .foregroundStyle(.primary)
-                    }
-
-                    if filteredEmails.isEmpty {
-                        ContentUnavailableView.search(text: debouncedText)
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .navigationTitle("Search")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search emails")
-            .focused($isFocused)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPresented = false }
-                }
-            }
-            .onAppear { isFocused = true }
-            .onChange(of: searchText) { _, newValue in
-                Task {
-                    try? await Task.sleep(for: .milliseconds(300))
-                    debouncedText = newValue
-                }
-            }
-            .onSubmit(of: .search) {
-                if !searchText.isEmpty {
-                    searchHistory.addSearch(searchText)
-                }
-            }
-        }
-    }
-}
 
 // MARK: - Preview
 
