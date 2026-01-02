@@ -236,25 +236,35 @@ struct InboxView: View {
         .background(Color(.systemBackground))
         .listSectionSpacing(6)
         .accessibilityIdentifier("inboxList")
-        .navigationTitle(viewModel.currentMailbox.rawValue)
-        .navigationBarTitleDisplayMode(.large)
-        .toolbarTitleMenu {
-            // Quick switch favorites
-            Section("Favorites") {
-                ForEach(Mailbox.allCases, id: \.self) { mailbox in
-                    Button {
-                        viewModel.selectMailbox(mailbox)
-                    } label: {
-                        if mailbox == viewModel.currentMailbox {
-                            Label(mailbox.rawValue, systemImage: "checkmark")
-                        } else {
-                            Label(mailbox.rawValue, systemImage: mailbox.icon)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Menu {
+                    Section("Mailboxes") {
+                        ForEach(Mailbox.allCases, id: \.self) { mailbox in
+                            Button {
+                                viewModel.selectMailbox(mailbox)
+                            } label: {
+                                if mailbox == viewModel.currentMailbox {
+                                    Label(mailbox.rawValue, systemImage: "checkmark")
+                                } else {
+                                    Label(mailbox.rawValue, systemImage: mailbox.icon)
+                                }
+                            }
                         }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(viewModel.currentMailbox.rawValue)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
-        }
-        .toolbar {
+
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
