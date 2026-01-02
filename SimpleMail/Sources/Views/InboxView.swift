@@ -266,15 +266,12 @@ struct InboxView: View {
             }
 
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
+                Button {
+                    showingSettings = true
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "gearshape")
                 }
+                .accessibilityLabel("Settings")
             }
 
             ToolbarItemGroup(placement: .bottomBar) {
