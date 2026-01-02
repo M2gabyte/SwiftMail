@@ -108,7 +108,11 @@ struct EmailDetailView: View {
         }
         .toolbar {
             ToolbarItem(placement: .bottomBar) {
-                // Reply Menu - Far Left
+                Spacer()
+            }
+
+            ToolbarItem(placement: .bottomBar) {
+                // Reply Menu
                 Menu {
                     Button(action: { showingReplySheet = true }) {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
@@ -125,11 +129,7 @@ struct EmailDetailView: View {
             }
 
             ToolbarItem(placement: .bottomBar) {
-                Spacer()
-            }
-
-            ToolbarItem(placement: .bottomBar) {
-                // Archive - Far Right
+                // Archive
                 Button {
                     Task {
                         await viewModel.archive()
