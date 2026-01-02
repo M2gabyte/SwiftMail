@@ -104,8 +104,12 @@ struct InboxView: View {
 
     var body: some View {
         inboxList
+            .navigationTitle(viewModel.currentMailbox.rawValue)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarTitleMenu { mailboxMenuContent }
             .toolbar { toolbarContent }
             .overlay { overlayContent }
+            .overlay(alignment: .bottomTrailing) { composeFAB }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .sheet(isPresented: $showingCompose) { ComposeView() }
             .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
@@ -120,8 +124,9 @@ struct InboxView: View {
 
     private var inboxList: some View {
         List {
+            // Filter chips row (tight spacing)
             InboxHeaderBlock(activeFilter: $viewModel.activeFilter, filterCounts: viewModel.filterCounts)
-                .listRowInsets(EdgeInsets())
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
 
@@ -131,10 +136,10 @@ struct InboxView: View {
                         emailRowView(for: email)
                     }
                 } header: {
+                    // Section headers: increased contrast
                     Text(section.title)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.primary.opacity(0.6))
                         .textCase(nil)
                 }
             }
@@ -144,51 +149,75 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
+
+            // Bottom padding for FAB clearance
+            Color.clear.frame(height: 80)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .searchable(text: $searchText, prompt: "Search emails")
-        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search")
+        .searchSuggestions { searchSuggestionsContent }
     }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) { mailboxMenu }
-        ToolbarItem(placement: .topBarTrailing) { settingsButton }
-        ToolbarItemGroup(placement: .bottomBar) {
-            Spacer()
-            composeButton
-        }
-    }
-
-    private var mailboxMenu: some View {
-        Menu {
-            ForEach(Mailbox.allCases, id: \.self) { mailbox in
-                Button { viewModel.selectMailbox(mailbox) } label: {
-                    Label(mailbox.rawValue, systemImage: mailbox == viewModel.currentMailbox ? "checkmark" : mailbox.icon)
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text(viewModel.currentMailbox.rawValue)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(.primary)
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { showingSettings = true } label: {
+                Image(systemName: "gearshape")
             }
         }
     }
 
-    private var settingsButton: some View {
-        Button { showingSettings = true } label: {
-            Image(systemName: "gearshape")
+    @ViewBuilder
+    private var mailboxMenuContent: some View {
+        ForEach(Mailbox.allCases, id: \.self) { mailbox in
+            Button { viewModel.selectMailbox(mailbox) } label: {
+                Label(mailbox.rawValue, systemImage: mailbox == viewModel.currentMailbox ? "checkmark" : mailbox.icon)
+            }
         }
     }
 
-    private var composeButton: some View {
-        Button { showingCompose = true } label: {
-            Image(systemName: "square.and.pencil")
+    @ViewBuilder
+    private var searchSuggestionsContent: some View {
+        // Recent searches
+        ForEach(searchHistory.recentSearches.prefix(5), id: \.self) { query in
+            Button {
+                searchText = query
+            } label: {
+                Label(query, systemImage: "clock.arrow.circlepath")
+            }
+            .searchCompletion(query)
+        }
+
+        // Smart filter suggestions
+        ForEach(SearchFilter.suggestions.prefix(4), id: \.prefix) { suggestion in
+            Button {
+                searchText = suggestion.prefix
+            } label: {
+                Label(suggestion.description, systemImage: suggestion.icon)
+            }
+            .searchCompletion(suggestion.prefix)
+        }
+    }
+
+    // Floating compose button (thumb-first)
+    @ViewBuilder
+    private var composeFAB: some View {
+        if !searchFocused {
+            Button { showingCompose = true } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.title2)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(Circle().fill(Color.accentColor))
+                    .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+            }
+            .padding(.trailing, 20)
+            .padding(.bottom, 24)
+            .transition(.scale.combined(with: .opacity))
         }
     }
 
@@ -235,35 +264,30 @@ struct InboxView: View {
     }
 }
 
-// MARK: - Inbox Header Block (iOS 26 - Chips Only)
+// MARK: - Inbox Header Block (Tight Filter Chips)
 
 struct InboxHeaderBlock: View {
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
 
     var body: some View {
-        // Triage chips - the signature UI element
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ForEach(InboxFilter.allCases, id: \.self) { filter in
                     FilterPill(
                         filter: filter,
                         count: filterCounts[filter] ?? 0,
                         isActive: activeFilter == filter,
                         onTap: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                if activeFilter == filter {
-                                    activeFilter = nil
-                                } else {
-                                    activeFilter = filter
-                                }
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                activeFilter = activeFilter == filter ? nil : filter
                             }
                         }
                     )
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
         }
     }
 }
@@ -313,33 +337,32 @@ struct FilterPill: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: filter.icon)
-                    .font(.caption)
-                    .foregroundStyle(filter.color)
+                    .font(.caption2)
+                    .foregroundStyle(isActive ? filter.color : .secondary)
+
                 Text(filter.rawValue)
-                    .font(isActive ? .subheadline.weight(.semibold) : .subheadline)
-                    .foregroundStyle(.primary)
+                    .font(.subheadline)
+                    .fontWeight(isActive ? .semibold : .regular)
+                    .foregroundStyle(isActive ? .primary : .secondary)
+
+                // Count badge (compact, only when > 0)
                 if count > 0 {
                     Text("\(count)")
                         .font(.caption2.monospacedDigit())
                         .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.thinMaterial, in: Capsule())
+                        .foregroundStyle(isActive ? filter.color : Color.secondary.opacity(0.6))
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
-                Capsule().fill(isActive ? filter.color.opacity(0.15) : Color.secondary.opacity(0.08))
-            )
-            .overlay(
-                Capsule().strokeBorder(isActive ? filter.color.opacity(0.3) : .primary.opacity(0.08), lineWidth: 1)
+                Capsule().fill(isActive ? filter.color.opacity(0.12) : Color(.systemGray6))
             )
         }
         .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: isActive)
     }
 }
 
@@ -486,13 +509,14 @@ struct EmailRow: View {
                 SmartAvatarView(
                     email: email.senderEmail,
                     name: email.senderName,
-                    size: 36
+                    size: 40
                 )
             }
 
             // Content
-            VStack(alignment: .leading, spacing: isCompact ? 1 : 2) {
-                HStack {
+            VStack(alignment: .leading, spacing: isCompact ? 2 : 3) {
+                // Top row: sender + metadata cluster
+                HStack(alignment: .center, spacing: 6) {
                     highlightedText(email.senderName, font: isCompact ? .caption : .subheadline)
                         .font(isCompact ? .caption : .subheadline)
                         .fontWeight(email.isUnread ? .semibold : .regular)
@@ -508,45 +532,52 @@ struct EmailRow: View {
                         Text(accountLabel)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
                             .background(Color(.systemGray6))
                             .clipShape(Capsule())
                     }
 
                     Spacer()
 
-                    Text(DateFormatters.formatEmailDate(email.date))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    // Trailing metadata cluster (aligned)
+                    HStack(spacing: 4) {
+                        if email.hasAttachments {
+                            Image(systemName: "paperclip")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
 
-                    if email.hasAttachments {
-                        Image(systemName: "paperclip")
+                        Text(DateFormatters.formatEmailDate(email.date))
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(email.isUnread ? .primary : .secondary)
+
+                        // Unread dot aligned with timestamp
+                        if email.isUnread {
+                            Circle()
+                                .fill(.blue)
+                                .frame(width: 8, height: 8)
+                        }
                     }
                 }
 
-                highlightedText(email.subject, font: isCompact ? .caption2 : .caption)
-                    .font(isCompact ? .caption2 : .caption)
+                // Subject line
+                highlightedText(email.subject, font: isCompact ? .caption2 : .subheadline)
+                    .font(isCompact ? .caption2 : .subheadline)
                     .fontWeight(email.isUnread ? .medium : .regular)
+                    .foregroundStyle(email.isUnread ? .primary : .secondary)
                     .lineLimit(1)
 
+                // Snippet (not in compact mode)
                 if !isCompact {
-                    highlightedText(email.snippet, font: .caption2, baseColor: .secondary)
-                        .font(.caption2)
-                        .lineLimit(1)
+                    highlightedText(email.snippet, font: .caption, baseColor: .secondary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
-
-            // Unread indicator
-            if email.isUnread {
-                Circle()
-                    .fill(.blue)
-                    .frame(width: 6, height: 6)
-            }
         }
-        .padding(.vertical, isCompact ? 0 : 2)
+        .padding(.vertical, isCompact ? 2 : 4)
         .contentShape(Rectangle())
     }
 }
