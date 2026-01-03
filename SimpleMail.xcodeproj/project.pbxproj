@@ -54,6 +54,8 @@
 		A1000047 /* OutboxManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000047 /* OutboxManager.swift */; };
 		A1000048 /* BodyPrefetchQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000048 /* BodyPrefetchQueue.swift */; };
 		A1000049 /* QueuedEmail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000049 /* QueuedEmail.swift */; };
+		A1000050 /* EmailPreviewNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000050 /* EmailPreviewNormalizer.swift */; };
+		A1000051 /* BottomCommandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000051 /* BottomCommandSurface.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -117,6 +119,8 @@
 		B1000047 /* OutboxManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboxManager.swift; sourceTree = "<group>"; };
 		B1000048 /* BodyPrefetchQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyPrefetchQueue.swift; sourceTree = "<group>"; };
 		B1000049 /* QueuedEmail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedEmail.swift; sourceTree = "<group>"; };
+		B1000050 /* EmailPreviewNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailPreviewNormalizer.swift; sourceTree = "<group>"; };
+		B1000051 /* BottomCommandSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomCommandSurface.swift; sourceTree = "<group>"; };
 		B3582BDA6D42420A /* PendingSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -204,6 +208,7 @@
 				B1000022 /* BatchOperations.swift */,
 				B1000024 /* SmartAvatarView.swift */,
 				B1000041 /* BottomSearchPill.swift */,
+				B1000051 /* BottomCommandSurface.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -268,6 +273,7 @@
 				B1000034 /* AccountDefaults.swift */,
 				B1000036 /* NetworkRetry.swift */,
 				B1000099 /* EmailPreviewParser.swift */,
+				B1000050 /* EmailPreviewNormalizer.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -445,6 +451,8 @@
 				A1000047 /* OutboxManager.swift in Sources */,
 				A1000048 /* BodyPrefetchQueue.swift in Sources */,
 				A1000049 /* QueuedEmail.swift in Sources */,
+				A1000050 /* EmailPreviewNormalizer.swift in Sources */,
+				A1000051 /* BottomCommandSurface.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
