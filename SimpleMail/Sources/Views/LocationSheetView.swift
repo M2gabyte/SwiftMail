@@ -37,7 +37,7 @@ struct LocationSheetView: View {
         case .unified:
             return "Unified Inbox"
         case .account(let account):
-            return account.name.isEmpty ? account.email : account.name
+            return account.email
         }
     }
 
@@ -58,7 +58,7 @@ struct LocationSheetView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Inbox scope") {
+                Section {
                     NavigationLink {
                         InboxScopePickerView(
                             current: $scopeSelection,
@@ -70,7 +70,10 @@ struct LocationSheetView: View {
                         )
                     } label: {
                         HStack(spacing: 8) {
-                            Label("Inbox scope", systemImage: "tray.full")
+                            Image(systemName: "tray.full")
+                                .foregroundStyle(.secondary)
+                            Text("Inbox scope")
+                                .foregroundStyle(.primary)
                             Spacer()
                             Text(scopeLabel)
                                 .foregroundStyle(.secondary)
@@ -103,7 +106,8 @@ struct LocationSheetView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Location")
-            .presentationDetents([.height(320), .medium])
+            .navigationBarTitleDisplayMode(.inline)
+            .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
             .onAppear {
                 if selectedMailbox == .allInboxes {
@@ -193,7 +197,7 @@ struct MailboxRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: kind.icon)
-                .foregroundStyle(isSelected ? .accentColor : .secondary)
+                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             Text(kind.rawValue)
                 .fontWeight(isSelected ? .semibold : .regular)
                 .foregroundStyle(.primary)
@@ -201,9 +205,5 @@ struct MailboxRow: View {
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-        )
     }
 }
