@@ -10,8 +10,7 @@ actor SummaryQueue {
         let subject: String
         let from: String
         let snippet: String
-        let body: String
-        let receivedAt: Date
+        let date: Date
     }
 
     private var queue: [Job] = []
@@ -32,15 +31,18 @@ actor SummaryQueue {
             if SummaryCache.shared.summary(for: email.id, accountEmail: email.accountEmail) != nil {
                 continue
             }
+            // Skip if no account email (shouldn't happen but be defensive)
+            guard let accountEmail = email.accountEmail else {
+                continue
+            }
             queuedIds.insert(email.id)
             let job = Job(
                 emailId: email.id,
-                accountEmail: email.accountEmail,
+                accountEmail: accountEmail,
                 subject: email.subject,
                 from: email.from,
                 snippet: email.snippet,
-                body: email.body,
-                receivedAt: email.receivedAt
+                date: email.date
             )
             queue.append(job)
         }
@@ -66,9 +68,11 @@ actor SummaryQueue {
             }
 
             // Use the job data directly instead of fetching
+            // Note: Using snippet as a fallback - ideally we'd fetch the full body
+            // but this prevents SwiftData Sendable issues
             let summary = await SummaryService.summarizeIfNeeded(
                 messageId: job.emailId,
-                body: job.body,
+                body: job.snippet,
                 accountEmail: job.accountEmail
             )
 
