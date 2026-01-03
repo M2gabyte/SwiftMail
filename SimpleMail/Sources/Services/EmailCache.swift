@@ -474,8 +474,11 @@ final class EmailCacheManager: ObservableObject {
     func hasDetailCached(emailId: String) -> Bool {
         guard let context = modelContext else { return false }
 
+        let id = emailId  // Capture in local variable for predicate
         let descriptor = FetchDescriptor<EmailDetail>(
-            predicate: #Predicate { $0.id == emailId }
+            predicate: #Predicate<EmailDetail> { detail in
+                detail.id == id
+            }
         )
 
         return (try? context.fetchCount(descriptor)) ?? 0 > 0
@@ -486,8 +489,11 @@ final class EmailCacheManager: ObservableObject {
         guard let context = modelContext else { return }
 
         // Check if already cached
+        let id = dto.id  // Capture in local variable for predicate
         let descriptor = FetchDescriptor<EmailDetail>(
-            predicate: #Predicate { $0.id == dto.id }
+            predicate: #Predicate<EmailDetail> { detail in
+                detail.id == id
+            }
         )
 
         if let existing = try? context.fetch(descriptor).first {
