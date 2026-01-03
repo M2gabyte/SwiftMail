@@ -16,15 +16,16 @@ enum InboxLocationScope: Equatable {
 
 struct LocationSheetView: View {
     @Environment(\.dismiss) private var dismiss
-
+    @ObservedObject private var auth = AuthService.shared
     @Binding var selectedMailbox: Mailbox
-    let currentAccount: AuthService.Account?
-    let accounts: [AuthService.Account]
     let onSelectMailbox: (Mailbox) -> Void
     let onSelectScope: (InboxLocationScope) -> Void
 
     @State private var scopeSelection: InboxLocationScope = .unified
-    @State private var sheetDetent: PresentationDetent = .medium
+    @State private var sheetDetent: PresentationDetent = .large
+
+    private var accounts: [AuthService.Account] { auth.accounts }
+    private var currentAccount: AuthService.Account? { auth.currentAccount }
 
     private var isUnified: Bool {
         if case .unified = scopeSelection {
@@ -136,7 +137,16 @@ struct LocationSheetView: View {
                 } else {
                     scopeSelection = .unified
                 }
-                sheetDetent = .medium
+                sheetDetent = .large
+            }
+            .onChange(of: auth.currentAccount?.id) { _, _ in
+                if selectedMailbox == .allInboxes {
+                    scopeSelection = .unified
+                } else if let account = currentAccount {
+                    scopeSelection = .account(account)
+                } else {
+                    scopeSelection = .unified
+                }
             }
         }
     }

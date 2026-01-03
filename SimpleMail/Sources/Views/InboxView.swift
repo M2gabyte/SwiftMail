@@ -141,8 +141,6 @@ struct InboxView: View {
             .sheet(isPresented: $showingLocationSheet) {
                 LocationSheetView(
                     selectedMailbox: $viewModel.currentMailbox,
-                    currentAccount: AuthService.shared.currentAccount,
-                    accounts: AuthService.shared.accounts,
                     onSelectMailbox: { mailbox in
                         viewModel.selectMailbox(mailbox)
                     },
