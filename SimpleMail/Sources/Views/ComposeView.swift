@@ -1991,8 +1991,10 @@ class ComposeViewModel: ObservableObject {
         let dateStr = dateFormatter.string(from: email.date)
 
         let senderName = EmailParser.extractSenderName(from: email.from)
+        let plainBody = plainTextFromHTML(email.body)
+        let quotePreview = summarizeForQuote(plainBody)
 
-        return "\n\nOn \(dateStr), \(senderName) wrote:\n> \(email.body.replacingOccurrences(of: "\n", with: "\n> "))"
+        return "\n\nOn \(dateStr), \(senderName) wrote:\n> \(quotePreview.replacingOccurrences(of: "\n", with: "\n> "))"
     }
 
     private func buildForwardedMessage(_ email: EmailDetail) -> String {
@@ -2016,6 +2018,124 @@ class ComposeViewModel: ObservableObject {
         bodyAttributed.string
     }
 
+    private func plainTextFromHTML(_ html: String) -> String {
+        // Avoid NSAttributedString HTML parsing here (can throw Obj-C exceptions on malformed HTML).
+        var text = html
+        if text.count > 200_000 {
+            text = String(text.prefix(200_000))
+        }
+
+        // Remove style/script blocks
+        while let start = text.range(of: "<style", options: .caseInsensitive),
+              let end = text.range(of: "</style>", options: .caseInsensitive, range: start.upperBound..<text.endIndex) {
+            text.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        while let start = text.range(of: "<script", options: .caseInsensitive),
+              let end = text.range(of: "</script>", options: .caseInsensitive, range: start.upperBound..<text.endIndex) {
+            text.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+
+        // Strip tags + normalize whitespace
+        text = text
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+
+        text = decodeHTMLEntities(text)
+        text = text
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Remove any lingering zero-width characters
+        text = text.replacingOccurrences(of: "[\\u200B-\\u200D\\uFEFF]", with: "", options: .regularExpression)
+
+        return text
+    }
+
+    private func decodeHTMLEntities(_ text: String) -> String {
+        var output = text
+
+        let basic: [String: String] = [
+            "&nbsp;": " ",
+            "&zwnj;": "",
+            "&zwj;": "",
+            "&lrm;": "",
+            "&rlm;": "",
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&quot;": "\"",
+            "&#39;": "'",
+            "&apos;": "'"
+        ]
+        for (entity, value) in basic {
+            output = output.replacingOccurrences(of: entity, with: value, options: .caseInsensitive)
+        }
+
+        // Decode decimal numeric entities
+        let decimalPattern = "&#(\\d+);"
+        if let regex = try? NSRegularExpression(pattern: decimalPattern) {
+            let nsrange = NSRange(output.startIndex..., in: output)
+            var result = output
+            regex.enumerateMatches(in: output, range: nsrange) { match, _, _ in
+                guard let match, match.numberOfRanges == 2,
+                      let range = Range(match.range(at: 1), in: output) else {
+                    return
+                }
+                if let codePoint = Int(output[range]),
+                   let scalar = UnicodeScalar(codePoint) {
+                    let fullRange = Range(match.range(at: 0), in: output)!
+                    result = result.replacingOccurrences(of: String(output[fullRange]), with: String(scalar))
+                }
+            }
+            output = result
+        }
+
+        // Decode hex numeric entities
+        let hexPattern = "&#x([0-9a-fA-F]+);"
+        if let regex = try? NSRegularExpression(pattern: hexPattern) {
+            let nsrange = NSRange(output.startIndex..., in: output)
+            var result = output
+            regex.enumerateMatches(in: output, range: nsrange) { match, _, _ in
+                guard let match, match.numberOfRanges == 2,
+                      let range = Range(match.range(at: 1), in: output) else {
+                    return
+                }
+                let hex = output[range]
+                if let codePoint = Int(hex, radix: 16),
+                   let scalar = UnicodeScalar(codePoint) {
+                    let fullRange = Range(match.range(at: 0), in: output)!
+                    result = result.replacingOccurrences(of: String(output[fullRange]), with: String(scalar))
+                }
+            }
+            output = result
+        }
+
+        // Strip zero-width characters
+        output = output
+            .replacingOccurrences(of: "[\\u200B-\\u200D\\uFEFF]", with: "", options: .regularExpression)
+
+        return output
+    }
+
+    private func summarizeForQuote(_ text: String) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let lines = normalized
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let previewLines = lines.prefix(4)
+        var preview = previewLines.joined(separator: "\n")
+        if preview.count > 320 {
+            preview = String(preview.prefix(320))
+        }
+        if lines.count > previewLines.count || normalized.count > preview.count {
+            preview += "…"
+        }
+        return preview
+    }
     private func htmlBody() -> String? {
         let range = NSRange(location: 0, length: bodyAttributed.length)
         let documentAttributes: [NSAttributedString.DocumentAttributeKey: Any] = [
