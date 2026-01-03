@@ -129,7 +129,7 @@ actor SummaryQueue {
 
     private func fetchDetail(for email: Email) async -> EmailDetailDTO? {
         if let accountEmail = email.accountEmail,
-           let account = AuthService.shared.accounts.first(where: { $0.email.lowercased() == accountEmail.lowercased() }) {
+           let account = await MainActor.run({ AuthService.shared.accounts.first(where: { $0.email.lowercased() == accountEmail.lowercased() }) }) {
             if let thread = try? await GmailService.shared.fetchThread(threadId: email.threadId, account: account),
                let latest = thread.sorted(by: { $0.date > $1.date }).first {
                 return latest
