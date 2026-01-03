@@ -34,10 +34,19 @@ struct LocationSheetView: View {
         return false
     }
 
-    private var scopeLabel: String {
+    private var scopeName: String {
         switch scopeSelection {
         case .unified:
             return "Unified Inbox"
+        case .account(let account):
+            return account.name.isEmpty ? "Account" : account.name
+        }
+    }
+
+    private var scopeEmail: String {
+        switch scopeSelection {
+        case .unified:
+            return "All accounts"
         case .account(let account):
             return account.email
         }
@@ -81,10 +90,17 @@ struct LocationSheetView: View {
                             Text("Inbox scope")
                                 .foregroundStyle(.primary)
                             Spacer()
-                            Text(scopeLabel)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(scopeName)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Text(scopeEmail)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
                         }
                     }
                 }
@@ -125,6 +141,7 @@ struct LocationSheetView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .listSectionSpacing(.compact)
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
             .presentationDetents([.large], selection: $sheetDetent)
@@ -165,8 +182,17 @@ struct InboxScopePickerView: View {
                 onSelectScope(.unified)
                 dismiss()
             } label: {
-                HStack {
-                    Label("Unified Inbox", systemImage: "tray.full")
+                HStack(spacing: 12) {
+                    Image(systemName: "tray.full")
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Unified Inbox")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                        Text("All accounts")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
                     if case .unified = current {
                         Image(systemName: "checkmark")
@@ -174,6 +200,7 @@ struct InboxScopePickerView: View {
                     }
                 }
             }
+            .buttonStyle(.plain)
 
             ForEach(accounts, id: \.id) { account in
                 Button {
@@ -212,6 +239,7 @@ struct InboxScopePickerView: View {
                         }
                     }
                 }
+                .buttonStyle(.plain)
             }
         }
         .listStyle(.insetGrouped)
