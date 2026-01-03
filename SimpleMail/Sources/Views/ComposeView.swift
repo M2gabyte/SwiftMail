@@ -2266,8 +2266,8 @@ class ComposeViewModel: ObservableObject {
             Prompt:
             \(trimmed)
             """
-            let response = try await session.respond(to: instruction)
-            let text = String(describing: response.content)
+            let response = try await session.respond(resultType: String.self, body: instruction)
+            let text = String(describing: response)
             return parseAIDraft(text)
         }
         #endif

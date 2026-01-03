@@ -39,7 +39,7 @@ actor SummaryQueue {
         defer { isProcessing = false }
 
         while !queue.isEmpty {
-            if !canRunNow() {
+            if !(await canRunNow()) {
                 return
             }
 
@@ -93,13 +93,15 @@ actor SummaryQueue {
         return settings.precomputeSummaries
     }
 
-    private func canRunNow() -> Bool {
+    private func canRunNow() async -> Bool {
         if ProcessInfo.processInfo.isLowPowerModeEnabled {
             return false
         }
-        UIDevice.current.isBatteryMonitoringEnabled = true
-        let level = UIDevice.current.batteryLevel
-        if level >= 0 && level < 0.2 {
+        let batteryLevel: Float = await MainActor.run {
+            UIDevice.current.isBatteryMonitoringEnabled = true
+            return UIDevice.current.batteryLevel
+        }
+        if batteryLevel >= 0 && batteryLevel < 0.2 {
             return false
         }
         return remainingAllowance() > 0
@@ -108,7 +110,7 @@ actor SummaryQueue {
     private func remainingAllowance() -> Int {
         let now = Date().timeIntervalSince1970
         let windowStart = now - 3600
-        var timestamps = loadTimestamps().filter { $0 >= windowStart }
+        let timestamps = loadTimestamps().filter { $0 >= windowStart }
         saveTimestamps(timestamps)
         return max(0, maxPerHour - timestamps.count)
     }
