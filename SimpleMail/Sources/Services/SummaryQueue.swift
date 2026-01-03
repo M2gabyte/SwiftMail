@@ -4,8 +4,14 @@ import UIKit
 actor SummaryQueue {
     static let shared = SummaryQueue()
 
-    private struct Job {
-        let email: Email
+    private struct Job: Sendable {
+        let emailId: String
+        let accountEmail: String
+        let subject: String
+        let from: String
+        let snippet: String
+        let body: String
+        let receivedAt: Date
     }
 
     private var queue: [Job] = []
@@ -27,7 +33,16 @@ actor SummaryQueue {
                 continue
             }
             queuedIds.insert(email.id)
-            queue.append(Job(email: email))
+            let job = Job(
+                emailId: email.id,
+                accountEmail: email.accountEmail,
+                subject: email.subject,
+                from: email.from,
+                snippet: email.snippet,
+                body: email.body,
+                receivedAt: email.receivedAt
+            )
+            queue.append(job)
         }
 
         await processIfNeeded()
@@ -44,20 +59,17 @@ actor SummaryQueue {
             }
 
             let job = queue.removeFirst()
-            queuedIds.remove(job.email.id)
+            queuedIds.remove(job.emailId)
 
-            guard shouldPrecompute(for: job.email.accountEmail) else {
+            guard shouldPrecompute(for: job.accountEmail) else {
                 continue
             }
 
-            guard let detail = await fetchDetail(for: job.email) else {
-                continue
-            }
-
+            // Use the job data directly instead of fetching
             let summary = await SummaryService.summarizeIfNeeded(
-                messageId: detail.id,
-                body: detail.body,
-                accountEmail: detail.accountEmail
+                messageId: job.emailId,
+                body: job.body,
+                accountEmail: job.accountEmail
             )
 
             if summary != nil {
@@ -129,17 +141,4 @@ actor SummaryQueue {
         UserDefaults.standard.set(timestamps, forKey: timestampsKey)
     }
 
-    private func fetchDetail(for email: Email) async -> EmailDetailDTO? {
-        if let accountEmail = email.accountEmail,
-           let account = await MainActor.run(resultType: AuthService.Account?.self, body: {
-               AuthService.shared.accounts.first(where: { $0.email.lowercased() == accountEmail.lowercased() })
-           }) {
-            if let thread = try? await GmailService.shared.fetchThread(threadId: email.threadId, account: account),
-               let latest = thread.sorted(by: { $0.date > $1.date }).first {
-                return latest
-            }
-        }
-
-        return try? await GmailService.shared.fetchEmailDetail(messageId: email.id)
-    }
 }

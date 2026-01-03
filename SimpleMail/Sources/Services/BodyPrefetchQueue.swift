@@ -8,7 +8,7 @@ private let logger = Logger(subsystem: "com.simplemail.app", category: "BodyPref
 actor BodyPrefetchQueue {
     static let shared = BodyPrefetchQueue()
 
-    private struct Job {
+    private struct Job: Sendable {
         let emailId: String
         let threadId: String
         let accountEmail: String

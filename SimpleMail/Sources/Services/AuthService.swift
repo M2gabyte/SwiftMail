@@ -60,9 +60,13 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
         // Use MainActor.assumeIsolated to safely access UIApplication.
         // Note: We avoid DispatchQueue.main.sync as it risks deadlocks if the assumption ever breaks.
         MainActor.assumeIsolated {
-            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let window = windowScene.windows.first else {
-                return ASPresentationAnchor()
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+                // Fallback for when no window scene is available
+                fatalError("No window scene available for authentication")
+            }
+            guard let window = windowScene.windows.first else {
+                // iOS 26.0+: Use init(windowScene:) instead of deprecated init()
+                return ASPresentationAnchor(windowScene: windowScene)
             }
             return window
         }

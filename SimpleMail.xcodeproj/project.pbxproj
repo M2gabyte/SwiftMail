@@ -50,6 +50,10 @@
 		A1000043 /* SummaryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000043 /* SummaryCache.swift */; };
 		A1000044 /* SummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000044 /* SummaryService.swift */; };
 		A1000045 /* SummaryQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000045 /* SummaryQueue.swift */; };
+		A1000046 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000046 /* NetworkMonitor.swift */; };
+		A1000047 /* OutboxManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000047 /* OutboxManager.swift */; };
+		A1000048 /* BodyPrefetchQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000048 /* BodyPrefetchQueue.swift */; };
+		A1000049 /* QueuedEmail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000049 /* QueuedEmail.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -109,6 +113,10 @@
 		B1000043 /* SummaryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCache.swift; sourceTree = "<group>"; };
 		B1000044 /* SummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryService.swift; sourceTree = "<group>"; };
 		B1000045 /* SummaryQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryQueue.swift; sourceTree = "<group>"; };
+		B1000046 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		B1000047 /* OutboxManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboxManager.swift; sourceTree = "<group>"; };
+		B1000048 /* BodyPrefetchQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyPrefetchQueue.swift; sourceTree = "<group>"; };
+		B1000049 /* QueuedEmail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedEmail.swift; sourceTree = "<group>"; };
 		B3582BDA6D42420A /* PendingSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -177,6 +185,7 @@
 				B1000002 /* Email.swift */,
 				B1000003 /* Briefing.swift */,
 				B1000040 /* SearchFilter.swift */,
+				B1000049 /* QueuedEmail.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -234,6 +243,9 @@
 				B1000030 /* DomainNormalizer.swift */,
 				B1000038 /* SearchHistoryManager.swift */,
 				B1000039 /* SpeechRecognizer.swift */,
+				B1000046 /* NetworkMonitor.swift */,
+				B1000047 /* OutboxManager.swift */,
+				B1000048 /* BodyPrefetchQueue.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -429,6 +441,10 @@
 				A1000039 /* SpeechRecognizer.swift in Sources */,
 				A1000040 /* SearchFilter.swift in Sources */,
 				A1000041 /* BottomSearchPill.swift in Sources */,
+				A1000046 /* NetworkMonitor.swift in Sources */,
+				A1000047 /* OutboxManager.swift in Sources */,
+				A1000048 /* BodyPrefetchQueue.swift in Sources */,
+				A1000049 /* QueuedEmail.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
