@@ -1743,6 +1743,52 @@ struct UndoSendToast: View {
     }
 }
 
+// MARK: - Queued Offline Toast
+
+struct QueuedOfflineToast: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.up.circle")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.8))
+
+            Text("Queued - will send when online")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.systemOrange).opacity(0.9))
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+        )
+        .padding(.horizontal, 16)
+    }
+}
+
+// MARK: - Offline Banner
+
+struct OfflineBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+                .font(.caption)
+            Text("You're offline")
+                .font(.caption)
+                .fontWeight(.medium)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(.systemGray))
+        .clipShape(Capsule())
+    }
+}
+
 // MARK: - Compose ViewModel
 
 @MainActor
@@ -1939,7 +1985,8 @@ class ComposeViewModel: ObservableObject {
             inReplyTo: replyToMessageId,
             threadId: replyThreadId,
             draftId: draftId,
-            delaySeconds: undoDelaySeconds()
+            delaySeconds: undoDelaySeconds(),
+            accountEmail: fromEmail
         )
 
         PendingSendManager.shared.queueSend(pendingEmail)
