@@ -24,7 +24,8 @@ struct SimpleMailApp: App {
             Email.self,
             EmailDetail.self,
             SnoozedEmail.self,
-            SenderPreference.self
+            SenderPreference.self,
+            QueuedEmail.self
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -146,6 +147,8 @@ struct ContentView: View {
             .onAppear {
                 EmailCacheManager.shared.configure(with: modelContext)
                 SnoozeManager.shared.configure(with: modelContext)
+                OutboxManager.shared.configure(with: modelContext)
+                NetworkMonitor.shared.start()
             }
             .task {
                 if authService.isAuthenticated {

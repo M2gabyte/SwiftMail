@@ -26,6 +26,7 @@ struct InboxView: View {
     @State private var scope: InboxScope = .all
     @State private var scrollOffset: CGFloat = 0
     private var pendingSendManager = PendingSendManager.shared
+    private var networkMonitor = NetworkMonitor.shared
 
     private var isHeaderCollapsed: Bool {
         scrollOffset > 50
@@ -132,10 +133,12 @@ struct InboxView: View {
             }
             .searchToolbarBehavior(.minimize)
             .overlay { overlayContent }
+            .overlay(alignment: .top) { offlineBannerContent }
             .overlay(alignment: .bottom) { bulkToastContent }
             .overlay(alignment: .bottom) {
                 undoSendToastContent
                     .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
+                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .sheet(isPresented: $showingCompose) { ComposeView() }
@@ -397,6 +400,16 @@ struct InboxView: View {
     }
 
     @ViewBuilder
+    private var offlineBannerContent: some View {
+        if !networkMonitor.isConnected {
+            OfflineBanner()
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.3), value: networkMonitor.isConnected)
+        }
+    }
+
+    @ViewBuilder
     private var bulkToastContent: some View {
         if let message = viewModel.bulkToastMessage {
             BulkActionToast(
@@ -413,15 +426,27 @@ struct InboxView: View {
 
     @ViewBuilder
     private var undoSendToastContent: some View {
-        if pendingSendManager.isPending {
-            UndoSendToast(
-                remainingSeconds: pendingSendManager.remainingSeconds,
-                onUndo: {
-                    pendingSendManager.undoSend()
-                }
-            )
-            .padding(.bottom, 12)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+        Group {
+            if pendingSendManager.isPending {
+                UndoSendToast(
+                    remainingSeconds: pendingSendManager.remainingSeconds,
+                    onUndo: {
+                        pendingSendManager.undoSend()
+                    }
+                )
+                .padding(.bottom, 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if pendingSendManager.wasQueuedOffline {
+                QueuedOfflineToast()
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onAppear {
+                        // Auto-dismiss after 3 seconds
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            pendingSendManager.clearQueuedOfflineFlag()
+                        }
+                    }
+            }
         }
     }
 

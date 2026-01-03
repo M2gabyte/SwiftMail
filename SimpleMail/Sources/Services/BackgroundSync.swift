@@ -14,6 +14,7 @@ final class BackgroundSyncManager {
     private let syncTaskIdentifier = "com.simplemail.app.sync"
     private let notificationTaskIdentifier = "com.simplemail.app.notification"
     private let summaryTaskIdentifier = "com.simplemail.app.summaries"
+    private let outboxTaskIdentifier = "com.simplemail.app.outbox"
 
     private init() {}
 
@@ -54,6 +55,18 @@ final class BackgroundSyncManager {
                 return
             }
             self.handleSummaryTask(processingTask)
+        }
+
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: outboxTaskIdentifier,
+            using: nil
+        ) { task in
+            guard let processingTask = task as? BGProcessingTask else {
+                logger.error("Unexpected task type for outbox task")
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleOutboxTask(processingTask)
         }
     }
 
@@ -107,6 +120,27 @@ final class BackgroundSyncManager {
             logger.info("Scheduled summary processing task")
         } catch {
             logger.error("Failed to schedule summary processing: \(error.localizedDescription)")
+        }
+    }
+
+    /// Schedule outbox processing when there are pending emails
+    func scheduleOutboxProcessing() {
+        Task { @MainActor in
+            guard OutboxManager.shared.pendingCount > 0 else {
+                return
+            }
+
+            let request = BGProcessingTaskRequest(identifier: outboxTaskIdentifier)
+            request.earliestBeginDate = Date(timeIntervalSinceNow: 60) // Try in 1 minute
+            request.requiresNetworkConnectivity = true
+            request.requiresExternalPower = false
+
+            do {
+                try BGTaskScheduler.shared.submit(request)
+                logger.info("Scheduled outbox processing task")
+            } catch {
+                logger.error("Failed to schedule outbox processing: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -183,6 +217,25 @@ final class BackgroundSyncManager {
         }
     }
 
+    private func handleOutboxTask(_ task: BGProcessingTask) {
+        let outboxTask = Task { @MainActor in
+            await OutboxManager.shared.processQueue()
+
+            // If there are still pending emails, schedule another attempt
+            if OutboxManager.shared.pendingCount > 0 {
+                scheduleOutboxProcessing()
+            }
+
+            task.setTaskCompleted(success: true)
+        }
+
+        task.expirationHandler = {
+            logger.warning("Outbox task expiring - cancelling work")
+            outboxTask.cancel()
+            task.setTaskCompleted(success: false)
+        }
+    }
+
     // MARK: - Sync Logic
 
     private func performSync() async throws {
@@ -217,6 +270,9 @@ final class BackgroundSyncManager {
 
         let emailModels = allEmails.map(Email.init(dto:))
         await SummaryQueue.shared.enqueueCandidates(emailModels)
+
+        // Prefetch bodies for offline reading
+        await BodyPrefetchQueue.shared.enqueueCandidates(emailModels)
     }
 
     private func processSummaryQueue() async throws {
@@ -251,7 +307,15 @@ final class BackgroundSyncManager {
         // Check for cancellation before processing
         try Task.checkCancellation()
 
+        // Process scheduled sends
         await ScheduledSendManager.shared.processDueSends()
+
+        // Process offline outbox queue
+        await MainActor.run {
+            Task {
+                await OutboxManager.shared.processQueue()
+            }
+        }
 
         // Check for cancellation after scheduled sends
         try Task.checkCancellation()
