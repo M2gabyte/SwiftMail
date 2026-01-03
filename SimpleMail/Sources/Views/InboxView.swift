@@ -258,6 +258,25 @@ struct InboxView: View {
                 .listRowBackground(Color.clear)
                 .listSectionSpacing(0)
 
+                // Filter active indicator banner
+                if let activeFilter = viewModel.activeFilter {
+                    Section {
+                        FilterActiveBanner(
+                            filterLabel: activeFilter.rawValue,
+                            filterColor: activeFilter.color,
+                            onClear: {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    viewModel.activeFilter = nil
+                                }
+                            }
+                        )
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listSectionSpacing(0)
+                }
+
             ForEach(displaySections) { section in
                 Section {
                     ForEach(Array(section.emails.enumerated()), id: \.element.id) { index, email in
@@ -670,11 +689,27 @@ struct InboxView: View {
             }
             .padding()
         } else if displaySections.isEmpty && !viewModel.isLoading {
-            ContentUnavailableView(
-                emptyStateTitle,
-                systemImage: emptyStateIcon,
-                description: Text(emptyStateDescription)
-            )
+            if viewModel.activeFilter != nil {
+                // Filter-specific empty state with clear button
+                ContentUnavailableView {
+                    Label(emptyStateTitle, systemImage: emptyStateIcon)
+                } description: {
+                    Text(emptyStateDescription)
+                } actions: {
+                    Button("Clear Filter") {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            viewModel.activeFilter = nil
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            } else {
+                ContentUnavailableView(
+                    emptyStateTitle,
+                    systemImage: emptyStateIcon,
+                    description: Text(emptyStateDescription)
+                )
+            }
         } else if viewModel.isLoading && viewModel.emailSections.isEmpty {
             InboxSkeletonView()
         }
@@ -733,7 +768,7 @@ struct InboxView: View {
 
     private var emptyStateDescription: String {
         if let _ = viewModel.activeFilter {
-            return "No emails match this filter right now."
+            return "Try clearing your filter."
         }
         if viewModel.scope == .people {
             return "No person-to-person emails yet."
@@ -782,6 +817,7 @@ struct InboxHeaderBlock: View {
                                 filter: filter,
                                 count: filterCounts[filter] ?? 0,
                                 isActive: activeFilter == filter,
+                                anyFilterActive: activeFilter != nil,
                                 onTap: {
                                     withAnimation(.easeInOut(duration: 0.15)) {
                                         activeFilter = activeFilter == filter ? nil : filter
@@ -852,19 +888,25 @@ struct FilterPill: View {
     let filter: InboxFilter
     let count: Int
     let isActive: Bool
+    var anyFilterActive: Bool = false
     let onTap: () -> Void
+
+    /// De-emphasized when another filter is active
+    private var isDeemphasized: Bool {
+        anyFilterActive && !isActive
+    }
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 5) {
                 Image(systemName: filter.icon)
                     .font(.caption2)
-                    .foregroundStyle(isActive ? filter.color : filter.color.opacity(0.6))
+                    .foregroundStyle(isActive ? filter.color : filter.color.opacity(isDeemphasized ? 0.35 : 0.6))
 
                 Text(filter.rawValue)
                     .font(.subheadline)
                     .fontWeight(isActive ? .semibold : .regular)
-                    .foregroundStyle(isActive ? .primary : Color.primary.opacity(0.82))
+                    .foregroundStyle(isActive ? .primary : Color.primary.opacity(isDeemphasized ? 0.5 : 0.82))
 
                 // Count badge (compact, only when > 0)
                 if count > 0 {
@@ -875,12 +917,13 @@ struct FilterPill: View {
                         .padding(.vertical, 1)
                         .background(Color(.systemGray5))
                         .clipShape(Capsule())
+                        .opacity(isDeemphasized ? 0.6 : 1.0)
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
-                Capsule().fill(isActive ? filter.color.opacity(0.16) : Color(.systemGray6))
+                Capsule().fill(isActive ? filter.color.opacity(0.16) : Color(.systemGray6).opacity(isDeemphasized ? 0.5 : 1.0))
             )
             .overlay(
                 Capsule().strokeBorder(
@@ -891,6 +934,40 @@ struct FilterPill: View {
         }
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.15), value: isActive)
+    }
+}
+
+// MARK: - Filter Active Banner
+
+struct FilterActiveBanner: View {
+    let filterLabel: String
+    let filterColor: Color
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(filterColor)
+
+            Text("Filtered by \(filterLabel)")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            Button(action: onClear) {
+                Text("Clear")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.blue)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(filterColor.opacity(0.08))
     }
 }
 
