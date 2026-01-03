@@ -155,6 +155,12 @@ struct EmailDetailView: View {
             })
         }
         .confirmationDialog("More Actions", isPresented: $showingActionSheet) {
+            Button("Archive") {
+                Task {
+                    await viewModel.archive()
+                    dismiss()
+                }
+            }
             Button(viewModel.isStarred ? "Unstar" : "Star") {
                 Task { await viewModel.toggleStar() }
             }
@@ -166,6 +172,13 @@ struct EmailDetailView: View {
             }
             Button(viewModel.isVIPSender ? "Remove from VIP" : "Mark as VIP") {
                 viewModel.toggleVIP()
+            }
+
+            Button("Move to Trash", role: .destructive) {
+                Task {
+                    await viewModel.trash()
+                    dismiss()
+                }
             }
         }
         .task {
