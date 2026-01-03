@@ -25,6 +25,7 @@ struct InboxView: View {
     @State private var showingLocationSheet = false
     @State private var scope: InboxScope = .all
     @State private var scrollOffset: CGFloat = 0
+    @State private var restoredComposeMode: ComposeMode?
     private var pendingSendManager = PendingSendManager.shared
 
     private var isHeaderCollapsed: Bool {
@@ -139,6 +140,9 @@ struct InboxView: View {
             }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .sheet(isPresented: $showingCompose) { ComposeView() }
+            .sheet(item: $restoredComposeMode) { mode in
+                ComposeView(mode: mode)
+            }
             .sheet(isPresented: $showingLocationSheet) {
                 LocationSheetView(
                     selectedMailbox: $viewModel.currentMailbox,
@@ -192,6 +196,22 @@ struct InboxView: View {
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .background {
                     exitSelectionMode()
+                }
+            }
+            .onChange(of: pendingSendManager.hasRestoredDraft) { _, hasRestored in
+                if hasRestored, let draft = pendingSendManager.restoredDraft {
+                    restoredComposeMode = .restoredDraft(
+                        draftId: draft.draftId,
+                        to: draft.to,
+                        cc: draft.cc,
+                        bcc: draft.bcc,
+                        subject: draft.subject,
+                        body: draft.body,
+                        bodyHtml: draft.bodyHtml,
+                        inReplyTo: draft.inReplyTo,
+                        threadId: draft.threadId
+                    )
+                    pendingSendManager.clearRestoredDraft()
                 }
             }
             .onAppear { handleAppear() }

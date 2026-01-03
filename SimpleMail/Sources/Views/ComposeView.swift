@@ -11,12 +11,34 @@ private let logger = Logger(subsystem: "com.simplemail.app", category: "ComposeV
 
 // MARK: - Compose Mode
 
-enum ComposeMode {
+enum ComposeMode: Identifiable {
     case new
     case reply(to: EmailDetail, threadId: String)
     case replyAll(to: EmailDetail, threadId: String)
     case forward(original: EmailDetail)
     case draft(id: String, to: [String], subject: String, body: String)
+    case restoredDraft(
+        draftId: String?,
+        to: [String],
+        cc: [String],
+        bcc: [String],
+        subject: String,
+        body: String,
+        bodyHtml: String?,
+        inReplyTo: String?,
+        threadId: String?
+    )
+
+    var id: String {
+        switch self {
+        case .new: return "new"
+        case .reply(let email, _): return "reply-\(email.id)"
+        case .replyAll(let email, _): return "replyAll-\(email.id)"
+        case .forward(let email): return "forward-\(email.id)"
+        case .draft(let id, _, _, _): return "draft-\(id)"
+        case .restoredDraft(let draftId, _, _, _, _, _, _, _, _): return "restored-\(draftId ?? UUID().uuidString)"
+        }
+    }
 }
 
 // MARK: - Compose View
@@ -409,7 +431,7 @@ struct ComposeView: View {
         case .reply: return "Reply"
         case .replyAll: return "Reply All"
         case .forward: return "Forward"
-        case .draft: return "Draft"
+        case .draft, .restoredDraft: return "Draft"
         }
     }
 
@@ -1834,6 +1856,22 @@ class ComposeViewModel: ObservableObject {
             to = toAddrs
             subject = subj
             bodyAttributed = Self.attributedBody(from: bodyText)
+            isRecoveredDraft = true
+
+        case .restoredDraft(let id, let toAddrs, let ccAddrs, let bccAddrs, let subj, let bodyText, let bodyHtmlText, let inReplyToId, let threadIdValue):
+            draftId = id
+            to = toAddrs
+            cc = ccAddrs
+            bcc = bccAddrs
+            subject = subj
+            // Prefer HTML body if available for rich text restoration
+            if let html = bodyHtmlText, !html.isEmpty {
+                bodyAttributed = Self.attributedBody(from: html)
+            } else {
+                bodyAttributed = Self.attributedBody(from: bodyText)
+            }
+            replyToMessageId = inReplyToId
+            replyThreadId = threadIdValue
             isRecoveredDraft = true
         }
     }

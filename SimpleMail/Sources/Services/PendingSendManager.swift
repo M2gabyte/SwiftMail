@@ -8,6 +8,8 @@ final class PendingSendManager {
 
     private(set) var isPending = false
     private(set) var remainingSeconds = 0
+    private(set) var restoredDraft: PendingEmail?
+    private(set) var hasRestoredDraft = false
     private var sendTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
     private var pendingEmail: PendingEmail?
@@ -55,15 +57,23 @@ final class PendingSendManager {
         }
     }
 
-    /// Undo the pending send
+    /// Undo the pending send and restore the draft for editing
     func undoSend() {
         sendTask?.cancel()
         timerTask?.cancel()
         sendTask = nil
         timerTask = nil
+        restoredDraft = pendingEmail
+        hasRestoredDraft = pendingEmail != nil
         pendingEmail = nil
         isPending = false
         remainingSeconds = 0
+    }
+
+    /// Clear the restored draft after it has been consumed
+    func clearRestoredDraft() {
+        restoredDraft = nil
+        hasRestoredDraft = false
     }
 
     private func executeSend() async {
