@@ -273,9 +273,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Advanced")
                 } footer: {
-                    // TODO: Conversation threading toggle is a placeholder.
-                    // Threading behavior refactoring is out of scope for this task.
-                    Text("Search placement controls where the search field appears. Preview density affects inbox row height.")
+                    Text("When threading is off, each message is shown individually instead of grouped by conversation.")
                 }
 
                 // About Section

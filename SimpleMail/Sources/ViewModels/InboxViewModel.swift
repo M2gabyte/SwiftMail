@@ -26,6 +26,9 @@ final class InboxViewModel {
     var isLoadingMore = false
     var error: Error?
 
+    // Threading control - when false, shows all messages individually
+    var conversationThreading: Bool = true
+
     // Increment to force re-filter (e.g., when blocked senders change)
     private var filterVersion = 0
 
@@ -250,6 +253,11 @@ final class InboxViewModel {
     }
 
     private func dedupeByThread(_ emails: [Email]) -> [Email] {
+        // When threading is off, don't dedupe - show all messages individually
+        guard conversationThreading else {
+            return emails
+        }
+
         var seen = Set<String>()
         var deduped: [Email] = []
         for email in emails {

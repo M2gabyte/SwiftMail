@@ -759,6 +759,17 @@ struct InboxView: View {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             listDensity = settings.listDensity
             searchPlacement = settings.searchPlacement
+
+            // Update threading setting on viewModel
+            let threadingChanged = viewModel.conversationThreading != settings.conversationThreading
+            viewModel.conversationThreading = settings.conversationThreading
+
+            // Reload emails if threading preference changed
+            if threadingChanged {
+                Task {
+                    await viewModel.refresh()
+                }
+            }
         } catch {
             logger.warning("Failed to decode app settings: \(error.localizedDescription)")
         }
