@@ -56,11 +56,11 @@ struct LocationSheetView: View {
         if isUnified {
             return [.inbox]
         }
-        return [.inbox, .starred, .drafts, .sent]
+        return [.inbox, .starred, .drafts, .sent, .archive, .trash]
     }
 
     private var moreMailboxes: [Mailbox] {
-        [.archive, .trash]
+        []
     }
 
     private var selectedMailboxForDisplay: Mailbox {
