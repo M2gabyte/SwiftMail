@@ -491,6 +491,9 @@ class SettingsViewModel: ObservableObject {
 // MARK: - Placeholder Views
 
 struct AddAccountView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var initialAccountCount: Int?
+
     var body: some View {
         VStack(spacing: 24) {
             Image(systemName: "person.badge.plus")
@@ -520,6 +523,15 @@ struct AddAccountView: View {
             .padding(.horizontal, 32)
         }
         .navigationTitle("Add Account")
+        .onAppear {
+            initialAccountCount = AuthService.shared.accounts.count
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in
+            if let initial = initialAccountCount,
+               AuthService.shared.accounts.count > initial {
+                dismiss()
+            }
+        }
     }
 }
 
