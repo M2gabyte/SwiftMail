@@ -1547,6 +1547,33 @@ actor GmailService: GmailAPIProvider {
         text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
     }
 
+    private nonisolated func cleanBodyContent(_ body: String, mimeType: String) -> String {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let lower = trimmed.lowercased()
+        let looksLikeHeaders = lower.contains("content-type:") ||
+            lower.contains("content-transfer-encoding:") ||
+            lower.contains("mime-version:")
+
+        if looksLikeHeaders {
+            let withoutHeaders = stripMIMEHeaders(from: trimmed)
+            let collapsed = withoutHeaders
+                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if collapsed.isEmpty {
+                return ""
+            }
+            return collapsed
+        }
+
+        if mimeType == "text/plain" && lower.contains("<html") {
+            return stripHTMLTags(from: trimmed)
+        }
+
+        return trimmed
+    }
+
     // Cached date formatters for parsing (thread-safe static allocation)
     private static let dateFormatters: [DateFormatter] = {
         let formats = [
@@ -1593,23 +1620,28 @@ actor GmailService: GmailAPIProvider {
            (mimeType == "text/html" || mimeType == "text/plain"),
            let data = payload.body?.data, !data.isEmpty {
             let decoded = decodeBase64URL(data)
-            if !decoded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return decoded
+            let cleaned = cleanBodyContent(decoded, mimeType: mimeType)
+            if !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return cleaned
             }
         }
 
         // Recursively search all parts for HTML first, then plain text
         if let parts = payload.parts {
             // First pass: look for HTML anywhere in the tree
-            if let html = findBodyRecursively(in: parts, preferredMimeType: "text/html"),
-               !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return html
+            if let html = findBodyRecursively(in: parts, preferredMimeType: "text/html") {
+                let cleaned = cleanBodyContent(html, mimeType: "text/html")
+                if !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return cleaned
+                }
             }
 
             // Second pass: fall back to plain text
-            if let plain = findBodyRecursively(in: parts, preferredMimeType: "text/plain"),
-               !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return plain
+            if let plain = findBodyRecursively(in: parts, preferredMimeType: "text/plain") {
+                let cleaned = cleanBodyContent(plain, mimeType: "text/plain")
+                if !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return cleaned
+                }
             }
         }
 

@@ -1041,7 +1041,7 @@ struct EmailRow: View {
                 highlightedText(email.subject, font: isCompact ? .caption2 : .subheadline)
                     .font(isCompact ? .caption2 : .subheadline)
                     .fontWeight(email.isUnread ? .medium : .regular)
-                    .foregroundStyle(email.isUnread ? .primary : .primary.opacity(0.85))
+                    .foregroundStyle(email.isUnread ? .primary : Color.primary.opacity(0.85))
                     .lineLimit(1)
 
                 // Snippet (not in compact mode)
