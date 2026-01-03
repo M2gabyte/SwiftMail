@@ -22,7 +22,7 @@ struct LocationSheetView: View {
     let onSelectScope: (InboxLocationScope) -> Void
 
     @State private var scopeSelection: InboxLocationScope = .unified
-    @State private var sheetDetent: PresentationDetent = .medium
+    @State private var sheetDetent: PresentationDetent = .large
 
     private var accounts: [AuthService.Account] { auth.accounts }
     private var currentAccount: AuthService.Account? { auth.currentAccount }
@@ -145,7 +145,7 @@ struct LocationSheetView: View {
             .listSectionSpacing(.compact)
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
-            .presentationDetents([.medium], selection: $sheetDetent)
+            .presentationDetents([.large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
                 if selectedMailbox == .allInboxes {
@@ -155,7 +155,7 @@ struct LocationSheetView: View {
                 } else {
                     scopeSelection = .unified
                 }
-                sheetDetent = .medium
+                sheetDetent = .large
             }
             .onChange(of: auth.currentAccount?.id) { _, _ in
                 if selectedMailbox == .allInboxes {
