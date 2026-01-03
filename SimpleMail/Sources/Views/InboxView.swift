@@ -1067,16 +1067,16 @@ struct EmailRow: View {
                     .frame(minWidth: 78, alignment: .trailing)
                 }
 
-                // Subject line
-                highlightedText(email.subject, font: isCompact ? .caption2 : .subheadline)
+                // Subject line (normalized to remove Fwd:/Re: prefixes)
+                highlightedText(EmailPreviewNormalizer.normalizeSubjectForDisplay(email.subject), font: isCompact ? .caption2 : .subheadline)
                     .font(isCompact ? .caption2 : .subheadline)
                     .fontWeight(email.isUnread ? .medium : .regular)
                     .foregroundStyle(email.isUnread ? .primary : Color.primary.opacity(0.85))
                     .lineLimit(1)
 
-                // Snippet (not in compact mode)
+                // Snippet (not in compact mode, normalized to remove forwarded boilerplate)
                 if !isCompact {
-                    highlightedText(email.snippet, font: .caption, baseColor: .secondary)
+                    highlightedText(EmailPreviewNormalizer.normalizeSnippetForDisplay(email.snippet), font: .caption, baseColor: .secondary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
