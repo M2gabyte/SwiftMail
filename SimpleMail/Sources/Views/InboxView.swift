@@ -146,7 +146,7 @@ struct InboxView: View {
                     await viewModel.performSearch(query: searchText)
                 }
             }
-            .searchToolbarBehavior(.minimize)
+            .searchToolbarBehavior(showSearchInBottomBar ? .hidden : .minimize)
             .overlay { overlayContent }
             .overlay(alignment: .top) { offlineBannerContent }
             .overlay(alignment: .bottom) { bulkToastContent }
@@ -330,7 +330,7 @@ struct InboxView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom) {
-                if !isSelectionMode {
+                if !isSelectionMode && !showingFilterSheet {
                     BottomCommandSurface(
                         isFilterActive: viewModel.activeFilter != nil,
                         activeFilterLabel: activeFilterLabel,
