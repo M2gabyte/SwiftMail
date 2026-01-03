@@ -248,10 +248,9 @@ struct EmailMessageCard: View {
             }
         }
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-        .padding(.horizontal)
-        .padding(.vertical, 4)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
     }
 
     private var senderEmail: String {
@@ -870,7 +869,7 @@ struct EmailSummaryView: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .scaleEffect(0.8)
-                        Text("Summarizing with Apple Intelligence...")
+                        Text("Summarizing…")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -894,10 +893,10 @@ struct EmailSummaryView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color.purple.opacity(0.08))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(Color.purple.opacity(0.2), lineWidth: 1)
                 )
         )

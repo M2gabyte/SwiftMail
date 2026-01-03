@@ -1360,7 +1360,7 @@ actor GmailService: GmailAPIProvider {
         let email = EmailDTO(
             id: message.id,
             threadId: message.threadId,
-            snippet: decodeHTMLEntities(message.snippet ?? ""),
+            snippet: cleanPreviewText(message.snippet ?? ""),
             subject: subject,
             from: from,
             date: date,
@@ -1415,7 +1415,7 @@ actor GmailService: GmailAPIProvider {
         return EmailDetailDTO(
             id: message.id,
             threadId: message.threadId,
-            snippet: decodeHTMLEntities(message.snippet ?? ""),
+            snippet: cleanPreviewText(message.snippet ?? ""),
             subject: subject,
             from: from,
             date: date,
@@ -1501,6 +1501,50 @@ actor GmailService: GmailAPIProvider {
             result = result.replacingOccurrences(of: entity, with: replacement)
         }
         return result
+    }
+
+    private nonisolated func cleanPreviewText(_ text: String) -> String {
+        var cleaned = decodeHTMLEntities(text)
+        let lower = cleaned.lowercased()
+
+        // If the snippet looks like raw MIME or HTML, strip headers/tags aggressively.
+        if lower.contains("content-type:") ||
+            lower.contains("content-transfer-encoding:") ||
+            lower.contains("mime-version:") ||
+            lower.contains("<!doctype") ||
+            lower.contains("<html") {
+            cleaned = stripMIMEHeaders(from: cleaned)
+            cleaned = stripHTMLTags(from: cleaned)
+        } else if cleaned.contains("<") && cleaned.contains(">") {
+            cleaned = stripHTMLTags(from: cleaned)
+        }
+
+        cleaned = cleaned
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return cleaned
+    }
+
+    private nonisolated func stripMIMEHeaders(from text: String) -> String {
+        var result = text
+
+        if let headerRange = result.range(of: "\r\n\r\n") ?? result.range(of: "\n\n") {
+            let headerBlock = result[..<headerRange.lowerBound]
+            if headerBlock.range(of: "content-type:", options: .caseInsensitive) != nil {
+                result = String(result[headerRange.upperBound...])
+            }
+        }
+
+        // Remove any remaining header-like lines.
+        let headerPattern = "(?im)^(from|to|cc|bcc|subject|date|content-type|content-transfer-encoding|mime-version|received|return-path|message-id|dkim|spf|authentication-results|list-unsubscribe|list-id|precedence|auto-submitted|x-[^:]+):.*$"
+        result = result.replacingOccurrences(of: headerPattern, with: "", options: .regularExpression)
+
+        return result
+    }
+
+    private nonisolated func stripHTMLTags(from text: String) -> String {
+        text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
     }
 
     // Cached date formatters for parsing (thread-safe static allocation)

@@ -84,6 +84,7 @@ struct InboxView: View {
         .listRowBackground(Color(.systemBackground))
         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
         .listRowSeparator(.visible)
+        .listRowSeparatorTint(Color(.separator).opacity(0.4))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button { viewModel.archiveEmail(email) } label: {
                 Label("Archive", systemImage: "archivebox")
@@ -211,11 +212,11 @@ struct InboxView: View {
                             .padding(.top, email.id == section.emails.first?.id ? 6 : 0)
                     }
                 } header: {
-                    // Section headers: fully opaque native iOS bar
+                    // Section headers: solid background for high contrast while scrolling
                     VStack(spacing: 0) {
                         Text(section.title)
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                             .textCase(.uppercase)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 16)
@@ -224,7 +225,7 @@ struct InboxView: View {
 
                         // Hairline bottom divider (native 1px)
                         Rectangle()
-                            .fill(Color(.separator).opacity(0.8))
+                            .fill(Color(.separator).opacity(0.6))
                             .frame(height: 1.0 / UIScreen.main.scale)
                     }
                     .background(Color(.systemBackground))
@@ -240,6 +241,9 @@ struct InboxView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: 72)
+            }
             .environment(\.editMode, $editMode)
             .simultaneousGesture(
                 DragGesture()
@@ -699,7 +703,7 @@ struct InboxHeaderBlock: View {
     let isCollapsed: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             // All/People segmented control - always visible
             Picker("", selection: $scope) {
                 Text(InboxScope.all.rawValue).tag(InboxScope.all)
@@ -707,8 +711,8 @@ struct InboxHeaderBlock: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 2)
+            .padding(.top, 6)
+            .padding(.bottom, 4)
 
             // Filter pills - hide when collapsed
             if !isCollapsed {
@@ -729,7 +733,7 @@ struct InboxHeaderBlock: View {
                         }
                     }
                     .padding(.top, 2)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 6)
                     .padding(.leading, 8)
                 }
                 .overlay(alignment: .trailing) {
@@ -744,6 +748,7 @@ struct InboxHeaderBlock: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .padding(.bottom, 4)
         .animation(.easeInOut(duration: 0.25), value: isCollapsed)
     }
 }
