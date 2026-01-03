@@ -26,8 +26,15 @@ struct InboxView: View {
     @State private var scope: InboxScope = .all
     @State private var scrollOffset: CGFloat = 0
     @State private var restoredComposeMode: ComposeMode?
+    @State private var showingFilterSheet = false
+    @FocusState private var isSearchFieldFocused: Bool
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
+
+    /// Computed active filter label for bottom command surface
+    private var activeFilterLabel: String? {
+        viewModel.activeFilter?.rawValue
+    }
 
     private var isHeaderCollapsed: Bool {
         scrollOffset > 50
@@ -162,6 +169,14 @@ struct InboxView: View {
                     performBulkSnooze(until: date)
                 }
             }
+            .sheet(isPresented: $showingFilterSheet) {
+                FilterSheet(
+                    scope: viewModel.scope,
+                    activeFilter: $viewModel.activeFilter,
+                    filterCounts: viewModel.filterCounts
+                )
+                .presentationDetents([.medium])
+            }
             .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
                 Button("Inbox") { performBulkMove(to: .inbox) }
                 Button("Archive") { performBulkArchive() }
@@ -280,7 +295,17 @@ struct InboxView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom) {
-                Color.clear.frame(height: 96)
+                if !isSelectionMode {
+                    BottomCommandSurface(
+                        isFilterActive: viewModel.activeFilter != nil,
+                        activeFilterLabel: activeFilterLabel,
+                        onTapFilter: { showingFilterSheet = true },
+                        onTapSearch: { isSearchFieldFocused = true },
+                        onTapCompose: { showingCompose = true }
+                    )
+                } else {
+                    Color.clear.frame(height: 56)
+                }
             }
             .environment(\.editMode, $editMode)
             .simultaneousGesture(
@@ -334,19 +359,7 @@ struct InboxView: View {
                     Image(systemName: "gearshape")
                 }
             }
-
-            DefaultToolbarItem(kind: .search, placement: .bottomBar)
-
-            ToolbarItem(placement: .bottomBar) {
-                Spacer()
-            }
-
-            ToolbarItem(placement: .bottomBar) {
-                Button { showingCompose = true } label: {
-                    Image(systemName: "square.and.pencil")
-                        .accessibilityLabel("Compose")
-                }
-            }
+            // Bottom command surface is now overlaid on the list, not in toolbar
         }
     }
 
@@ -1217,6 +1230,99 @@ struct EmailSection: Identifiable {
     let emails: [Email]
 }
 
+// MARK: - Filter Sheet
+
+struct FilterSheet: View {
+    let scope: InboxScope
+    @Binding var activeFilter: InboxFilter?
+    let filterCounts: [InboxFilter: Int]
+    @Environment(\.dismiss) private var dismiss
+
+    private var availableFilters: [InboxFilter] {
+        if scope == .people {
+            return [.unread, .needsReply]
+        }
+        return InboxFilter.allCases
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(availableFilters, id: \.self) { filter in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                if activeFilter == filter {
+                                    activeFilter = nil
+                                } else {
+                                    activeFilter = filter
+                                }
+                            }
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: filter.icon)
+                                    .font(.body)
+                                    .foregroundStyle(filter.color)
+                                    .frame(width: 28)
+
+                                Text(filter.rawValue)
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+
+                                Spacer()
+
+                                if let count = filterCounts[filter], count > 0 {
+                                    Text("\(count)")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                if activeFilter == filter {
+                                    Image(systemName: "checkmark")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("Filter by")
+                } footer: {
+                    if scope == .people {
+                        Text("Only Unread and Needs Reply filters are available in People view.")
+                    }
+                }
+
+                if activeFilter != nil {
+                    Section {
+                        Button(role: .destructive) {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                activeFilter = nil
+                            }
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "xmark.circle")
+                                Text("Clear Filter")
+                            }
+                            .foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
 
 // MARK: - Preview
 
