@@ -5,6 +5,7 @@ import SwiftUI
 struct BottomCommandSurface: View {
     let isFilterActive: Bool
     let activeFilterLabel: String?
+    var showSearchPill: Bool = true
     let onTapFilter: () -> Void
     let onTapSearch: () -> Void
     let onTapCompose: () -> Void
@@ -14,7 +15,11 @@ struct BottomCommandSurface: View {
     // MARK: - Computed Properties
 
     private var filterButtonWidth: CGFloat {
-        isFilterActive ? 180 : 44
+        if !showSearchPill {
+            // When search is hidden, filter chip can be wider
+            return isFilterActive ? 200 : 44
+        }
+        return isFilterActive ? 180 : 44
     }
 
     var body: some View {
@@ -23,9 +28,13 @@ struct BottomCommandSurface: View {
             filterControl
                 .frame(width: filterButtonWidth, alignment: .leading)
 
-            // Center: Search pill (expands to fill)
-            searchPill
-                .frame(maxWidth: .infinity)
+            // Center: Search pill (expands to fill) - hidden when search placement is pull-down
+            if showSearchPill {
+                searchPill
+                    .frame(maxWidth: .infinity)
+            } else {
+                Spacer()
+            }
 
             // Right: Compose button
             composeButton
@@ -41,6 +50,7 @@ struct BottomCommandSurface: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isFilterActive)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showSearchPill)
     }
 
     // MARK: - Filter Control

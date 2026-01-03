@@ -254,6 +254,30 @@ struct SettingsView: View {
                     Text("Clearing cache will remove locally stored emails. They'll be re-downloaded on next sync.")
                 }
 
+                // Advanced Section
+                Section {
+                    Picker("Search Placement", selection: $viewModel.settings.searchPlacement) {
+                        Text("Bottom bar").tag(SearchPlacement.bottomBar)
+                        Text("Pull-down").tag(SearchPlacement.pullDown)
+                    }
+                    .onChange(of: viewModel.settings.searchPlacement) { _, _ in viewModel.saveSettings() }
+
+                    Toggle("Conversation Threading", isOn: $viewModel.settings.conversationThreading)
+                        .onChange(of: viewModel.settings.conversationThreading) { _, _ in viewModel.saveSettings() }
+
+                    Picker("Preview Density", selection: $viewModel.settings.listDensity) {
+                        Text("Comfortable").tag(ListDensity.comfortable)
+                        Text("Compact").tag(ListDensity.compact)
+                    }
+                    .onChange(of: viewModel.settings.listDensity) { _, _ in viewModel.saveSettings() }
+                } header: {
+                    Text("Advanced")
+                } footer: {
+                    // TODO: Conversation threading toggle is a placeholder.
+                    // Threading behavior refactoring is out of scope for this task.
+                    Text("Search placement controls where the search field appears. Preview density affects inbox row height.")
+                }
+
                 // About Section
                 Section {
                     HStack {
@@ -346,6 +370,11 @@ enum AppTheme: String, Codable {
     case dark
 }
 
+enum SearchPlacement: String, Codable {
+    case bottomBar = "Bottom bar"
+    case pullDown = "Pull-down"
+}
+
 struct AppSettings: Codable {
     var leftSwipeAction: SwipeAction = .archive
     var rightSwipeAction: SwipeAction = .markRead
@@ -366,6 +395,11 @@ struct AppSettings: Codable {
     var smartReplies: Bool = true
     var signature: String = ""
     var undoSendDelaySeconds: Int = 5
+
+    // Advanced settings
+    var searchPlacement: SearchPlacement = .bottomBar
+    var conversationThreading: Bool = true
+    // Note: listDensity (already above) is also surfaced in Advanced as "Preview density"
 }
 
 // MARK: - Settings ViewModel

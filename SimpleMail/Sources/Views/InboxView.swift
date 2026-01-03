@@ -27,6 +27,7 @@ struct InboxView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var restoredComposeMode: ComposeMode?
     @State private var showingFilterSheet = false
+    @State private var searchPlacement: SearchPlacement = .bottomBar
     @FocusState private var isSearchFieldFocused: Bool
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
@@ -34,6 +35,11 @@ struct InboxView: View {
     /// Computed active filter label for bottom command surface
     private var activeFilterLabel: String? {
         viewModel.activeFilter?.rawValue
+    }
+
+    /// Whether to show search pill in bottom command surface
+    private var showSearchInBottomBar: Bool {
+        searchPlacement == .bottomBar
     }
 
     private var isHeaderCollapsed: Bool {
@@ -328,6 +334,7 @@ struct InboxView: View {
                     BottomCommandSurface(
                         isFilterActive: viewModel.activeFilter != nil,
                         activeFilterLabel: activeFilterLabel,
+                        showSearchPill: showSearchInBottomBar,
                         onTapFilter: { showingFilterSheet = true },
                         onTapSearch: { isSearchFieldFocused = true },
                         onTapCompose: { showingCompose = true }
@@ -751,6 +758,7 @@ struct InboxView: View {
         do {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             listDensity = settings.listDensity
+            searchPlacement = settings.searchPlacement
         } catch {
             logger.warning("Failed to decode app settings: \(error.localizedDescription)")
         }
