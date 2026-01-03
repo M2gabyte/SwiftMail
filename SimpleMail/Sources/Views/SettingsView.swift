@@ -9,37 +9,51 @@ struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
     @StateObject private var themeManager = ThemeManager.shared
     @State private var showingSignOutAlert = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
                 // Account Section
                 Section {
-                    if let account = viewModel.currentAccount {
-                        HStack(spacing: 12) {
-                            AsyncImage(url: URL(string: account.photoURL ?? "")) { image in
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Circle().fill(.blue)
-                                    .overlay {
-                                        Text(account.name.prefix(1))
-                                            .font(.title2)
-                                            .fontWeight(.semibold)
-                                            .foregroundStyle(.white)
-                                    }
-                            }
-                            .frame(width: 50, height: 50)
-                            .clipShape(Circle())
+                    ForEach(viewModel.accounts, id: \.id) { account in
+                        Button {
+                            viewModel.switchAccount(to: account)
+                        } label: {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: URL(string: account.photoURL ?? "")) { image in
+                                    image.resizable().aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Circle().fill(.blue)
+                                        .overlay {
+                                            Text(account.name.prefix(1))
+                                                .font(.title2)
+                                                .fontWeight(.semibold)
+                                                .foregroundStyle(.white)
+                                        }
+                                }
+                                .frame(width: 44, height: 44)
+                                .clipShape(Circle())
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(account.name)
-                                    .font(.headline)
-                                Text(account.email)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(account.name)
+                                        .font(.headline)
+                                    Text(account.email)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if viewModel.currentAccount?.id == account.id {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .buttonStyle(.plain)
+                        .padding(.vertical, 2)
                     }
 
                     NavigationLink("Add Account") {
@@ -275,6 +289,13 @@ struct SettingsView: View {
             } message: {
                 Text("You'll need to sign in again to access your email.")
             }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }
@@ -346,6 +367,7 @@ struct AppSettings: Codable {
 class SettingsViewModel: ObservableObject {
     @Published var settings = AppSettings()
     @Published var currentAccount: AuthService.Account?
+    @Published var accounts: [AuthService.Account] = []
     @Published var isSyncingSettings = false
     @Published var lastGmailSettingsSync: Date?
     @Published var cacheSize = "Calculating..."
@@ -357,6 +379,7 @@ class SettingsViewModel: ObservableObject {
 
     init() {
         currentAccount = AuthService.shared.currentAccount
+        accounts = AuthService.shared.accounts
         loadSettings()
         lastGmailSettingsSync = AccountDefaults.date(for: gmailSyncKeyBase, accountEmail: accountEmail)
         calculateCacheSize()
@@ -369,6 +392,7 @@ class SettingsViewModel: ObservableObject {
             Task { @MainActor in
                 guard let self = self else { return }
                 self.currentAccount = AuthService.shared.currentAccount
+                self.accounts = AuthService.shared.accounts
                 self.loadSettings()
                 self.lastGmailSettingsSync = AccountDefaults.date(for: self.gmailSyncKeyBase, accountEmail: self.accountEmail)
                 self.calculateCacheSize()
@@ -411,6 +435,14 @@ class SettingsViewModel: ObservableObject {
         if !granted {
             settings.notificationsEnabled = false
         }
+    }
+
+    func switchAccount(to account: AuthService.Account) {
+        AuthService.shared.switchAccount(to: account)
+        currentAccount = account
+        loadSettings()
+        lastGmailSettingsSync = AccountDefaults.date(for: gmailSyncKeyBase, accountEmail: accountEmail)
+        calculateCacheSize()
     }
 
     func syncGmailSettings() async {

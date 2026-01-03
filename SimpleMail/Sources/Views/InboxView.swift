@@ -242,7 +242,7 @@ struct InboxView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom) {
-                Color.clear.frame(height: 72)
+                Color.clear.frame(height: 96)
             }
             .environment(\.editMode, $editMode)
             .simultaneousGesture(
@@ -316,40 +316,37 @@ struct InboxView: View {
     private var mailboxMenuContent: some View {
         let accounts = AuthService.shared.accounts
 
-        Button {
-            viewModel.selectMailbox(.allInboxes)
-        } label: {
-            Label(
-                "Unified Inbox",
-                systemImage: viewModel.currentMailbox == .allInboxes ? "checkmark" : "tray.full"
-            )
-        }
+        Section("Account") {
+            Button {
+                viewModel.selectMailbox(.allInboxes)
+            } label: {
+                Label(
+                    "Unified Inbox",
+                    systemImage: viewModel.currentMailbox == .allInboxes ? "checkmark" : "tray.full"
+                )
+            }
 
-        if accounts.count > 1 {
             ForEach(accounts, id: \.id) { account in
                 Button {
                     AuthService.shared.switchAccount(to: account)
-                    if viewModel.currentMailbox == .allInboxes {
-                        viewModel.selectMailbox(.inbox)
-                    }
                 } label: {
                     HStack {
                         Text(account.email)
-                        if viewModel.currentMailbox != .allInboxes,
-                           account.id == AuthService.shared.currentAccount?.id {
+                        if account.id == AuthService.shared.currentAccount?.id {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
-                .disabled(viewModel.currentMailbox == .allInboxes)
             }
         }
 
         Divider()
 
-        ForEach(Mailbox.allCases.filter { $0 != .allInboxes }, id: \.self) { mailbox in
-            Button { viewModel.selectMailbox(mailbox) } label: {
-                Label(mailbox.rawValue, systemImage: mailbox == viewModel.currentMailbox ? "checkmark" : mailbox.icon)
+        Section("Mailbox") {
+            ForEach(Mailbox.allCases.filter { $0 != .allInboxes }, id: \.self) { mailbox in
+                Button { viewModel.selectMailbox(mailbox) } label: {
+                    Label(mailbox.rawValue, systemImage: mailbox == viewModel.currentMailbox ? "checkmark" : mailbox.icon)
+                }
             }
         }
     }
@@ -703,7 +700,7 @@ struct InboxHeaderBlock: View {
     let isCollapsed: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             // All/People segmented control - always visible
             Picker("", selection: $scope) {
                 Text(InboxScope.all.rawValue).tag(InboxScope.all)
@@ -712,7 +709,7 @@ struct InboxHeaderBlock: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.top, 6)
-            .padding(.bottom, 4)
+            .padding(.bottom, 3)
 
             // Filter pills - hide when collapsed
             if !isCollapsed {
@@ -733,7 +730,7 @@ struct InboxHeaderBlock: View {
                         }
                     }
                     .padding(.top, 2)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 4)
                     .padding(.leading, 8)
                 }
                 .overlay(alignment: .trailing) {
@@ -820,7 +817,7 @@ struct FilterPill: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.vertical, 6)
             .background(
                 Capsule().fill(isActive ? filter.color.opacity(0.16) : Color(.systemGray6))
             )
