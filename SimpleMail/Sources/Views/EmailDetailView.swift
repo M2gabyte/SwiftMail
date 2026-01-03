@@ -943,8 +943,9 @@ struct EmailSummaryView: View {
             Email:
             \(limited)
             """
-            let response = try await session.respond(to: prompt, resultType: String.self)
-            let summaryText = response.trimmingCharacters(in: .whitespacesAndNewlines)
+            let response = try await session.respond(to: prompt)
+            let summaryText = String(describing: response.content)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             if !summaryText.isEmpty {
                 return summaryText
             }

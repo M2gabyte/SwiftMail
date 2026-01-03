@@ -97,10 +97,10 @@ actor SummaryQueue {
         if ProcessInfo.processInfo.isLowPowerModeEnabled {
             return false
         }
-        let batteryLevel: Float = await MainActor.run {
+        let batteryLevel: Float = await MainActor.run(resultType: Float.self, body: {
             UIDevice.current.isBatteryMonitoringEnabled = true
             return UIDevice.current.batteryLevel
-        }
+        })
         if batteryLevel >= 0 && batteryLevel < 0.2 {
             return false
         }
@@ -131,7 +131,9 @@ actor SummaryQueue {
 
     private func fetchDetail(for email: Email) async -> EmailDetailDTO? {
         if let accountEmail = email.accountEmail,
-           let account = await MainActor.run({ AuthService.shared.accounts.first(where: { $0.email.lowercased() == accountEmail.lowercased() }) }) {
+           let account = await MainActor.run(resultType: AuthService.Account?.self, body: {
+               AuthService.shared.accounts.first(where: { $0.email.lowercased() == accountEmail.lowercased() })
+           }) {
             if let thread = try? await GmailService.shared.fetchThread(threadId: email.threadId, account: account),
                let latest = thread.sorted(by: { $0.date > $1.date }).first {
                 return latest
