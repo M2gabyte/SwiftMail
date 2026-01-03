@@ -175,6 +175,9 @@ struct EmailDetailView: View {
             Button(viewModel.isVIPSender ? "Remove from VIP" : "Mark as VIP") {
                 viewModel.toggleVIP()
             }
+            Button("Print") {
+                viewModel.printEmail()
+            }
 
             Button("Move to Trash", role: .destructive) {
                 Task {
@@ -1750,6 +1753,171 @@ class EmailDetailViewModel: ObservableObject {
 
         AccountDefaults.setStringArray(vipSenders, for: "vipSenders", accountEmail: settingsAccountEmail)
         objectWillChange.send() // Trigger UI update
+    }
+
+    func printEmail() {
+        guard !messages.isEmpty else { return }
+
+        let printController = UIPrintInteractionController.shared
+        let printInfo = UIPrintInfo(dictionary: nil)
+        printInfo.jobName = subject.isEmpty ? "Email" : subject
+        printInfo.outputType = .general
+        printController.printInfo = printInfo
+
+        // Build HTML content for printing
+        var htmlContent = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+                    font-size: 12pt;
+                    line-height: 1.5;
+                    color: #000;
+                    padding: 20px;
+                }
+                .email-header {
+                    border-bottom: 1px solid #ccc;
+                    padding-bottom: 12px;
+                    margin-bottom: 16px;
+                }
+                .email-subject {
+                    font-size: 16pt;
+                    font-weight: bold;
+                    margin-bottom: 8px;
+                }
+                .email-meta {
+                    font-size: 10pt;
+                    color: #666;
+                }
+                .email-meta strong {
+                    color: #000;
+                }
+                .message-separator {
+                    border-top: 1px solid #ddd;
+                    margin: 20px 0;
+                    padding-top: 16px;
+                }
+                .message-header {
+                    font-size: 10pt;
+                    color: #666;
+                    margin-bottom: 12px;
+                }
+                .message-body {
+                    font-size: 12pt;
+                }
+                img { max-width: 100%; height: auto; }
+                a { color: #007AFF; }
+                /* Fix table layouts for printing */
+                table { width: 100% !important; table-layout: auto !important; }
+                td, th {
+                    width: auto !important;
+                    min-width: 0 !important;
+                    word-wrap: break-word;
+                    white-space: normal !important;
+                }
+                /* Prevent single-character-per-line issue */
+                * {
+                    max-width: 100% !important;
+                    word-break: normal !important;
+                }
+            </style>
+        </head>
+        <body>
+        """
+
+        // Add thread subject header
+        htmlContent += """
+        <div class="email-header">
+            <div class="email-subject">\(escapeHTML(subject))</div>
+        </div>
+        """
+
+        // Add each message in the thread
+        for (index, message) in messages.enumerated() {
+            if index > 0 {
+                htmlContent += "<div class=\"message-separator\"></div>"
+            }
+
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .long
+            dateFormatter.timeStyle = .short
+            let dateString = dateFormatter.string(from: message.date)
+
+            htmlContent += """
+            <div class="message-header">
+                <div><strong>From:</strong> \(escapeHTML(message.from))</div>
+                <div><strong>To:</strong> \(escapeHTML(message.to.joined(separator: ", ")))</div>
+                <div><strong>Date:</strong> \(dateString)</div>
+            </div>
+            <div class="message-body">
+                \(sanitizeHTMLForPrint(message.body))
+            </div>
+            """
+        }
+
+        htmlContent += """
+        </body>
+        </html>
+        """
+
+        // Create print formatter with HTML content
+        let printFormatter = UIMarkupTextPrintFormatter(markupText: htmlContent)
+        printFormatter.perPageContentInsets = UIEdgeInsets(top: 36, left: 36, bottom: 36, right: 36)
+        printController.printFormatter = printFormatter
+
+        // Present print dialog
+        printController.present(animated: true) { _, completed, error in
+            if let error = error {
+                detailLogger.error("Print failed: \(error.localizedDescription)")
+            } else if completed {
+                detailLogger.info("Print job completed successfully")
+            }
+        }
+    }
+
+    private func escapeHTML(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    private func sanitizeHTMLForPrint(_ html: String) -> String {
+        var result = html
+
+        // Remove fixed width attributes from tables and cells
+        result = result.replacingOccurrences(
+            of: "\\s+width\\s*=\\s*[\"']?\\d+[\"']?",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove inline width styles that cause narrow columns
+        result = result.replacingOccurrences(
+            of: "width\\s*:\\s*\\d+px",
+            with: "width: auto",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        // Remove max-width constraints that might be too narrow
+        result = result.replacingOccurrences(
+            of: "max-width\\s*:\\s*\\d+px",
+            with: "max-width: 100%",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        // Remove min-width that forces narrow columns
+        result = result.replacingOccurrences(
+            of: "min-width\\s*:\\s*\\d+px",
+            with: "min-width: 0",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        return result
     }
 }
 
