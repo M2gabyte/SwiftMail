@@ -189,9 +189,11 @@ struct InboxView: View {
                     exitSelectionMode()
                 }
             }
-            .onChange(of: scenePhase) { _, newPhase in
+            .onChange(of: scenePhase) { oldPhase, newPhase in
                 if newPhase == .background {
                     exitSelectionMode()
+                } else if newPhase == .active && oldPhase == .background {
+                    Task { await viewModel.refresh() }
                 }
             }
             .onAppear { handleAppear() }
