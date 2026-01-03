@@ -414,9 +414,12 @@ struct InboxView: View {
     @ViewBuilder
     private var undoSendToastContent: some View {
         if pendingSendManager.isPending {
-            UndoSendToast(onUndo: {
-                pendingSendManager.undoSend()
-            })
+            UndoSendToast(
+                remainingSeconds: pendingSendManager.remainingSeconds,
+                onUndo: {
+                    pendingSendManager.undoSend()
+                }
+            )
             .padding(.bottom, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }

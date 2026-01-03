@@ -81,15 +81,6 @@ struct ComposeView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .overlay(alignment: Alignment.bottom) {
-                if viewModel.showUndoSend {
-                    UndoSendToast(
-                        onUndo: { viewModel.undoSend() }
-                    )
-                    .padding(.bottom, 56)
-                    .transition(.move(edge: Edge.bottom).combined(with: .opacity))
-                }
-            }
     }
 
     private func applySheets<V: View>(to view: V) -> some View {
@@ -205,12 +196,6 @@ struct ComposeView: View {
                 if newValue {
                     showingAttachmentOptions = true
                     viewModel.showAttachmentPicker = false
-                }
-            }
-            .onChange(of: viewModel.didSend) { _, newValue in
-                if newValue {
-                    dismiss()
-                    viewModel.didSend = false
                 }
             }
             .onChange(of: viewModel.subject) { _, _ in
@@ -374,7 +359,14 @@ struct ComposeView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Menu {
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(viewModel.canSend ? .blue : .gray)
+            }
+            .disabled(!viewModel.canSend)
+            .accessibilityIdentifier("sendButton")
+            .contextMenu {
                 Button(action: send) {
                     Label("Send Now", systemImage: "paperplane")
                 }
@@ -384,13 +376,7 @@ struct ComposeView: View {
                     Label("Schedule Send", systemImage: "clock")
                 }
                 .disabled(!viewModel.canSend)
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(viewModel.canSend ? .blue : .gray)
             }
-            .disabled(!viewModel.canSend)
-            .accessibilityIdentifier("sendButton")
         }
 
         ToolbarItem(placement: .topBarTrailing) {
@@ -430,6 +416,11 @@ struct ComposeView: View {
     private func send() {
         // Auto-add any pending input in recipient fields
         viewModel.finalizeRecipients()
+
+        // Set dismiss callback
+        viewModel.dismissAfterQueue = {
+            dismiss()
+        }
 
         viewModel.queueSendWithUndo()
     }
@@ -1682,18 +1673,33 @@ struct StatusOverlay: View {
 // MARK: - Undo Send Toast
 
 struct UndoSendToast: View {
+    let remainingSeconds: Int
     let onUndo: () -> Void
 
     var body: some View {
         HStack(spacing: 16) {
-            Image(systemName: "paperplane")
+            Image(systemName: "paperplane.fill")
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.8))
 
-            Text("Sending soon…")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(.white)
+            HStack(spacing: 6) {
+                Text("Sent")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.white)
+
+                if remainingSeconds > 0 {
+                    Text("·")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.5))
+
+                    Text("\(remainingSeconds)s")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .monospacedDigit()
+                }
+            }
 
             Spacer()
 
@@ -1742,8 +1748,6 @@ class ComposeViewModel: ObservableObject {
     @Published var isSending = false
     @Published var isGeneratingDraft = false
     @Published var aiDraftError: String?
-    @Published var showUndoSend = false
-    @Published var didSend = false
     @Published var isRecoveredDraft = false
     @Published var pendingAIDraft: AIDraftResult?
     @Published var pendingAIDraftIncludeSubject = true
@@ -1752,9 +1756,9 @@ class ComposeViewModel: ObservableObject {
     private var replyToMessageId: String?
     private var replyThreadId: String?
     private var draftId: String?
-    private var sendTask: Task<Void, Never>?
     private var autoSaveTask: Task<Void, Never>?
     private let templatesKey = "composeTemplates"
+    var dismissAfterQueue: (() -> Void)?
 
     var hasContent: Bool {
         !to.isEmpty || !subject.isEmpty || !bodyAttributed.string.isEmpty
@@ -1886,25 +1890,24 @@ class ComposeViewModel: ObservableObject {
     }
 
     func queueSendWithUndo() {
-        sendTask?.cancel()
-        showUndoSend = true
-        didSend = false
+        let pendingEmail = PendingSendManager.PendingEmail(
+            to: to,
+            cc: cc,
+            bcc: bcc,
+            subject: subject,
+            body: plainBody(),
+            bodyHtml: htmlBody(),
+            attachments: mimeAttachments(),
+            inReplyTo: replyToMessageId,
+            threadId: replyThreadId,
+            draftId: draftId,
+            delaySeconds: undoDelaySeconds()
+        )
 
-        sendTask = Task { [weak self] in
-            let delay = await MainActor.run { self?.undoDelaySeconds() ?? 5 }
-            try? await Task.sleep(for: .seconds(delay))
-            guard let self, !Task.isCancelled else { return }
-            let success = await self.send()
-            await MainActor.run {
-                self.showUndoSend = false
-                self.didSend = success
-            }
-        }
-    }
+        PendingSendManager.shared.queueSend(pendingEmail)
 
-    func undoSend() {
-        sendTask?.cancel()
-        showUndoSend = false
+        // Dismiss immediately so user returns to inbox with undo banner
+        dismissAfterQueue?()
     }
 
     func scheduleSend(at date: Date) {

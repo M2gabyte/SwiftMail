@@ -8,10 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		6B84FE21D7C346B2 /* PendingSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3582BDA6D42420A /* PendingSendManager.swift */; };
-		A1000043 /* SummaryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000043 /* SummaryCache.swift */; };
-		A1000044 /* SummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000044 /* SummaryService.swift */; };
-		A1000045 /* SummaryQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000045 /* SummaryQueue.swift */; };
-		A1000042 /* LocationSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000042 /* LocationSheetView.swift */; };
 		A1000001 /* SimpleMailApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001 /* SimpleMailApp.swift */; };
 		A1000002 /* Email.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* Email.swift */; };
 		A1000003 /* Briefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Briefing.swift */; };
@@ -42,6 +38,7 @@
 		A1000032 /* brand_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B1000032 /* brand_registry.json */; };
 		A1000033 /* EmailFilters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000033 /* EmailFilters.swift */; };
 		A1000034 /* AccountDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000034 /* AccountDefaults.swift */; };
+		A1000099 /* EmailPreviewParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000099 /* EmailPreviewParser.swift */; };
 		A1000035 /* ScheduledSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000035 /* ScheduledSendManager.swift */; };
 		A1000036 /* NetworkRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000036 /* NetworkRetry.swift */; };
 		A1000037 /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000037 /* ErrorBanner.swift */; };
@@ -49,6 +46,10 @@
 		A1000039 /* SpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000039 /* SpeechRecognizer.swift */; };
 		A1000040 /* SearchFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000040 /* SearchFilter.swift */; };
 		A1000041 /* BottomSearchPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000041 /* BottomSearchPill.swift */; };
+		A1000042 /* LocationSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000042 /* LocationSheetView.swift */; };
+		A1000043 /* SummaryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000043 /* SummaryCache.swift */; };
+		A1000044 /* SummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000044 /* SummaryService.swift */; };
+		A1000045 /* SummaryQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000045 /* SummaryQueue.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,11 +63,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		B3582BDA6D42420A /* PendingSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendManager.swift; sourceTree = "<group>"; };
-		B1000043 /* SummaryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCache.swift; sourceTree = "<group>"; };
-		B1000044 /* SummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryService.swift; sourceTree = "<group>"; };
-		B1000045 /* SummaryQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryQueue.swift; sourceTree = "<group>"; };
-		B1000042 /* LocationSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSheetView.swift; sourceTree = "<group>"; };
 		4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMailUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0000001 /* SimpleMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000001 /* SimpleMailApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleMailApp.swift; sourceTree = "<group>"; };
@@ -101,6 +97,7 @@
 		B1000032 /* brand_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = brand_registry.json; sourceTree = "<group>"; };
 		B1000033 /* EmailFilters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailFilters.swift; sourceTree = "<group>"; };
 		B1000034 /* AccountDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDefaults.swift; sourceTree = "<group>"; };
+		B1000099 /* EmailPreviewParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailPreviewParser.swift; sourceTree = "<group>"; };
 		B1000035 /* ScheduledSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledSendManager.swift; sourceTree = "<group>"; };
 		B1000036 /* NetworkRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkRetry.swift; sourceTree = "<group>"; };
 		B1000037 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
@@ -108,6 +105,11 @@
 		B1000039 /* SpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognizer.swift; sourceTree = "<group>"; };
 		B1000040 /* SearchFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFilter.swift; sourceTree = "<group>"; };
 		B1000041 /* BottomSearchPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSearchPill.swift; sourceTree = "<group>"; };
+		B1000042 /* LocationSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSheetView.swift; sourceTree = "<group>"; };
+		B1000043 /* SummaryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCache.swift; sourceTree = "<group>"; };
+		B1000044 /* SummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryService.swift; sourceTree = "<group>"; };
+		B1000045 /* SummaryQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryQueue.swift; sourceTree = "<group>"; };
+		B3582BDA6D42420A /* PendingSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -197,14 +199,6 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
-		D0000012 /* Components */ = {
-			isa = PBXGroup;
-			children = (
-				B1000037 /* ErrorBanner.swift */,
-			);
-			path = Components;
-			sourceTree = "<group>";
-		};
 		D0000006 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
@@ -261,6 +255,7 @@
 				B1000033 /* EmailFilters.swift */,
 				B1000034 /* AccountDefaults.swift */,
 				B1000036 /* NetworkRetry.swift */,
+				B1000099 /* EmailPreviewParser.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -271,6 +266,14 @@
 				B1000032 /* brand_registry.json */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		D0000012 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				B1000037 /* ErrorBanner.swift */,
+			);
+			path = Components;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -324,7 +327,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 1520;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					4DC2BDCF2F063BC300D0267A = {
 						CreatedOnToolsVersion = 26.2;
@@ -378,8 +381,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			
-);
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E0000002 /* Sources */ = {
@@ -419,6 +421,7 @@
 				A1000031 /* Color+Hex.swift in Sources */,
 				A1000033 /* EmailFilters.swift in Sources */,
 				A1000034 /* AccountDefaults.swift in Sources */,
+				A1000099 /* EmailPreviewParser.swift in Sources */,
 				A1000035 /* ScheduledSendManager.swift in Sources */,
 				A1000036 /* NetworkRetry.swift in Sources */,
 				A1000037 /* ErrorBanner.swift in Sources */,
@@ -445,7 +448,6 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = VV6PB4PX4X;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
@@ -466,7 +468,6 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = VV6PB4PX4X;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
@@ -490,7 +491,6 @@
 				CODE_SIGN_ENTITLEMENTS = SimpleMail/Sources/SimpleMail.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = VV6PB4PX4X;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SimpleMail/Sources/Info.plist;
@@ -523,7 +523,6 @@
 				CODE_SIGN_ENTITLEMENTS = SimpleMail/Sources/SimpleMail.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = VV6PB4PX4X;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SimpleMail/Sources/Info.plist;
@@ -583,6 +582,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = VV6PB4PX4X;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -606,6 +606,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -646,6 +647,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = VV6PB4PX4X;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -662,6 +664,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};

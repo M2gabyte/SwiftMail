@@ -7,7 +7,9 @@ final class PendingSendManager {
     static let shared = PendingSendManager()
 
     private(set) var isPending = false
+    private(set) var remainingSeconds = 0
     private var sendTask: Task<Void, Never>?
+    private var timerTask: Task<Void, Never>?
     private var pendingEmail: PendingEmail?
 
     struct PendingEmail {
@@ -30,10 +32,22 @@ final class PendingSendManager {
     func queueSend(_ email: PendingEmail) {
         // Cancel any existing pending send
         sendTask?.cancel()
+        timerTask?.cancel()
 
         pendingEmail = email
         isPending = true
+        remainingSeconds = email.delaySeconds
 
+        // Start countdown timer
+        timerTask = Task { [weak self] in
+            for _ in 0..<email.delaySeconds {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                self.remainingSeconds -= 1
+            }
+        }
+
+        // Start send task
         sendTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(email.delaySeconds))
             guard let self, !Task.isCancelled else { return }
@@ -44,9 +58,12 @@ final class PendingSendManager {
     /// Undo the pending send
     func undoSend() {
         sendTask?.cancel()
+        timerTask?.cancel()
         sendTask = nil
+        timerTask = nil
         pendingEmail = nil
         isPending = false
+        remainingSeconds = 0
     }
 
     private func executeSend() async {
@@ -79,5 +96,6 @@ final class PendingSendManager {
 
         pendingEmail = nil
         isPending = false
+        remainingSeconds = 0
     }
 }

@@ -51,14 +51,18 @@ final class EmailCacheManager: ObservableObject {
         guard let context = modelContext else { return }
 
         let descriptor = FetchDescriptor<Email>()
+        let count: Int
         do {
-            cachedEmailCount = try context.fetchCount(descriptor)
+            count = try context.fetchCount(descriptor)
         } catch {
             logger.warning("Failed to fetch cache count: \(error.localizedDescription)")
-            cachedEmailCount = 0
+            count = 0
         }
-        let accountEmail = AuthService.shared.currentAccount?.email
-        lastSyncDate = AccountDefaults.date(for: "lastEmailSync", accountEmail: accountEmail)
+        Task { @MainActor in
+            let accountEmail = AuthService.shared.currentAccount?.email
+            cachedEmailCount = count
+            lastSyncDate = AccountDefaults.date(for: "lastEmailSync", accountEmail: accountEmail)
+        }
     }
 
     func cachedEmailCount(accountEmail: String?) -> Int {

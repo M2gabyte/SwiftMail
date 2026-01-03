@@ -86,10 +86,13 @@ final class BackgroundSyncManager {
     }
 
     func scheduleSummaryProcessingIfNeeded() {
-        if shouldRunAggressiveSummaryProcessing() {
-            scheduleSummaryProcessing()
-        } else {
-            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: summaryTaskIdentifier)
+        Task {
+            let shouldRun = await shouldRunAggressiveSummaryProcessing()
+            if shouldRun {
+                scheduleSummaryProcessing()
+            } else {
+                BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: summaryTaskIdentifier)
+            }
         }
     }
 
@@ -154,14 +157,15 @@ final class BackgroundSyncManager {
     }
 
     private func handleSummaryTask(_ task: BGProcessingTask) {
-        guard shouldRunAggressiveSummaryProcessing() else {
-            task.setTaskCompleted(success: true)
-            return
-        }
         scheduleSummaryProcessing() // Schedule next processing
 
         let summaryTask = Task {
             do {
+                let shouldRun = await shouldRunAggressiveSummaryProcessing()
+                guard shouldRun else {
+                    task.setTaskCompleted(success: true)
+                    return
+                }
                 try await processSummaryQueue()
                 task.setTaskCompleted(success: true)
             } catch is CancellationError {
@@ -182,7 +186,8 @@ final class BackgroundSyncManager {
     // MARK: - Sync Logic
 
     private func performSync() async throws {
-        guard await AuthService.shared.isAuthenticated else {
+        let isAuthenticated = await MainActor.run { AuthService.shared.isAuthenticated }
+        guard isAuthenticated else {
             return
         }
 
@@ -215,7 +220,8 @@ final class BackgroundSyncManager {
     }
 
     private func processSummaryQueue() async throws {
-        guard await AuthService.shared.isAuthenticated else { return }
+        let isAuthenticated = await MainActor.run { AuthService.shared.isAuthenticated }
+        guard isAuthenticated else { return }
 
         // Check for cancellation before processing
         try Task.checkCancellation()
@@ -225,17 +231,20 @@ final class BackgroundSyncManager {
 
         for account in accounts {
             if Task.isCancelled { break }
-            let cached = EmailCacheManager.shared.loadCachedEmails(
-                mailbox: .inbox,
-                limit: 100,
-                accountEmail: account.email
-            )
+            let cached = await MainActor.run {
+                EmailCacheManager.shared.loadCachedEmails(
+                    mailbox: .inbox,
+                    limit: 100,
+                    accountEmail: account.email
+                )
+            }
             await SummaryQueue.shared.enqueueCandidates(cached)
         }
     }
 
     private func checkForNewEmails() async throws {
-        guard await AuthService.shared.isAuthenticated else {
+        let isAuthenticated = await MainActor.run { AuthService.shared.isAuthenticated }
+        guard isAuthenticated else {
             return
         }
 
@@ -305,8 +314,8 @@ final class BackgroundSyncManager {
         }
     }
 
-    private func shouldRunAggressiveSummaryProcessing() -> Bool {
-        let accounts = AuthService.shared.accounts
+    private func shouldRunAggressiveSummaryProcessing() async -> Bool {
+        let accounts = await MainActor.run { AuthService.shared.accounts }
         if accounts.isEmpty {
             let settings = loadSettings(accountEmail: nil)
             return settings.precomputeSummaries && settings.backgroundSummaryProcessing

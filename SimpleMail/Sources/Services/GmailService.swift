@@ -1519,9 +1519,13 @@ actor GmailService: GmailAPIProvider {
             cleaned = stripHTMLTags(from: cleaned)
         }
 
+        // Basic whitespace normalization
         cleaned = cleaned
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Premium parsing: strip forwarded headers, signatures, and extract meaningful content
+        cleaned = EmailPreviewParser.extractMeaningfulPreview(from: cleaned)
 
         return cleaned
     }
