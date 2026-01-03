@@ -108,8 +108,11 @@ struct EmailDetailView: View {
         }
         .toolbar {
             ToolbarItem(placement: .bottomBar) {
-                // Reply Menu
-                Menu {
+                // Reply: tap = Reply, long-press = options
+                Button(action: { showingReplySheet = true }) {
+                    Image(systemName: "arrowshape.turn.up.left")
+                }
+                .contextMenu {
                     Button(action: { showingReplySheet = true }) {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
                     }
@@ -119,8 +122,6 @@ struct EmailDetailView: View {
                     Button(action: { }) {
                         Label("Forward", systemImage: "arrowshape.turn.up.right")
                     }
-                } label: {
-                    Image(systemName: "arrowshape.turn.up.left")
                 }
             }
 
@@ -129,7 +130,6 @@ struct EmailDetailView: View {
             }
 
             ToolbarItem(placement: .bottomBar) {
-                // Archive
                 Button {
                     Task {
                         await viewModel.archive()
@@ -155,6 +155,12 @@ struct EmailDetailView: View {
             })
         }
         .confirmationDialog("More Actions", isPresented: $showingActionSheet) {
+            Button("Archive") {
+                Task {
+                    await viewModel.archive()
+                    dismiss()
+                }
+            }
             Button(viewModel.isStarred ? "Unstar" : "Star") {
                 Task { await viewModel.toggleStar() }
             }
@@ -622,16 +628,23 @@ struct EmailBodyWebView: UIViewRepresentable {
                     line-height: 1.5;
                     color: #1a1a1a;
                     padding: 16px;
+                    padding-bottom: 96px;
                     word-wrap: break-word;
                     overflow-wrap: break-word;
                 }
                 @media (prefers-color-scheme: dark) {
                     body { color: #f0f0f0; background-color: transparent; }
                 }
-                /* Constrain images and tables to viewport */
+                /* Constrain content to viewport */
+                body * { max-width: 100% !important; min-width: 0 !important; }
                 img { max-width: 100% !important; height: auto !important; }
-                table { max-width: 100% !important; width: 100% !important; }
-                td, th { max-width: 100% !important; }
+                video, iframe, canvas { max-width: 100% !important; height: auto !important; }
+                table { max-width: 100% !important; width: 100% !important; table-layout: fixed !important; }
+                td, th { max-width: 100% !important; word-break: break-word; }
+                div[style*="width:600"], div[style*="width:640"], div[style*="width:700"] {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                }
                 a { color: #007AFF; }
                 /* Collapse empty elements that create whitespace */
                 div:empty, span:empty, td:empty, p:empty {
