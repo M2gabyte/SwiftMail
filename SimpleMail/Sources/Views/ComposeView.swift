@@ -1911,8 +1911,8 @@ class ComposeViewModel: ObservableObject {
             bcc = bccAddrs
             subject = subj
             // Prefer HTML body if available for rich text restoration
-            if let html = bodyHtmlText, !html.isEmpty {
-                bodyAttributed = Self.attributedBody(from: html)
+            if let html = bodyHtmlText, !html.isEmpty, isLikelyHTML(html) {
+                bodyAttributed = attributedBody(fromHTML: html) ?? Self.attributedBody(from: bodyText)
             } else {
                 bodyAttributed = Self.attributedBody(from: bodyText)
             }
