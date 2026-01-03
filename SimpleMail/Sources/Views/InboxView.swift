@@ -92,30 +92,33 @@ struct InboxView: View {
     /// Email row with all actions - extracted to help compiler
     @ViewBuilder
     private func emailRowView(for email: Email, isSelectionMode: Bool, isContinuationInSenderRun: Bool = false, isFirstInSenderRun: Bool = true) -> some View {
-        EmailRow(
-            email: email,
-            isCompact: listDensity == .compact,
-            showAccountBadge: viewModel.currentMailbox == .allInboxes,
-            highlightTerms: highlightTerms,
-            isContinuationInSenderRun: isContinuationInSenderRun
-        )
+        SwipeActionRow(
+            leadingAction: SwipeAction(
+                icon: email.isUnread ? "envelope.open" : "envelope.badge",
+                label: email.isUnread ? "Read" : "Unread",
+                color: .blue,
+                action: { viewModel.toggleRead(email) }
+            ),
+            trailingAction: SwipeAction(
+                icon: "archivebox",
+                label: "Archive",
+                color: .green,
+                action: { viewModel.archiveEmail(email) }
+            )
+        ) {
+            EmailRow(
+                email: email,
+                isCompact: listDensity == .compact,
+                showAccountBadge: viewModel.currentMailbox == .allInboxes,
+                highlightTerms: highlightTerms,
+                isContinuationInSenderRun: isContinuationInSenderRun
+            )
+            .background(Color(.systemBackground))
+        }
         .listRowBackground(Color(.systemBackground))
         .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
         .listRowSeparator(.visible)
         .listRowSeparatorTint(Color(.separator).opacity(0.4))
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { viewModel.archiveEmail(email) } label: {
-                Label("Archive", systemImage: "archivebox")
-            }
-            .tint(.green)
-        }
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button { viewModel.toggleRead(email) } label: {
-                Label(email.isUnread ? "Read" : "Unread",
-                      systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
-            }
-            .tint(.blue)
-        }
         .onTapGesture {
             if !isSelectionMode {
                 viewModel.openEmail(email)

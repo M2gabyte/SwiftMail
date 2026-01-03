@@ -256,24 +256,27 @@ struct SnoozedEmailsView: View {
                 )
             } else {
                 ForEach(snoozeManager.snoozedEmails) { snoozed in
-                    SnoozedEmailRow(snoozed: snoozed)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                snoozeManager.cancelSnooze(snoozed)
-                            } label: {
-                                Label("Cancel", systemImage: "xmark.circle")
-                            }
-                        }
-                        .swipeActions(edge: .leading) {
-                            Button {
+                    SwipeActionRow(
+                        leadingAction: SwipeAction(
+                            icon: "arrow.uturn.backward",
+                            label: "Unsnooze",
+                            color: .blue,
+                            action: {
                                 Task {
                                     await snoozeManager.unsnoozeEmail(snoozed)
                                 }
-                            } label: {
-                                Label("Unsnooze Now", systemImage: "arrow.uturn.backward")
                             }
-                            .tint(.blue)
-                        }
+                        ),
+                        trailingAction: SwipeAction(
+                            icon: "xmark.circle",
+                            label: "Cancel",
+                            color: .red,
+                            action: { snoozeManager.cancelSnooze(snoozed) }
+                        )
+                    ) {
+                        SnoozedEmailRow(snoozed: snoozed)
+                            .background(Color(.systemBackground))
+                    }
                 }
             }
         }
