@@ -929,6 +929,15 @@ struct EmailRow: View {
         return accountEmail.split(separator: "@").first.map(String.init)
     }
 
+    private var accountColor: Color {
+        guard let email = email.accountEmail?.lowercased() else {
+            return .secondary
+        }
+        let palette: [Color] = [.blue, .green, .orange, .pink, .purple, .teal, .indigo]
+        let hash = email.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        return palette[hash % palette.count]
+    }
+
     /// Highlight matching terms in text
     private func highlightedText(_ text: String, font: Font, baseColor: Color = .primary) -> Text {
         guard !highlightTerms.isEmpty else {
@@ -989,23 +998,13 @@ struct EmailRow: View {
                 HStack(alignment: .center, spacing: 6) {
                     highlightedText(email.senderName, font: isCompact ? .caption : .subheadline)
                         .font(isCompact ? .caption : .subheadline)
-                        .fontWeight(email.isUnread ? .semibold : .regular)
+                        .fontWeight(email.isUnread ? .semibold : .medium)
                         .lineLimit(1)
 
                     if isVIPSender {
                         Image(systemName: "star.fill")
                             .font(.caption2)
                             .foregroundStyle(.yellow)
-                    }
-
-                    if let accountLabel = accountLabel {
-                        Text(accountLabel)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color(.systemGray6))
-                            .clipShape(Capsule())
                     }
 
                     Spacer()
@@ -1016,6 +1015,12 @@ struct EmailRow: View {
                             Image(systemName: "paperclip")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
+                        }
+
+                        if showAccountBadge, accountLabel != nil {
+                            Circle()
+                                .fill(accountColor)
+                                .frame(width: 6, height: 6)
                         }
 
                         Text(DateFormatters.formatEmailDate(email.date))
@@ -1036,7 +1041,7 @@ struct EmailRow: View {
                 highlightedText(email.subject, font: isCompact ? .caption2 : .subheadline)
                     .font(isCompact ? .caption2 : .subheadline)
                     .fontWeight(email.isUnread ? .medium : .regular)
-                    .foregroundStyle(email.isUnread ? .primary : .secondary)
+                    .foregroundStyle(email.isUnread ? .primary : .primary.opacity(0.85))
                     .lineLimit(1)
 
                 // Snippet (not in compact mode)
