@@ -50,7 +50,7 @@ struct LocationSheetView: View {
     }
 
     private var moreMailboxes: [Mailbox] {
-        [.archive, .trash]
+        []
     }
 
     private var selectedMailboxForDisplay: Mailbox {
@@ -101,18 +101,19 @@ struct LocationSheetView: View {
                             MailboxRow(kind: mailbox, isSelected: mailbox == selectedMailboxForDisplay)
                         }
                     }
-
-                    NavigationLink {
-                        LocationMoreMailboxesView(
-                            mailboxes: moreMailboxes,
-                            selectedMailbox: selectedMailboxForDisplay,
-                            onSelectMailbox: { mailbox in
-                                onSelectMailbox(mailbox)
-                                dismiss()
-                            }
-                        )
-                    } label: {
-                        Label("More…", systemImage: "ellipsis")
+                    if !moreMailboxes.isEmpty {
+                        NavigationLink {
+                            LocationMoreMailboxesView(
+                                mailboxes: moreMailboxes,
+                                selectedMailbox: selectedMailboxForDisplay,
+                                onSelectMailbox: { mailbox in
+                                    onSelectMailbox(mailbox)
+                                    dismiss()
+                                }
+                            )
+                        } label: {
+                            Label("More…", systemImage: "ellipsis")
+                        }
                     }
                 }
 
@@ -125,7 +126,7 @@ struct LocationSheetView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
-            .presentationDetents([.medium, .large], selection: $sheetDetent)
+            .presentationDetents([.fraction(0.6), .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
                 if selectedMailbox == .allInboxes {
