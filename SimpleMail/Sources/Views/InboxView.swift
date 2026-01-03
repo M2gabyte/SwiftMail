@@ -85,15 +85,16 @@ struct InboxView: View {
 
     /// Email row with all actions - extracted to help compiler
     @ViewBuilder
-    private func emailRowView(for email: Email, isSelectionMode: Bool) -> some View {
+    private func emailRowView(for email: Email, isSelectionMode: Bool, isContinuationInSenderRun: Bool = false, isFirstInSenderRun: Bool = true) -> some View {
         EmailRow(
             email: email,
             isCompact: listDensity == .compact,
             showAccountBadge: viewModel.currentMailbox == .allInboxes,
-            highlightTerms: highlightTerms
+            highlightTerms: highlightTerms,
+            isContinuationInSenderRun: isContinuationInSenderRun
         )
         .listRowBackground(Color(.systemBackground))
-        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
         .listRowSeparator(.visible)
         .listRowSeparatorTint(Color(.separator).opacity(0.4))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -259,10 +260,19 @@ struct InboxView: View {
 
             ForEach(displaySections) { section in
                 Section {
-                    ForEach(section.emails) { email in
-                        emailRowView(for: email, isSelectionMode: isSelectionMode)
-                            .tag(email.threadId)
-                            .padding(.top, email.id == section.emails.first?.id ? 6 : 0)
+                    ForEach(Array(section.emails.enumerated()), id: \.element.id) { index, email in
+                        let previousEmail = index > 0 ? section.emails[index - 1] : nil
+                        let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
+                        let isFirst = !isContinuation
+
+                        emailRowView(
+                            for: email,
+                            isSelectionMode: isSelectionMode,
+                            isContinuationInSenderRun: isContinuation,
+                            isFirstInSenderRun: isFirst
+                        )
+                        .tag(email.threadId)
+                        .padding(.top, index == 0 ? 6 : 0)
                     }
                 } header: {
                     // Section headers: solid background for high contrast while scrolling
@@ -964,6 +974,7 @@ struct EmailRow: View {
     var isCompact: Bool = false
     var showAccountBadge: Bool = false
     var highlightTerms: [String] = []
+    var isContinuationInSenderRun: Bool = false
 
     private var isVIPSender: Bool {
         let vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: email.accountEmail)
@@ -1027,24 +1038,33 @@ struct EmailRow: View {
     var body: some View {
         HStack(spacing: isCompact ? 8 : 10) {
             // Avatar (hidden in compact mode)
+            // For sender-run continuation: hide avatar but keep alignment
             if !isCompact {
-                SmartAvatarView(
-                    email: email.senderEmail,
-                    name: email.senderName,
-                    size: 40
-                )
+                if isContinuationInSenderRun {
+                    // Empty space to maintain alignment
+                    Color.clear
+                        .frame(width: 40, height: 40)
+                } else {
+                    SmartAvatarView(
+                        email: email.senderEmail,
+                        name: email.senderName,
+                        size: 40
+                    )
+                }
             }
 
             // Content
             VStack(alignment: .leading, spacing: isCompact ? 2 : 3) {
                 // Top row: sender + metadata cluster
                 HStack(alignment: .center, spacing: 6) {
+                    // Sender name: reduced emphasis for sender-run continuation
                     highlightedText(email.senderName, font: isCompact ? .caption : .subheadline)
-                        .font(isCompact ? .caption : .subheadline)
-                        .fontWeight(email.isUnread ? .semibold : .medium)
+                        .font(isCompact ? .caption : (isContinuationInSenderRun ? .caption : .subheadline))
+                        .fontWeight(isContinuationInSenderRun ? .regular : (email.isUnread ? .semibold : .medium))
+                        .foregroundStyle(isContinuationInSenderRun ? .secondary : .primary)
                         .lineLimit(1)
 
-                    if isVIPSender {
+                    if isVIPSender && !isContinuationInSenderRun {
                         Image(systemName: "star.fill")
                             .font(.caption2)
                             .foregroundStyle(.yellow)
