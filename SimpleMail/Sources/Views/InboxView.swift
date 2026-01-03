@@ -21,6 +21,7 @@ struct InboxView: View {
     @State private var selectedThreadIds = Set<SelectionID>()
     @State private var showingBulkSnooze = false
     @State private var showingMoveDialog = false
+    @State private var showingLocationSheet = false
     @State private var scope: InboxScope = .all
     @State private var scrollOffset: CGFloat = 0
     private var pendingSendManager = PendingSendManager.shared
@@ -112,78 +113,91 @@ struct InboxView: View {
     var body: some View {
         inboxList
             .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(.bar, for: .navigationBar)
-        .toolbar { toolbarContent }
-        .searchable(text: $searchText, prompt: "Search")
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled(true)
-        .searchSuggestions { searchSuggestionsContent }
-        .onSubmit(of: .search) {
-            commitSearch()
-            debouncedSearchText = searchText
-            // Perform server-side search
-            Task {
-                await viewModel.performSearch(query: searchText)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.bar, for: .navigationBar)
+            .toolbar { toolbarContent }
+            .searchable(text: $searchText, prompt: "Search")
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+            .searchSuggestions { searchSuggestionsContent }
+            .onSubmit(of: .search) {
+                commitSearch()
+                debouncedSearchText = searchText
+                // Perform server-side search
+                Task {
+                    await viewModel.performSearch(query: searchText)
+                }
             }
-        }
-        .searchToolbarBehavior(.minimize)
-        .overlay { overlayContent }
-        .overlay(alignment: .bottom) { bulkToastContent }
-        .overlay(alignment: .bottom) {
-            undoSendToastContent
-                .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
-        }
-        .sheet(isPresented: $showingSettings) { SettingsView() }
-        .sheet(isPresented: $showingCompose) { ComposeView() }
-        .sheet(isPresented: $showingBulkSnooze) {
-            SnoozePickerSheet { date in
-                performBulkSnooze(until: date)
+            .searchToolbarBehavior(.minimize)
+            .overlay { overlayContent }
+            .overlay(alignment: .bottom) { bulkToastContent }
+            .overlay(alignment: .bottom) {
+                undoSendToastContent
+                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
             }
-        }
-        .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
-            Button("Inbox") { performBulkMove(to: .inbox) }
-            Button("Archive") { performBulkArchive() }
-            Button("Trash", role: .destructive) { performBulkTrash() }
-            Button("Cancel", role: .cancel) { }
-        }
-        .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
-        .refreshable { await viewModel.refresh() }
-        .task(id: searchText) { await debounceSearch() }
-        .onChange(of: searchText) { _, newValue in
-            // Clear server search when search text is cleared
-            if newValue.isEmpty && viewModel.isSearchActive {
-                viewModel.clearSearch()
+            .sheet(isPresented: $showingSettings) { SettingsView() }
+            .sheet(isPresented: $showingCompose) { ComposeView() }
+            .sheet(isPresented: $showingLocationSheet) {
+                LocationSheetView(
+                    selectedMailbox: $viewModel.currentMailbox,
+                    currentAccount: AuthService.shared.currentAccount,
+                    accounts: AuthService.shared.accounts,
+                    onSelectMailbox: { mailbox in
+                        viewModel.selectMailbox(mailbox)
+                    },
+                    onSelectScope: { scope in
+                        handleScopeSelection(scope)
+                    }
+                )
             }
-        }
-        .onChange(of: viewModel.scope) { _, newValue in
-            if let active = viewModel.activeFilter,
-               !availableFilters(for: newValue).contains(active) {
-                viewModel.activeFilter = nil
+            .sheet(isPresented: $showingBulkSnooze) {
+                SnoozePickerSheet { date in
+                    performBulkSnooze(until: date)
+                }
             }
-        }
-        .onChange(of: viewModel.currentMailbox) { _, _ in
-            exitSelectionMode()
-        }
-        .onChange(of: viewModel.activeFilter) { _, _ in
-            exitSelectionMode()
-        }
-        .onChange(of: viewModel.emails) { _, _ in
-            let valid = Set(viewModel.emails.map { $0.threadId })
-            selectedThreadIds = selectedThreadIds.intersection(valid)
-            if selectedThreadIds.isEmpty && isSelectionMode {
+            .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
+                Button("Inbox") { performBulkMove(to: .inbox) }
+                Button("Archive") { performBulkArchive() }
+                Button("Trash", role: .destructive) { performBulkTrash() }
+                Button("Cancel", role: .cancel) { }
+            }
+            .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
+            .refreshable { await viewModel.refresh() }
+            .task(id: searchText) { await debounceSearch() }
+            .onChange(of: searchText) { _, newValue in
+                // Clear server search when search text is cleared
+                if newValue.isEmpty && viewModel.isSearchActive {
+                    viewModel.clearSearch()
+                }
+            }
+            .onChange(of: viewModel.scope) { _, newValue in
+                if let active = viewModel.activeFilter,
+                   !availableFilters(for: newValue).contains(active) {
+                    viewModel.activeFilter = nil
+                }
+            }
+            .onChange(of: viewModel.currentMailbox) { _, _ in
                 exitSelectionMode()
             }
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background {
+            .onChange(of: viewModel.activeFilter) { _, _ in
                 exitSelectionMode()
             }
-        }
-        .onAppear { handleAppear() }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() }
-        .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() }
+            .onChange(of: viewModel.emails) { _, _ in
+                let valid = Set(viewModel.emails.map { $0.threadId })
+                selectedThreadIds = selectedThreadIds.intersection(valid)
+                if selectedThreadIds.isEmpty && isSelectionMode {
+                    exitSelectionMode()
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .background {
+                    exitSelectionMode()
+                }
+            }
+            .onAppear { handleAppear() }
+            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() }
+            .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() }
     }
 
     // MARK: - Extracted View Components
@@ -275,8 +289,8 @@ struct InboxView: View {
             }
         } else {
             ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    mailboxMenuContent
+                Button {
+                    showingLocationSheet = true
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: viewModel.currentMailbox.icon)
@@ -288,7 +302,7 @@ struct InboxView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .accessibilityLabel("Mailbox selector")
+                .accessibilityLabel("Location")
             }
 
             ToolbarItem(placement: .topBarTrailing) {
@@ -312,41 +326,16 @@ struct InboxView: View {
         }
     }
 
-    @ViewBuilder
-    private var mailboxMenuContent: some View {
-        let accounts = AuthService.shared.accounts
-
-        Section("Account") {
-            Button {
-                viewModel.selectMailbox(.allInboxes)
-            } label: {
-                Label(
-                    "Unified Inbox",
-                    systemImage: viewModel.currentMailbox == .allInboxes ? "checkmark" : "tray.full"
-                )
-            }
-
-            ForEach(accounts, id: \.id) { account in
-                Button {
-                    AuthService.shared.switchAccount(to: account)
-                } label: {
-                    HStack {
-                        Text(account.email)
-                        if account.id == AuthService.shared.currentAccount?.id {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        }
-
-        Divider()
-
-        Section("Mailbox") {
-            ForEach(Mailbox.allCases.filter { $0 != .allInboxes }, id: \.self) { mailbox in
-                Button { viewModel.selectMailbox(mailbox) } label: {
-                    Label(mailbox.rawValue, systemImage: mailbox == viewModel.currentMailbox ? "checkmark" : mailbox.icon)
-                }
+    private func handleScopeSelection(_ scope: InboxLocationScope) {
+        switch scope {
+        case .unified:
+            viewModel.selectMailbox(.allInboxes)
+        case .account(let account):
+            AuthService.shared.switchAccount(to: account)
+            if viewModel.currentMailbox == .allInboxes {
+                viewModel.selectMailbox(.inbox)
+            } else {
+                viewModel.selectMailbox(viewModel.currentMailbox)
             }
         }
     }
