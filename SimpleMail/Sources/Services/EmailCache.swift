@@ -467,6 +467,42 @@ final class EmailCacheManager: ObservableObject {
         case .starred: return ["STARRED"]
         }
     }
+
+    // MARK: - Email Detail Caching (for Offline Support)
+
+    /// Check if email detail (body) is cached
+    func hasDetailCached(emailId: String) -> Bool {
+        guard let context = modelContext else { return false }
+
+        let descriptor = FetchDescriptor<EmailDetail>(
+            predicate: #Predicate { $0.id == emailId }
+        )
+
+        return (try? context.fetchCount(descriptor)) ?? 0 > 0
+    }
+
+    /// Cache email detail (body)
+    func cacheEmailDetail(_ dto: EmailDetailDTO) {
+        guard let context = modelContext else { return }
+
+        // Check if already cached
+        let descriptor = FetchDescriptor<EmailDetail>(
+            predicate: #Predicate { $0.id == dto.id }
+        )
+
+        if let existing = try? context.fetch(descriptor).first {
+            // Update existing
+            existing.body = dto.body
+            existing.to = dto.to
+            existing.cc = dto.cc
+        } else {
+            // Insert new
+            let detail = EmailDetail(dto: dto)
+            context.insert(detail)
+        }
+
+        try? context.save()
+    }
 }
 
 // MARK: - Offline Mode Indicator

@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import OSLog
+import SwiftData
 
 private let logger = Logger(subsystem: "com.simplemail.app", category: "BodyPrefetchQueue")
 
@@ -123,24 +124,29 @@ actor BodyPrefetchQueue {
 
     /// Prioritize emails for prefetching
     private func prioritize(_ emails: [Email]) -> [Email] {
-        emails.sorted { lhs, rhs in
-            let lhsScore = priorityScore(lhs)
-            let rhsScore = priorityScore(rhs)
-            if lhsScore == rhsScore {
+        // Extract priority data before sorting to avoid Sendable issues
+        struct PriorityInfo {
+            let index: Int
+            let score: Int
+            let date: Date
+        }
+
+        let infos = emails.enumerated().map { index, email in
+            var score = 0
+            if email.isUnread { score += 3 }
+            if email.isStarred { score += 2 }
+            if email.listUnsubscribe == nil { score += 1 }
+            return PriorityInfo(index: index, score: score, date: email.date)
+        }
+
+        let sortedInfos = infos.sorted { lhs, rhs in
+            if lhs.score == rhs.score {
                 return lhs.date > rhs.date
             }
-            return lhsScore > rhsScore
+            return lhs.score > rhs.score
         }
-    }
 
-    /// Calculate priority score (higher = more important)
-    private func priorityScore(_ email: Email) -> Int {
-        var score = 0
-        if email.isUnread { score += 3 }
-        if email.isStarred { score += 2 }
-        // Prefer non-newsletter emails
-        if email.listUnsubscribe == nil { score += 1 }
-        return score
+        return sortedInfos.map { emails[$0.index] }
     }
 
     /// Check if conditions are right for prefetching
@@ -167,43 +173,5 @@ actor BodyPrefetchQueue {
         }
 
         return true
-    }
-}
-
-// MARK: - EmailCacheManager Extension
-
-extension EmailCacheManager {
-    /// Check if email detail (body) is cached
-    func hasDetailCached(emailId: String) -> Bool {
-        guard let context = modelContext else { return false }
-
-        let descriptor = FetchDescriptor<EmailDetail>(
-            predicate: #Predicate { $0.id == emailId }
-        )
-
-        return (try? context.fetchCount(descriptor)) ?? 0 > 0
-    }
-
-    /// Cache email detail (body)
-    func cacheEmailDetail(_ dto: EmailDetailDTO) {
-        guard let context = modelContext else { return }
-
-        // Check if already cached
-        let descriptor = FetchDescriptor<EmailDetail>(
-            predicate: #Predicate { $0.id == dto.id }
-        )
-
-        if let existing = try? context.fetch(descriptor).first {
-            // Update existing
-            existing.body = dto.body
-            existing.to = dto.to
-            existing.cc = dto.cc
-        } else {
-            // Insert new
-            let detail = EmailDetail(dto: dto)
-            context.insert(detail)
-        }
-
-        try? context.save()
     }
 }
