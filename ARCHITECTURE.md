@@ -55,6 +55,9 @@ SimpleMail/
 │   │   ├── GmailService.swift       # Gmail API client
 │   │   ├── PeopleService.swift      # Google People API (contacts)
 │   │   ├── AvatarService.swift      # Avatar resolution + caching
+│   │   ├── SummaryQueue.swift       # Precompute summary queue + throttling
+│   │   ├── SummaryService.swift     # Summarization + fallbacks
+│   │   ├── SummaryCache.swift       # Summary persistence (AccountDefaults)
 │   │   ├── BrandRegistry.swift      # Brand domain registry (JSON-backed)
 │   │   ├── DomainNormalizer.swift   # Email + domain normalization
 │   │   ├── BackgroundSync.swift     # Background refresh + notifications
@@ -197,6 +200,30 @@ enum Base64URL {
 - Batched requests (3 concurrent max)
 - 20-second timeout per request
 - Automatic retry on 429 via `NetworkRetry` utility
+
+### 3. Summary Precompute Pipeline (SummaryQueue.swift / SummaryService.swift / SummaryCache.swift)
+
+**Goal:** precompute summaries in the background so the detail view can display instantly, without draining battery.
+
+**How it works (best‑practice mode):**
+- **Foreground‑first:** enqueue candidates after inbox load; compute while app is active.
+- **Batch + throttle:** max 10 summaries per hour (sliding 1‑hour window).
+- **Battery guard:** skip if Low Power Mode is enabled or battery < 20%.
+- **Priority ordering:** unread + starred + non‑bulk candidates first.
+- **Skip short emails:** plain‑text length < ~350 chars are not summarized.
+- **Per‑account opt‑out:** settings toggle disables precompute for that account.
+
+**Data flow:**
+1. InboxViewModel enqueues candidates after `loadEmails()`.
+2. SummaryQueue applies throttling + battery checks.
+3. SummaryService generates summary:
+   - Apple Intelligence when available.
+   - Extractive fallback if AI unavailable.
+4. SummaryCache persists summaries per messageId (AccountDefaults scoped).
+5. EmailDetailView reads from cache first, falls back to on‑demand summarization.
+
+**User control:**
+- Settings → Smart Features: **“Precompute Summaries (Recommended)”** toggle.
 
 **NetworkRetry Utility (NetworkRetry.swift):**
 ```swift
