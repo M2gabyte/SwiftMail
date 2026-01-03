@@ -173,6 +173,8 @@ struct SettingsView: View {
                 Section {
                     Toggle("Auto-Summarize Long Emails", isOn: $viewModel.settings.autoSummarize)
                         .onChange(of: viewModel.settings.autoSummarize) { _, _ in viewModel.saveSettings() }
+                    Toggle("Precompute Summaries (Recommended)", isOn: $viewModel.settings.precomputeSummaries)
+                        .onChange(of: viewModel.settings.precomputeSummaries) { _, _ in viewModel.saveSettings() }
                     Toggle("Smart Reply Suggestions", isOn: $viewModel.settings.smartReplies)
                         .onChange(of: viewModel.settings.smartReplies) { _, _ in viewModel.saveSettings() }
 
@@ -356,6 +358,7 @@ struct AppSettings: Codable {
     var blockTrackingPixels: Bool = true
     var stripTrackingParameters: Bool = true
     var autoSummarize: Bool = true
+    var precomputeSummaries: Bool = true
     var smartReplies: Bool = true
     var signature: String = ""
     var undoSendDelaySeconds: Int = 5

@@ -40,6 +40,8 @@ struct EmailDetailView: View {
                        let latestMessage = viewModel.messages.last,
                        EmailTextHelper.plainTextLength(latestMessage.body) > 300 {
                         EmailSummaryView(
+                            emailId: latestMessage.id,
+                            accountEmail: latestMessage.accountEmail,
                             emailBody: latestMessage.body,
                             isExpanded: $viewModel.summaryExpanded
                         )
@@ -833,6 +835,8 @@ class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
 // MARK: - Email Summary View
 
 struct EmailSummaryView: View {
+    let emailId: String
+    let accountEmail: String?
     let emailBody: String
     @Binding var isExpanded: Bool
 
@@ -910,19 +914,16 @@ struct EmailSummaryView: View {
         summaryError = nil
 
         Task {
-            // Strip HTML tags for plain text
-            let plainText = stripHTML(emailBody)
-
-            // Try Apple Intelligence summarization via Foundation Models
-            do {
-                summary = try await summarizeWithAppleIntelligence(plainText)
-            } catch {
-                // Fallback to extractive summarization
-                if isShortEmail(plainText) {
-                    summary = "Short email — summary not needed."
-                } else {
-                    summary = extractKeySentences(from: plainText, maxSentences: 3)
-                }
+            if let cached = SummaryCache.shared.summary(for: emailId, accountEmail: accountEmail) {
+                summary = cached
+            } else if let computed = await SummaryService.summarizeIfNeeded(
+                messageId: emailId,
+                body: emailBody,
+                accountEmail: accountEmail
+            ) {
+                summary = computed
+            } else {
+                summary = "Short email — summary not needed."
             }
 
             isGenerating = false

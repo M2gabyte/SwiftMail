@@ -152,6 +152,10 @@ final class InboxViewModel {
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
                 self.nextPageToken = nil
+                Task {
+                    try? await Task.sleep(for: .seconds(1))
+                    await SummaryQueue.shared.enqueueCandidates(self.emails)
+                }
             } else {
                 let labelIds = labelIdsForMailbox(currentMailbox)
                 let query = mailboxQuery(for: currentMailbox)
@@ -163,6 +167,10 @@ final class InboxViewModel {
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
                 self.nextPageToken = pageToken
+                Task {
+                    try? await Task.sleep(for: .seconds(1))
+                    await SummaryQueue.shared.enqueueCandidates(self.emails)
+                }
             }
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")

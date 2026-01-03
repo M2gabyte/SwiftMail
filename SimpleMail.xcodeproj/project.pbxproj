@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		6B84FE21D7C346B2 /* PendingSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3582BDA6D42420A /* PendingSendManager.swift */; };
+		A1000043 /* SummaryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000043 /* SummaryCache.swift */; };
+		A1000044 /* SummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000044 /* SummaryService.swift */; };
+		A1000045 /* SummaryQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000045 /* SummaryQueue.swift */; };
 		A1000042 /* LocationSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000042 /* LocationSheetView.swift */; };
 		A1000001 /* SimpleMailApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001 /* SimpleMailApp.swift */; };
 		A1000002 /* Email.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* Email.swift */; };
@@ -60,6 +63,9 @@
 
 /* Begin PBXFileReference section */
 		B3582BDA6D42420A /* PendingSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendManager.swift; sourceTree = "<group>"; };
+		B1000043 /* SummaryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCache.swift; sourceTree = "<group>"; };
+		B1000044 /* SummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryService.swift; sourceTree = "<group>"; };
+		B1000045 /* SummaryQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryQueue.swift; sourceTree = "<group>"; };
 		B1000042 /* LocationSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSheetView.swift; sourceTree = "<group>"; };
 		4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMailUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0000001 /* SimpleMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -221,6 +227,9 @@
 				B1000013 /* GmailService.swift */,
 				B1000014 /* AuthService.swift */,
 				B3582BDA6D42420A /* PendingSendManager.swift */,
+				B1000043 /* SummaryCache.swift */,
+				B1000044 /* SummaryService.swift */,
+				B1000045 /* SummaryQueue.swift */,
 				B1000015 /* BackgroundSync.swift */,
 				B1000019 /* EmailCache.swift */,
 				B1000020 /* SnoozeManager.swift */,
@@ -379,6 +388,9 @@
 			files = (
 				A1000001 /* SimpleMailApp.swift in Sources */,
 				6B84FE21D7C346B2 /* PendingSendManager.swift in Sources */,
+				A1000043 /* SummaryCache.swift in Sources */,
+				A1000044 /* SummaryService.swift in Sources */,
+				A1000045 /* SummaryQueue.swift in Sources */,
 				A1000002 /* Email.swift in Sources */,
 				A1000003 /* Briefing.swift in Sources */,
 				A1000004 /* BriefingEngine.swift in Sources */,
