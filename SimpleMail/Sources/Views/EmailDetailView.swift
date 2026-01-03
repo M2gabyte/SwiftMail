@@ -914,19 +914,23 @@ struct EmailSummaryView: View {
         summaryError = nil
 
         Task {
+            let resolvedSummary: String
             if let cached = SummaryCache.shared.summary(for: emailId, accountEmail: accountEmail) {
-                summary = cached
+                resolvedSummary = cached
             } else if let computed = await SummaryService.summarizeIfNeeded(
                 messageId: emailId,
                 body: emailBody,
                 accountEmail: accountEmail
             ) {
-                summary = computed
+                resolvedSummary = computed
             } else {
-                summary = "Short email — summary not needed."
+                resolvedSummary = "Short email — summary not needed."
             }
 
-            isGenerating = false
+            await MainActor.run {
+                summary = resolvedSummary
+                isGenerating = false
+            }
         }
     }
 

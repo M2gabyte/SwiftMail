@@ -36,6 +36,9 @@ enum TimeoutConfig {
     /// Background notification check interval (5 minutes)
     static let notificationCheckInterval: TimeInterval = 300
 
+    /// Background summary processing interval (30 minutes)
+    static let summaryProcessingInterval: TimeInterval = 1800
+
     // MARK: - User Interface
 
     /// Snooze check polling interval (60 seconds)

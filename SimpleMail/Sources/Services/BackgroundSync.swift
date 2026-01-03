@@ -13,6 +13,7 @@ final class BackgroundSyncManager {
 
     private let syncTaskIdentifier = "com.simplemail.app.sync"
     private let notificationTaskIdentifier = "com.simplemail.app.notification"
+    private let summaryTaskIdentifier = "com.simplemail.app.summaries"
 
     private init() {}
 
@@ -42,6 +43,18 @@ final class BackgroundSyncManager {
             }
             self.handleNotificationTask(processingTask)
         }
+
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: summaryTaskIdentifier,
+            using: nil
+        ) { task in
+            guard let processingTask = task as? BGProcessingTask else {
+                logger.error("Unexpected task type for summary task")
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleSummaryTask(processingTask)
+        }
     }
 
     // MARK: - Schedule Tasks
@@ -69,6 +82,28 @@ final class BackgroundSyncManager {
             logger.info("Scheduled notification check")
         } catch {
             logger.error("Failed to schedule notification check: \(error.localizedDescription)")
+        }
+    }
+
+    func scheduleSummaryProcessingIfNeeded() {
+        if shouldRunAggressiveSummaryProcessing() {
+            scheduleSummaryProcessing()
+        } else {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: summaryTaskIdentifier)
+        }
+    }
+
+    private func scheduleSummaryProcessing() {
+        let request = BGProcessingTaskRequest(identifier: summaryTaskIdentifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: TimeoutConfig.summaryProcessingInterval)
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
+
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            logger.info("Scheduled summary processing task")
+        } catch {
+            logger.error("Failed to schedule summary processing: \(error.localizedDescription)")
         }
     }
 
@@ -118,6 +153,32 @@ final class BackgroundSyncManager {
         }
     }
 
+    private func handleSummaryTask(_ task: BGProcessingTask) {
+        guard shouldRunAggressiveSummaryProcessing() else {
+            task.setTaskCompleted(success: true)
+            return
+        }
+        scheduleSummaryProcessing() // Schedule next processing
+
+        let summaryTask = Task {
+            do {
+                try await processSummaryQueue()
+                task.setTaskCompleted(success: true)
+            } catch is CancellationError {
+                logger.info("Summary task was cancelled due to expiration")
+                task.setTaskCompleted(success: false)
+            } catch {
+                logger.error("Summary processing failed: \(error.localizedDescription)")
+                task.setTaskCompleted(success: false)
+            }
+        }
+
+        task.expirationHandler = {
+            logger.warning("Summary task expiring - cancelling work")
+            summaryTask.cancel()
+        }
+    }
+
     // MARK: - Sync Logic
 
     private func performSync() async throws {
@@ -148,6 +209,29 @@ final class BackgroundSyncManager {
         await EmailCacheManager.shared.cacheEmails(allEmails)
 
         logger.info("Synced \(allEmails.count) emails to cache")
+
+        let emailModels = allEmails.map(Email.init(dto:))
+        await SummaryQueue.shared.enqueueCandidates(emailModels)
+    }
+
+    private func processSummaryQueue() async throws {
+        guard await AuthService.shared.isAuthenticated else { return }
+
+        // Check for cancellation before processing
+        try Task.checkCancellation()
+
+        let accounts = await MainActor.run { AuthService.shared.accounts }
+        guard !accounts.isEmpty else { return }
+
+        for account in accounts {
+            if Task.isCancelled { break }
+            let cached = EmailCacheManager.shared.loadCachedEmails(
+                mailbox: .inbox,
+                limit: 100,
+                accountEmail: account.email
+            )
+            await SummaryQueue.shared.enqueueCandidates(cached)
+        }
     }
 
     private func checkForNewEmails() async throws {
@@ -219,6 +303,22 @@ final class BackgroundSyncManager {
             logger.error("Failed to decode app settings: \(error.localizedDescription)")
             return AppSettings()
         }
+    }
+
+    private func shouldRunAggressiveSummaryProcessing() -> Bool {
+        let accounts = AuthService.shared.accounts
+        if accounts.isEmpty {
+            let settings = loadSettings(accountEmail: nil)
+            return settings.precomputeSummaries && settings.backgroundSummaryProcessing
+        }
+
+        for account in accounts {
+            let settings = loadSettings(accountEmail: account.email)
+            if settings.precomputeSummaries && settings.backgroundSummaryProcessing {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - Notification Key Pruning

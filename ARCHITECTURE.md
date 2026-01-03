@@ -215,6 +215,7 @@ enum Base64URL {
 
 **Data flow:**
 1. InboxViewModel enqueues candidates after `loadEmails()`.
+2. BackgroundSync (BGAppRefresh) enqueues candidates after syncing and caching emails.
 2. SummaryQueue applies throttling + battery checks.
 3. SummaryService generates summary:
    - Apple Intelligence when available.
@@ -224,6 +225,13 @@ enum Base64URL {
 
 **User control:**
 - Settings → Smart Features: **“Precompute Summaries (Recommended)”** toggle.
+- Settings → Smart Features: **“Aggressive Background Summaries”** toggle (BGProcessing task).
+
+**Aggressive background processing (optional):**
+- **BGProcessingTask** (`com.simplemail.app.summaries`) runs on iOS schedule.
+- Loads cached inbox items per account and enqueues SummaryQueue.
+- Requires network connectivity; respects the same throttling + battery guards.
+- Enabled only when **Aggressive Background Summaries** is on.
 
 **NetworkRetry Utility (NetworkRetry.swift):**
 ```swift

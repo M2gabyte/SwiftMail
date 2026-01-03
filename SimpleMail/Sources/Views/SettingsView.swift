@@ -175,6 +175,9 @@ struct SettingsView: View {
                         .onChange(of: viewModel.settings.autoSummarize) { _, _ in viewModel.saveSettings() }
                     Toggle("Precompute Summaries (Recommended)", isOn: $viewModel.settings.precomputeSummaries)
                         .onChange(of: viewModel.settings.precomputeSummaries) { _, _ in viewModel.saveSettings() }
+                    Toggle("Aggressive Background Summaries", isOn: $viewModel.settings.backgroundSummaryProcessing)
+                        .onChange(of: viewModel.settings.backgroundSummaryProcessing) { _, _ in viewModel.saveSettings() }
+                        .disabled(!viewModel.settings.precomputeSummaries)
                     Toggle("Smart Reply Suggestions", isOn: $viewModel.settings.smartReplies)
                         .onChange(of: viewModel.settings.smartReplies) { _, _ in viewModel.saveSettings() }
 
@@ -188,7 +191,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Smart Features")
                 } footer: {
-                    Text("Powered by on-device Apple Intelligence. Your data stays private.")
+                    Text("Powered by on-device Apple Intelligence. Aggressive background summaries may use more battery.")
                 }
 
                 // Gmail Settings Sync Section
@@ -359,6 +362,7 @@ struct AppSettings: Codable {
     var stripTrackingParameters: Bool = true
     var autoSummarize: Bool = true
     var precomputeSummaries: Bool = true
+    var backgroundSummaryProcessing: Bool = false
     var smartReplies: Bool = true
     var signature: String = ""
     var undoSendDelaySeconds: Int = 5
@@ -428,6 +432,7 @@ class SettingsViewModel: ObservableObject {
             let encoded = try JSONEncoder().encode(settings)
             AccountDefaults.setData(encoded, for: settingsKeyBase, accountEmail: accountEmail)
             settingsLogger.debug("Saved settings successfully")
+            BackgroundSyncManager.shared.scheduleSummaryProcessingIfNeeded()
         } catch {
             settingsLogger.error("Failed to encode settings: \(error.localizedDescription)")
         }

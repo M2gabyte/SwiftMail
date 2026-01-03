@@ -72,6 +72,7 @@ struct SimpleMailApp: App {
                 // Schedule background tasks
                 BackgroundSyncManager.shared.scheduleBackgroundSync()
                 BackgroundSyncManager.shared.scheduleNotificationCheck()
+                BackgroundSyncManager.shared.scheduleSummaryProcessingIfNeeded()
 
             default:
                 break

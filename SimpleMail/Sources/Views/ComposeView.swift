@@ -1544,7 +1544,8 @@ final class RichTextContext: ObservableObject {
 
 class GrowingTextView: UITextView {
     override var intrinsicContentSize: CGSize {
-        let fixedWidth = frame.width > 0 ? frame.width : UIScreen.main.bounds.width - 32
+        let fallbackWidth = superview?.bounds.width ?? 320
+        let fixedWidth = frame.width > 0 ? frame.width : fallbackWidth
         let size = sizeThatFits(CGSize(width: fixedWidth, height: .greatestFiniteMagnitude))
         return CGSize(width: UIView.noIntrinsicMetric, height: max(size.height, 100))
     }

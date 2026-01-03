@@ -16,6 +16,7 @@ struct InboxView: View {
     @StateObject private var searchHistory = SearchHistoryManager.shared
     @Environment(\.isSearching) private var isSearching
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.displayScale) private var displayScale
     @State private var editMode: EditMode = .inactive
     @State private var isSelectionMode = false
     @State private var selectedThreadIds = Set<SelectionID>()
@@ -238,7 +239,7 @@ struct InboxView: View {
                         // Hairline bottom divider (native 1px)
                         Rectangle()
                             .fill(Color(.separator).opacity(0.6))
-                            .frame(height: 1.0 / UIScreen.main.scale)
+                            .frame(height: 1.0 / displayScale)
                     }
                     .background(Color(.systemBackground))
                     .listRowInsets(EdgeInsets())
@@ -922,47 +923,42 @@ struct EmailRow: View {
         return palette[hash % palette.count]
     }
 
-    /// Highlight matching terms in text
+    /// Highlight matching terms in text without using deprecated Text concatenation.
     private func highlightedText(_ text: String, font: Font, baseColor: Color = .primary) -> Text {
         guard !highlightTerms.isEmpty else {
-            return Text(text).foregroundStyle(baseColor)
+            return Text(text).font(font).foregroundStyle(baseColor)
         }
 
-        var result = Text("")
-        var lastEnd = text.startIndex
+        var attributed = AttributedString(text)
+        var base = AttributeContainer()
+        base.font = font
+        base.foregroundColor = baseColor
+        attributed.mergeAttributes(base)
 
-        // Find all matches and sort by position
-        var matches: [(range: Range<String.Index>, term: String)] = []
+        var matches: [Range<String.Index>] = []
         for term in highlightTerms where !term.isEmpty {
             var searchStart = text.startIndex
             while let range = text.range(of: term, options: .caseInsensitive, range: searchStart..<text.endIndex) {
-                matches.append((range, term))
+                matches.append(range)
                 searchStart = range.upperBound
             }
         }
-        matches.sort { $0.range.lowerBound < $1.range.lowerBound }
+        matches.sort { $0.lowerBound < $1.lowerBound }
 
-        // Build attributed text
-        for match in matches {
-            if match.range.lowerBound >= lastEnd {
-                // Add non-highlighted text before match
-                if lastEnd < match.range.lowerBound {
-                    result = result + Text(text[lastEnd..<match.range.lowerBound]).foregroundStyle(baseColor)
-                }
-                // Add highlighted match
-                result = result + Text(text[match.range])
-                    .foregroundStyle(Color.yellow)
-                    .bold()
-                lastEnd = match.range.upperBound
+        var lastEnd = text.startIndex
+        var highlight = AttributeContainer()
+        highlight.foregroundColor = .yellow
+        highlight.font = font.bold()
+
+        for range in matches where range.lowerBound >= lastEnd {
+            if let start = AttributedString.Index(range.lowerBound, within: attributed),
+               let end = AttributedString.Index(range.upperBound, within: attributed) {
+                attributed[start..<end].mergeAttributes(highlight)
+                lastEnd = range.upperBound
             }
         }
 
-        // Add remaining text
-        if lastEnd < text.endIndex {
-            result = result + Text(text[lastEnd...]).foregroundStyle(baseColor)
-        }
-
-        return result
+        return Text(attributed)
     }
 
     var body: some View {
