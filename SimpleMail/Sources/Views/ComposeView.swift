@@ -2,9 +2,12 @@ import SwiftUI
 import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
+import OSLog
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
+
+private let logger = Logger(subsystem: "com.simplemail.app", category: "ComposeView")
 
 // MARK: - Compose Mode
 
@@ -60,9 +63,6 @@ struct ComposeView: View {
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("composeView")
-            .safeAreaInset(edge: .bottom) {
-                RichTextToolbar(context: richTextContext)
-            }
     }
 
     private func applyToolbar<V: View>(to view: V) -> some View {
@@ -72,6 +72,24 @@ struct ComposeView: View {
     private func applyOverlays<V: View>(to view: V) -> some View {
         view
             .overlay { composeOverlay }
+            .overlay(alignment: .bottomTrailing) {
+                if focusedField == .body {
+                    RichTextToolbar(
+                        context: richTextContext,
+                        onAttachment: { viewModel.showAttachmentPicker = true }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: Alignment.bottom) {
+                if viewModel.showUndoSend {
+                    UndoSendToast(
+                        onUndo: { viewModel.undoSend() }
+                    )
+                    .padding(.bottom, 56)
+                    .transition(.move(edge: Edge.bottom).combined(with: .opacity))
+                }
+            }
     }
 
     private func applySheets<V: View>(to view: V) -> some View {
@@ -189,6 +207,12 @@ struct ComposeView: View {
                     viewModel.showAttachmentPicker = false
                 }
             }
+            .onChange(of: viewModel.didSend) { _, newValue in
+                if newValue {
+                    dismiss()
+                    viewModel.didSend = false
+                }
+            }
             .onChange(of: viewModel.subject) { _, _ in
                 viewModel.scheduleAutoSave()
             }
@@ -214,23 +238,44 @@ struct ComposeView: View {
                         .padding(.horizontal)
                         .padding(.top, 6)
                 }
-                // Recipients
+                // To field
                 RecipientField(
                     label: "To",
                     recipients: $viewModel.to,
                     pendingInput: $viewModel.pendingToInput,
-                    isFocused: focusedField == .to
+                    isFocused: focusedField == .to,
+                    showToggle: false
                 )
                 .focused($focusedField, equals: .to)
 
                 Divider().padding(.leading)
 
-                if viewModel.showCcBcc {
+                // Cc/Bcc/From toggle row (collapsed) or individual fields (expanded)
+                if !viewModel.showCcBcc {
+                    Button(action: { viewModel.showCcBcc = true }) {
+                        HStack(spacing: 8) {
+                            Text("Cc/Bcc, From:")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                            Text(viewModel.fromEmail)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider().padding(.leading)
+                } else {
                     RecipientField(
                         label: "Cc",
                         recipients: $viewModel.cc,
                         pendingInput: $viewModel.pendingCcInput,
-                        isFocused: focusedField == .cc
+                        isFocused: focusedField == .cc,
+                        showToggle: false
                     )
                     .focused($focusedField, equals: .cc)
 
@@ -240,9 +285,27 @@ struct ComposeView: View {
                         label: "Bcc",
                         recipients: $viewModel.bcc,
                         pendingInput: $viewModel.pendingBccInput,
-                        isFocused: focusedField == .bcc
+                        isFocused: focusedField == .bcc,
+                        showToggle: false
                     )
                     .focused($focusedField, equals: .bcc)
+
+                    Divider().padding(.leading)
+
+                    HStack {
+                        Text("From")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: 60, alignment: .leading)
+                        Text(viewModel.fromEmail)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
 
                     Divider().padding(.leading)
                 }
@@ -250,15 +313,18 @@ struct ComposeView: View {
                 // Subject
                 HStack {
                     Text("Subject")
+                        .font(.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
 
                     TextField("", text: $viewModel.subject)
+                        .font(.body)
                         .textInputAutocapitalization(.sentences)
                         .focused($focusedField, equals: .subject)
                 }
-                .padding()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
 
                 Divider().padding(.leading)
 
@@ -308,40 +374,36 @@ struct ComposeView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            SendButton(
-                canSend: viewModel.canSend,
-                onSend: send,
-                onSchedule: { showingScheduleSheet = true }
-            )
-            .accessibilityIdentifier("sendButton")
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
             Menu {
-                Button(action: { showingAIDraft = true }) {
-                    Label("AI Draft", systemImage: "sparkles")
+                Button(action: send) {
+                    Label("Send Now", systemImage: "paperplane")
                 }
-
-                Button(action: { showingTemplates = true }) {
-                    Label("Templates", systemImage: "doc.on.doc")
-                }
-
-                Button(action: { viewModel.showAttachmentPicker = true }) {
-                    Label("Add Attachment", systemImage: "paperclip")
-                }
-
-                Button(action: { viewModel.showCcBcc.toggle() }) {
-                    Label(viewModel.showCcBcc ? "Hide Cc/Bcc" : "Show Cc/Bcc", systemImage: viewModel.showCcBcc ? "chevron.up" : "chevron.down")
-                }
-
-                Divider()
+                .disabled(!viewModel.canSend)
 
                 Button(action: { showingScheduleSheet = true }) {
                     Label("Schedule Send", systemImage: "clock")
                 }
                 .disabled(!viewModel.canSend)
             } label: {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(viewModel.canSend ? .blue : .gray)
+            }
+            .disabled(!viewModel.canSend)
+            .accessibilityIdentifier("sendButton")
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Button(action: { showingAIDraft = true }) {
+                Image(systemName: "sparkles")
+                    .accessibilityLabel("AI Draft")
+            }
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Button(action: { showingTemplates = true }) {
+                Image(systemName: "doc.on.doc")
+                    .accessibilityLabel("Templates")
             }
         }
     }
@@ -370,7 +432,6 @@ struct ComposeView: View {
         viewModel.finalizeRecipients()
 
         viewModel.queueSendWithUndo()
-        dismiss()
     }
 }
 
@@ -381,6 +442,7 @@ struct RecipientField: View {
     @Binding var recipients: [String]
     @Binding var pendingInput: String
     let isFocused: Bool
+    let showToggle: Bool
 
     private let labelWidth: CGFloat = 60
     private let horizontalPadding: CGFloat = 16
@@ -394,6 +456,7 @@ struct RecipientField: View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
                 Text(label)
+                    .font(.body)
                     .foregroundStyle(.secondary)
                     .frame(width: labelWidth, alignment: .leading)
                     .padding(.top, 12)
@@ -406,6 +469,7 @@ struct RecipientField: View {
                     }
 
                     TextField("", text: $pendingInput)
+                        .font(.body)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.emailAddress)
                         .autocorrectionDisabled()
@@ -721,123 +785,291 @@ struct RecoveredDraftBanner: View {
 
 struct RichTextToolbar: View {
     @ObservedObject var context: RichTextContext
-    @State private var showingLinkPrompt = false
-    @State private var linkURL = ""
+    let onAttachment: () -> Void
+    @State private var showingFormatSheet = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                FormatButton(
-                    systemName: "bold",
-                    isActive: context.isBold,
-                    action: { context.toggleBold() }
-                )
-                FormatButton(
-                    systemName: "italic",
-                    isActive: context.isItalic,
-                    action: { context.toggleItalic() }
-                )
-                FormatButton(
-                    systemName: "underline",
-                    isActive: context.isUnderline,
-                    action: { context.toggleUnderline() }
-                )
+        HStack(spacing: 4) {
+            // Aa button (Format)
+            Button(action: { showingFormatSheet = true }) {
+                Text("Aa")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 36)
             }
+            .buttonStyle(.plain)
 
-            Divider()
-                .frame(height: 18)
-
-            HStack(spacing: 6) {
-                FormatButton(systemName: "list.bullet") {
-                    context.insertBulletList()
-                }
-                FormatButton(systemName: "link") {
-                    showingLinkPrompt = true
-                }
+            // Attachment button
+            Button(action: onAttachment) {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 36)
             }
-
-            Spacer(minLength: 8)
-
-            HStack(spacing: 6) {
-                FormatButton(systemName: "textformat.size") {
-                    context.toggleFontSize()
-                }
-                FormatButton(action: { context.clearFormatting() }) {
-                    RemoveFormattingIcon()
-                }
-            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
-        .alert("Add Link", isPresented: $showingLinkPrompt) {
-            TextField("https://example.com", text: $linkURL)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-            Button("Cancel", role: .cancel) {
-                linkURL = ""
-            }
-            Button("Add") {
-                if let url = URL(string: linkURL.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                    context.applyLink(url)
-                }
-                linkURL = ""
-            }
-        } message: {
-            Text("Add a link to the selected text.")
+        .padding(.horizontal, 4)
+        .background(.ultraThinMaterial, in: Capsule())
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+        .padding(.trailing, 16)
+        .padding(.bottom, 12)
+        .sheet(isPresented: $showingFormatSheet) {
+            FormatSheet(context: context)
         }
     }
 }
 
-struct FormatButton<Label: View>: View {
-    let isActive: Bool
-    let action: () -> Void
-    let label: () -> Label
+// MARK: - Format Sheet
 
-    init(
-        isActive: Bool = false,
-        action: @escaping () -> Void,
-        @ViewBuilder label: @escaping () -> Label
-    ) {
-        self.isActive = isActive
-        self.action = action
-        self.label = label
+struct FormatSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var context: RichTextContext
+    @State private var selectedAlignment: TextAlignment = .leading
+
+    private var buttonBackground: Color {
+        colorScheme == .dark ? Color(white: 0.2) : Color(.systemGray5)
     }
 
-    init(systemName: String, isActive: Bool = false, action: @escaping () -> Void) where Label == Image {
-        self.init(isActive: isActive, action: action) {
-            Image(systemName: systemName)
-        }
+    private var sheetBackground: Color {
+        colorScheme == .dark ? Color(white: 0.12) : Color(.systemGray6)
     }
 
     var body: some View {
-        Button(action: action) {
-            label()
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isActive ? .white : .primary)
-                .frame(width: 32, height: 32)
-                .background(
+        VStack(spacing: 12) {
+            // Header
+            HStack {
+                Text("Format")
+                    .font(.headline)
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 4)
+
+            // Row 1: Bold, Italic, Underline, Strikethrough
+            HStack(spacing: 8) {
+                FormatStyleButton(
+                    label: "B",
+                    font: .system(size: 18, weight: .bold),
+                    isActive: context.isBold,
+                    background: buttonBackground
+                ) {
+                    context.toggleBold()
+                }
+
+                FormatStyleButton(
+                    label: "I",
+                    font: .system(size: 18, weight: .regular).italic(),
+                    isActive: context.isItalic,
+                    background: buttonBackground
+                ) {
+                    context.toggleItalic()
+                }
+
+                FormatStyleButton(
+                    label: "U",
+                    font: .system(size: 18, weight: .regular),
+                    isActive: context.isUnderline,
+                    underline: true,
+                    background: buttonBackground
+                ) {
+                    context.toggleUnderline()
+                }
+
+                FormatStyleButton(
+                    label: "S",
+                    font: .system(size: 18, weight: .regular),
+                    strikethrough: true,
+                    background: buttonBackground
+                ) {
+                    // Strikethrough toggle
+                }
+            }
+            .padding(.horizontal, 16)
+
+            // Row 2: Font, Size controls, Color
+            HStack(spacing: 8) {
+                Button(action: {}) {
+                    HStack(spacing: 8) {
+                        Text("Default Font")
+                            .font(.subheadline)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(buttonBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: 0) {
+                    Button(action: {}) {
+                        Image(systemName: "minus")
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider()
+                        .frame(height: 24)
+
+                    Button(action: { context.toggleFontSize() }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .medium))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .background(buttonBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                Button(action: {}) {
                     Circle()
-                        .fill(isActive ? Color.accentColor : Color(.systemGray6))
-                )
+                        .fill(
+                            AngularGradient(
+                                colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red],
+                                center: .center
+                            )
+                        )
+                        .frame(width: 30, height: 30)
+                        .overlay(
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 10, height: 10)
+                        )
+                }
+                .frame(width: 44, height: 44)
+                .background(buttonBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .padding(.horizontal, 16)
+
+            // Row 3: Lists and Alignment
+            HStack(spacing: 8) {
+                HStack(spacing: 0) {
+                    FormatIconButton(systemName: "list.bullet", background: buttonBackground) {
+                        context.insertBulletList()
+                    }
+                    Divider().frame(height: 24)
+                    FormatIconButton(systemName: "list.number", background: buttonBackground) {}
+                }
+                .background(buttonBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                HStack(spacing: 0) {
+                    FormatIconButton(
+                        systemName: "text.alignleft",
+                        isActive: selectedAlignment == .leading,
+                        background: buttonBackground
+                    ) {
+                        selectedAlignment = .leading
+                    }
+                    Divider().frame(height: 24)
+                    FormatIconButton(
+                        systemName: "text.aligncenter",
+                        isActive: selectedAlignment == .center,
+                        background: buttonBackground
+                    ) {
+                        selectedAlignment = .center
+                    }
+                    Divider().frame(height: 24)
+                    FormatIconButton(
+                        systemName: "text.alignright",
+                        isActive: selectedAlignment == .trailing,
+                        background: buttonBackground
+                    ) {
+                        selectedAlignment = .trailing
+                    }
+                }
+                .background(buttonBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .padding(.horizontal, 16)
+
+            // Row 4: Quote and Indent
+            HStack(spacing: 8) {
+                HStack(spacing: 0) {
+                    FormatIconButton(systemName: "increase.quotelevel", background: buttonBackground) {}
+                    Divider().frame(height: 24)
+                    FormatIconButton(systemName: "decrease.quotelevel", background: buttonBackground) {}
+                }
+                .background(buttonBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                Spacer()
+
+                HStack(spacing: 0) {
+                    FormatIconButton(systemName: "decrease.indent", background: buttonBackground) {}
+                    Divider().frame(height: 24)
+                    FormatIconButton(systemName: "increase.indent", background: buttonBackground) {}
+                }
+                .background(buttonBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .padding(.horizontal, 16)
+
+            Spacer()
+        }
+        .background(sheetBackground)
+        .presentationDetents([.height(320)])
+        .presentationDragIndicator(.hidden)
+        .presentationCornerRadius(20)
+    }
+}
+
+// MARK: - Format Style Button (for B, I, U, S)
+
+struct FormatStyleButton: View {
+    let label: String
+    let font: Font
+    var isActive: Bool = false
+    var underline: Bool = false
+    var strikethrough: Bool = false
+    let background: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(font)
+                .underline(underline)
+                .strikethrough(strikethrough)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(isActive ? Color.accentColor : background)
+                .foregroundStyle(isActive ? .white : .primary)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
     }
 }
 
-struct RemoveFormattingIcon: View {
+// MARK: - Format Icon Button
+
+struct FormatIconButton: View {
+    let systemName: String
+    var isActive: Bool = false
+    let background: Color
+    let action: () -> Void
+
     var body: some View {
-        ZStack {
-            Image(systemName: "textformat")
-            Image(systemName: "xmark")
-                .font(.caption2)
-                .offset(x: 6, y: -6)
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: 44, height: 44)
+                .background(isActive ? Color.accentColor : Color.clear)
+                .foregroundStyle(isActive ? .white : .primary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -1308,17 +1540,35 @@ final class RichTextContext: ObservableObject {
     }
 }
 
+// MARK: - Growing Text View
+
+class GrowingTextView: UITextView {
+    override var intrinsicContentSize: CGSize {
+        let fixedWidth = frame.width > 0 ? frame.width : UIScreen.main.bounds.width - 32
+        let size = sizeThatFits(CGSize(width: fixedWidth, height: .greatestFiniteMagnitude))
+        return CGSize(width: UIView.noIntrinsicMetric, height: max(size.height, 100))
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        invalidateIntrinsicContentSize()
+    }
+}
+
 struct RichTextEditor: UIViewRepresentable {
     @Binding var attributedText: NSAttributedString
     @ObservedObject var context: RichTextContext
 
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+    func makeUIView(context: Context) -> GrowingTextView {
+        let textView = GrowingTextView()
         textView.font = UIFont.preferredFont(forTextStyle: .body)
         textView.backgroundColor = .clear
         textView.isScrollEnabled = false
         textView.delegate = context.coordinator
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
+        textView.textContainer.lineFragmentPadding = 0
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentHuggingPriority(.defaultLow, for: .vertical)
         self.context.textView = textView
         self.context.onTextChange = { updated in
             self.attributedText = updated
@@ -1326,9 +1576,37 @@ struct RichTextEditor: UIViewRepresentable {
         return textView
     }
 
-    func updateUIView(_ textView: UITextView, context: Context) {
-        if !textView.attributedText.isEqual(attributedText) {
+    func updateUIView(_ textView: GrowingTextView, context: Context) {
+        // Compare string content to avoid unnecessary updates
+        if textView.attributedText.string != attributedText.string {
+            // Mark as programmatic update to prevent feedback loop
+            context.coordinator.isProgrammaticUpdate = true
+            defer { context.coordinator.isProgrammaticUpdate = false }
+
+            // Save cursor position
+            let selectedRange = textView.selectedRange
+
             textView.attributedText = attributedText
+
+            // Reset content offset to prevent scroll position issues
+            textView.contentOffset = .zero
+
+            // Restore cursor if valid, or move to end for new content
+            if selectedRange.location <= attributedText.length {
+                textView.selectedRange = selectedRange
+            } else {
+                textView.selectedRange = NSRange(location: attributedText.length, length: 0)
+            }
+
+            // Force size recalculation for SwiftUI
+            textView.invalidateIntrinsicContentSize()
+            textView.setNeedsLayout()
+            textView.layoutIfNeeded()
+
+            // Notify SwiftUI that size changed
+            DispatchQueue.main.async {
+                textView.invalidateIntrinsicContentSize()
+            }
         }
     }
 
@@ -1338,12 +1616,15 @@ struct RichTextEditor: UIViewRepresentable {
 
     class Coordinator: NSObject, UITextViewDelegate {
         let parent: RichTextEditor
+        var isProgrammaticUpdate = false
 
         init(_ parent: RichTextEditor) {
             self.parent = parent
         }
 
         func textViewDidChange(_ textView: UITextView) {
+            // Skip if this is a programmatic update to prevent feedback loop
+            guard !isProgrammaticUpdate else { return }
             parent.attributedText = textView.attributedText
             parent.context.updateSelectionState()
         }
@@ -1394,38 +1675,6 @@ struct StatusOverlay: View {
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
-    }
-}
-
-// MARK: - Send Button with Long Press
-
-struct SendButton: View {
-    let canSend: Bool
-    let onSend: () -> Void
-    let onSchedule: () -> Void
-
-    @State private var isPressed = false
-
-    var body: some View {
-        Image(systemName: "arrow.up.circle.fill")
-            .font(.title2)
-            .foregroundStyle(canSend ? .blue : .gray)
-            .opacity(isPressed ? 0.6 : 1.0)
-            .onTapGesture {
-                guard canSend else { return }
-                onSend()
-            }
-            .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
-                guard canSend else { return }
-                withAnimation(.easeInOut(duration: 0.1)) {
-                    isPressed = pressing
-                }
-            }, perform: {
-                guard canSend else { return }
-                HapticFeedback.medium()
-                onSchedule()
-            })
-            .sensoryFeedback(.impact(flexibility: .soft), trigger: isPressed)
     }
 }
 
@@ -1485,9 +1734,15 @@ class ComposeViewModel: ObservableObject {
     @Published var showCcBcc = false
     @Published var showAttachmentPicker = false
     @Published var showDiscardAlert = false
+
+    var fromEmail: String {
+        AuthService.shared.currentAccount?.email ?? ""
+    }
     @Published var isSending = false
     @Published var isGeneratingDraft = false
     @Published var aiDraftError: String?
+    @Published var showUndoSend = false
+    @Published var didSend = false
     @Published var isRecoveredDraft = false
     @Published var pendingAIDraft: AIDraftResult?
     @Published var pendingAIDraftIncludeSubject = true
@@ -1496,6 +1751,7 @@ class ComposeViewModel: ObservableObject {
     private var replyToMessageId: String?
     private var replyThreadId: String?
     private var draftId: String?
+    private var sendTask: Task<Void, Never>?
     private var autoSaveTask: Task<Void, Never>?
     private let templatesKey = "composeTemplates"
 
@@ -1596,7 +1852,12 @@ class ComposeViewModel: ObservableObject {
 
             // Delete draft if exists
             if let draftId = draftId {
-                try? await GmailService.shared.deleteDraft(draftId: draftId)
+                do {
+                    try await GmailService.shared.deleteDraft(draftId: draftId)
+                } catch {
+                    // Log but don't fail the send - draft cleanup is non-critical
+                    logger.warning("Failed to delete draft \(draftId): \(error.localizedDescription)")
+                }
             }
 
             // Haptic feedback
@@ -1624,20 +1885,25 @@ class ComposeViewModel: ObservableObject {
     }
 
     func queueSendWithUndo() {
-        let pendingEmail = PendingSendManager.PendingEmail(
-            to: to,
-            cc: cc,
-            bcc: bcc,
-            subject: subject,
-            body: plainBody(),
-            bodyHtml: htmlBody(),
-            attachments: mimeAttachments(),
-            inReplyTo: replyToMessageId,
-            threadId: replyThreadId,
-            draftId: draftId,
-            delaySeconds: undoDelaySeconds()
-        )
-        PendingSendManager.shared.queueSend(pendingEmail)
+        sendTask?.cancel()
+        showUndoSend = true
+        didSend = false
+
+        sendTask = Task { [weak self] in
+            let delay = await MainActor.run { self?.undoDelaySeconds() ?? 5 }
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled else { return }
+            let success = await self.send()
+            await MainActor.run {
+                self.showUndoSend = false
+                self.didSend = success
+            }
+        }
+    }
+
+    func undoSend() {
+        sendTask?.cancel()
+        showUndoSend = false
     }
 
     func scheduleSend(at date: Date) {

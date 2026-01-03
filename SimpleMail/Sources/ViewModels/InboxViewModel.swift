@@ -29,6 +29,19 @@ final class InboxViewModel {
     // Increment to force re-filter (e.g., when blocked senders change)
     private var filterVersion = 0
 
+    // MARK: - Search State
+
+    var isSearchActive = false
+    var searchResults: [Email] = []
+    var isSearching = false
+    var currentSearchQuery = ""
+
+    // MARK: - Bulk Actions Toast
+
+    var bulkToastMessage: String?
+    var bulkToastIsError = false
+    var bulkToastShowsRetry = false
+
     // MARK: - Navigation
 
     var selectedEmail: Email?
@@ -781,6 +794,148 @@ final class InboxViewModel {
 
     func openSettings() {
         // Handled by navigation in InboxView
+    }
+
+    // MARK: - Search
+
+    func performSearch(query: String) async {
+        guard !query.isEmpty else {
+            clearSearch()
+            return
+        }
+
+        isSearching = true
+        currentSearchQuery = query
+
+        do {
+            // Perform search via Gmail API
+            let account = AuthService.shared.currentAccount
+            let results = try await GmailService.shared.search(
+                query: query,
+                maxResults: 50
+            )
+            searchResults = results.map { dto in
+                let email = Email(dto: dto)
+                email.accountEmail = account?.email ?? ""
+                return email
+            }
+            isSearchActive = true
+        } catch {
+            logger.error("Search failed: \(error.localizedDescription)")
+            self.error = error
+        }
+
+        isSearching = false
+    }
+
+    func clearSearch() {
+        isSearchActive = false
+        searchResults = []
+        currentSearchQuery = ""
+        isSearching = false
+    }
+
+    // MARK: - Bulk Actions
+
+    func bulkArchive(threadIds: Set<String>) {
+        performBulkAction(threadIds: threadIds, action: "Archive") { email, account in
+            try await GmailService.shared.archive(messageId: email.id, account: account)
+        }
+    }
+
+    func bulkTrash(threadIds: Set<String>) {
+        performBulkAction(threadIds: threadIds, action: "Trash") { email, account in
+            try await GmailService.shared.trash(messageId: email.id, account: account)
+        }
+    }
+
+    func bulkMarkRead(threadIds: Set<String>) {
+        performBulkAction(threadIds: threadIds, action: "Mark as read") { email, account in
+            try await GmailService.shared.markAsRead(messageId: email.id, account: account)
+        }
+    }
+
+    func bulkMarkUnread(threadIds: Set<String>) {
+        performBulkAction(threadIds: threadIds, action: "Mark as unread") { email, account in
+            try await GmailService.shared.markAsUnread(messageId: email.id, account: account)
+        }
+    }
+
+    func bulkStar(threadIds: Set<String>) {
+        performBulkAction(threadIds: threadIds, action: "Star") { email, account in
+            try await GmailService.shared.star(messageId: email.id, account: account)
+        }
+    }
+
+    func bulkUnstar(threadIds: Set<String>) {
+        performBulkAction(threadIds: threadIds, action: "Unstar") { email, account in
+            try await GmailService.shared.unstar(messageId: email.id, account: account)
+        }
+    }
+
+    func bulkMoveToInbox(threadIds: Set<String>) {
+        performBulkAction(threadIds: threadIds, action: "Move to inbox") { email, account in
+            try await GmailService.shared.unarchive(messageId: email.id, account: account)
+        }
+    }
+
+    func bulkSnooze(threadIds: Set<String>, until date: Date) {
+        performBulkAction(threadIds: threadIds, action: "Snooze") { email, account in
+            try await GmailService.shared.archive(messageId: email.id, account: account)
+            await SnoozeManager.shared.snoozeEmail(email.toDTO(), until: date)
+        }
+    }
+
+    func retryPendingMutations() {
+        // Placeholder for retry logic
+        bulkToastMessage = nil
+    }
+
+    private func performBulkAction(
+        threadIds: Set<String>,
+        action: String,
+        operation: @escaping (Email, AuthService.Account) async throws -> Void
+    ) {
+        let affectedEmails = emails.filter { threadIds.contains($0.threadId) }
+        guard !affectedEmails.isEmpty else { return }
+
+        // Remove from UI optimistically
+        animate {
+            emails.removeAll { threadIds.contains($0.threadId) }
+        }
+        updateFilterCounts()
+
+        Task {
+            var failedCount = 0
+
+            for email in affectedEmails {
+                guard let account = accountForEmail(email) else {
+                    failedCount += 1
+                    continue
+                }
+
+                do {
+                    try await operation(email, account)
+                } catch {
+                    logger.error("Bulk action failed for \(email.id): \(error.localizedDescription)")
+                    failedCount += 1
+                }
+            }
+
+            if failedCount > 0 {
+                bulkToastMessage = "\(action) failed for \(failedCount) email(s)"
+                bulkToastIsError = true
+                bulkToastShowsRetry = true
+            } else {
+                bulkToastMessage = "\(action) successful (\(affectedEmails.count) email(s))"
+                bulkToastIsError = false
+                bulkToastShowsRetry = false
+            }
+
+            // Clear toast after 3 seconds
+            try? await Task.sleep(for: .seconds(3))
+            bulkToastMessage = nil
+        }
     }
 
 }
