@@ -45,7 +45,6 @@
 		A1000038 /* SearchHistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000038 /* SearchHistoryManager.swift */; };
 		A1000039 /* SpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000039 /* SpeechRecognizer.swift */; };
 		A1000040 /* SearchFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000040 /* SearchFilter.swift */; };
-		A1000041 /* BottomSearchPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000041 /* BottomSearchPill.swift */; };
 		A1000042 /* LocationSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000042 /* LocationSheetView.swift */; };
 		A1000043 /* SummaryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000043 /* SummaryCache.swift */; };
 		A1000044 /* SummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000044 /* SummaryService.swift */; };
@@ -110,7 +109,6 @@
 		B1000038 /* SearchHistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchHistoryManager.swift; sourceTree = "<group>"; };
 		B1000039 /* SpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognizer.swift; sourceTree = "<group>"; };
 		B1000040 /* SearchFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFilter.swift; sourceTree = "<group>"; };
-		B1000041 /* BottomSearchPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSearchPill.swift; sourceTree = "<group>"; };
 		B1000042 /* LocationSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSheetView.swift; sourceTree = "<group>"; };
 		B1000043 /* SummaryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCache.swift; sourceTree = "<group>"; };
 		B1000044 /* SummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryService.swift; sourceTree = "<group>"; };
@@ -207,7 +205,6 @@
 				B1000021 /* AttachmentViewer.swift */,
 				B1000022 /* BatchOperations.swift */,
 				B1000024 /* SmartAvatarView.swift */,
-				B1000041 /* BottomSearchPill.swift */,
 				B1000051 /* BottomCommandSurface.swift */,
 			);
 			path = Views;
@@ -446,7 +443,6 @@
 				A1000038 /* SearchHistoryManager.swift in Sources */,
 				A1000039 /* SpeechRecognizer.swift in Sources */,
 				A1000040 /* SearchFilter.swift in Sources */,
-				A1000041 /* BottomSearchPill.swift in Sources */,
 				A1000046 /* NetworkMonitor.swift in Sources */,
 				A1000047 /* OutboxManager.swift in Sources */,
 				A1000048 /* BodyPrefetchQueue.swift in Sources */,

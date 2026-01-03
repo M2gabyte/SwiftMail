@@ -132,6 +132,7 @@ struct BottomCommandSurface: View {
                 .onEnded { _ in searchPillPressed = false }
         )
         .accessibilityLabel("Search emails")
+        .accessibilityIdentifier("searchButton")
     }
 
     // MARK: - Compose Button
@@ -147,6 +148,7 @@ struct BottomCommandSurface: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Compose new email")
+        .accessibilityIdentifier("composeButton")
     }
 }
 
