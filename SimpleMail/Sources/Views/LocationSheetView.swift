@@ -24,6 +24,7 @@ struct LocationSheetView: View {
     let onSelectScope: (InboxLocationScope) -> Void
 
     @State private var scopeSelection: InboxLocationScope = .unified
+    @State private var sheetDetent: PresentationDetent = .medium
 
     private var isUnified: Bool {
         if case .unified = scopeSelection {
@@ -45,7 +46,11 @@ struct LocationSheetView: View {
         if isUnified {
             return [.inbox]
         }
-        return [.inbox, .starred, .drafts, .sent, .archive, .trash]
+        return [.inbox, .starred, .drafts, .sent]
+    }
+
+    private var moreMailboxes: [Mailbox] {
+        [.archive, .trash]
     }
 
     private var selectedMailboxForDisplay: Mailbox {
@@ -96,6 +101,19 @@ struct LocationSheetView: View {
                             MailboxRow(kind: mailbox, isSelected: mailbox == selectedMailboxForDisplay)
                         }
                     }
+
+                    NavigationLink {
+                        LocationMoreMailboxesView(
+                            mailboxes: moreMailboxes,
+                            selectedMailbox: selectedMailboxForDisplay,
+                            onSelectMailbox: { mailbox in
+                                onSelectMailbox(mailbox)
+                                dismiss()
+                            }
+                        )
+                    } label: {
+                        Label("More…", systemImage: "ellipsis")
+                    }
                 }
 
                 Section {
@@ -107,7 +125,7 @@ struct LocationSheetView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
-            .presentationDetents([.large])
+            .presentationDetents([.medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
                 if selectedMailbox == .allInboxes {
@@ -117,6 +135,7 @@ struct LocationSheetView: View {
                 } else {
                     scopeSelection = .unified
                 }
+                sheetDetent = .medium
             }
         }
     }
@@ -200,10 +219,35 @@ struct MailboxRow: View {
                 .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             Text(kind.rawValue)
                 .fontWeight(isSelected ? .semibold : .regular)
-                .foregroundStyle(.primary)
+                .foregroundStyle(isSelected ? Color.accentColor : .primary)
             Spacer()
         }
         .padding(.vertical, 2)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
+        )
+    }
+}
+
+struct LocationMoreMailboxesView: View {
+    let mailboxes: [Mailbox]
+    let selectedMailbox: Mailbox
+    let onSelectMailbox: (Mailbox) -> Void
+
+    var body: some View {
+        List {
+            ForEach(mailboxes, id: \.self) { mailbox in
+                Button {
+                    onSelectMailbox(mailbox)
+                } label: {
+                    MailboxRow(kind: mailbox, isSelected: mailbox == selectedMailbox)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Mailboxes")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
