@@ -126,7 +126,7 @@ struct LocationSheetView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
-            .presentationDetents([.fraction(0.6), .large], selection: $sheetDetent)
+            .presentationDetents([.large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
                 if selectedMailbox == .allInboxes {
