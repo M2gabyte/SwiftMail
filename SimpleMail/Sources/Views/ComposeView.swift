@@ -2014,13 +2014,17 @@ class ComposeViewModel: ObservableObject {
               border-left: 2px solid #d0d0d0;
               color: #555;
             }
+            blockquote, blockquote * {
+              text-align: left !important;
+              margin-left: 0 !important;
+            }
             img { max-width: 100%; height: auto; }
           </style>
         </head>
         <body>
           <div><br><br></div>
           <div>\(escapeHTML(header))</div>
-          <blockquote>\(bodyHTML)</blockquote>
+          <blockquote><div class="quoted">\(bodyHTML)</div></blockquote>
         </body>
         </html>
         """
