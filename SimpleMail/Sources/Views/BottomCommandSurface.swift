@@ -106,11 +106,11 @@ struct BottomCommandSurface: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(isFilterActive ? .secondary : .primary.opacity(0.7))
+                    .foregroundStyle(isFilterActive ? Color.secondary : Color.primary.opacity(0.7))
 
                 Text("Search")
                     .font(.subheadline)
-                    .foregroundStyle(isFilterActive ? .secondary : .primary.opacity(0.6))
+                    .foregroundStyle(isFilterActive ? Color.secondary : Color.primary.opacity(0.6))
 
                 Spacer()
             }
