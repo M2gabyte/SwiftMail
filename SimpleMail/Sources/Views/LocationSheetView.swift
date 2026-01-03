@@ -22,7 +22,7 @@ struct LocationSheetView: View {
     let onSelectScope: (InboxLocationScope) -> Void
 
     @State private var scopeSelection: InboxLocationScope = .unified
-    @State private var sheetDetent: PresentationDetent = .large
+    @State private var sheetDetent: PresentationDetent = .medium
 
     private var accounts: [AuthService.Account] { auth.accounts }
     private var currentAccount: AuthService.Account? { auth.currentAccount }
@@ -56,11 +56,11 @@ struct LocationSheetView: View {
         if isUnified {
             return [.inbox]
         }
-        return [.inbox, .starred, .drafts, .sent, .archive, .trash]
+        return [.inbox, .starred, .drafts, .sent]
     }
 
     private var moreMailboxes: [Mailbox] {
-        []
+        [.archive, .trash]
     }
 
     private var selectedMailboxForDisplay: Mailbox {
@@ -117,6 +117,7 @@ struct LocationSheetView: View {
                         } label: {
                             MailboxRow(kind: mailbox, isSelected: mailbox == selectedMailboxForDisplay)
                         }
+                        .buttonStyle(.plain)
                     }
                     if !moreMailboxes.isEmpty {
                         NavigationLink {
@@ -144,7 +145,7 @@ struct LocationSheetView: View {
             .listSectionSpacing(.compact)
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
-            .presentationDetents([.large], selection: $sheetDetent)
+            .presentationDetents([.medium], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
                 if selectedMailbox == .allInboxes {
@@ -154,7 +155,7 @@ struct LocationSheetView: View {
                 } else {
                     scopeSelection = .unified
                 }
-                sheetDetent = .large
+                sheetDetent = .medium
             }
             .onChange(of: auth.currentAccount?.id) { _, _ in
                 if selectedMailbox == .allInboxes {
@@ -254,18 +255,21 @@ struct MailboxRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(isSelected ? Color.accentColor : Color.clear)
+                .frame(width: 2, height: 16)
             Image(systemName: kind.icon)
                 .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             Text(kind.rawValue)
                 .fontWeight(isSelected ? .semibold : .regular)
-                .foregroundStyle(isSelected ? Color.accentColor : .primary)
+                .foregroundStyle(.primary)
             Spacer()
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 4)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
+                .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.clear)
         )
     }
 }
@@ -283,6 +287,7 @@ struct LocationMoreMailboxesView: View {
                 } label: {
                     MailboxRow(kind: mailbox, isSelected: mailbox == selectedMailbox)
                 }
+                .buttonStyle(.plain)
             }
         }
         .listStyle(.insetGrouped)
