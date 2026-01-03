@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		6B84FE21D7C346B2 /* PendingSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3582BDA6D42420A /* PendingSendManager.swift */; };
+		A1000042 /* LocationSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000042 /* LocationSheetView.swift */; };
 		A1000001 /* SimpleMailApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001 /* SimpleMailApp.swift */; };
 		A1000002 /* Email.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* Email.swift */; };
 		A1000003 /* Briefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Briefing.swift */; };
@@ -59,6 +60,7 @@
 
 /* Begin PBXFileReference section */
 		B3582BDA6D42420A /* PendingSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendManager.swift; sourceTree = "<group>"; };
+		B1000042 /* LocationSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSheetView.swift; sourceTree = "<group>"; };
 		4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMailUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0000001 /* SimpleMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000001 /* SimpleMailApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleMailApp.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 			children = (
 				D0000012 /* Components */,
 				B1000005 /* InboxView.swift */,
+				B1000042 /* LocationSheetView.swift */,
 				B1000007 /* EmailDetailView.swift */,
 				B1000008 /* ComposeView.swift */,
 				B1000009 /* SnoozePickerSheet.swift */,
@@ -380,6 +383,7 @@
 				A1000003 /* Briefing.swift in Sources */,
 				A1000004 /* BriefingEngine.swift in Sources */,
 				A1000005 /* InboxView.swift in Sources */,
+				A1000042 /* LocationSheetView.swift in Sources */,
 				A1000007 /* EmailDetailView.swift in Sources */,
 				A1000008 /* ComposeView.swift in Sources */,
 				A1000009 /* SnoozePickerSheet.swift in Sources */,
