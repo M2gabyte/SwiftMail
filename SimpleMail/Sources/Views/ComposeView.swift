@@ -1807,7 +1807,7 @@ class ComposeViewModel: ObservableObject {
             let senderEmail = EmailParser.extractSenderEmail(from: email.from)
             to = [senderEmail]
             subject = email.subject.hasPrefix("Re:") ? email.subject : "Re: \(email.subject)"
-            bodyAttributed = Self.attributedBody(from: buildQuotedReply(email))
+            bodyAttributed = buildQuotedReply(email)
             replyThreadId = threadId
             replyToMessageId = email.id
 
@@ -1816,7 +1816,7 @@ class ComposeViewModel: ObservableObject {
             to = [senderEmail]
             cc = email.cc
             subject = email.subject.hasPrefix("Re:") ? email.subject : "Re: \(email.subject)"
-            bodyAttributed = Self.attributedBody(from: buildQuotedReply(email))
+            bodyAttributed = buildQuotedReply(email)
             replyThreadId = threadId
             replyToMessageId = email.id
 
@@ -1985,16 +1985,55 @@ class ComposeViewModel: ObservableObject {
         pendingAIDraft = nil
     }
 
-    private func buildQuotedReply(_ email: EmailDetail) -> String {
+    private func buildQuotedReply(_ email: EmailDetail) -> NSAttributedString {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
         let dateStr = dateFormatter.string(from: email.date)
 
         let senderName = EmailParser.extractSenderName(from: email.from)
-        let plainBody = plainTextFromHTML(email.body)
-        let quotePreview = summarizeForQuote(plainBody)
+        let header = "On \(dateStr), \(senderName) wrote:"
+        let rawBody = email.body
 
-        return "\n\nOn \(dateStr), \(senderName) wrote:\n> \(quotePreview.replacingOccurrences(of: "\n", with: "\n> "))"
+        let bodyHTML: String
+        if isLikelyHTML(rawBody) {
+            bodyHTML = sanitizeHTMLForQuote(rawBody)
+        } else {
+            bodyHTML = escapeHTML(rawBody)
+                .replacingOccurrences(of: "\n", with: "<br>")
+        }
+
+        let html = """
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system; font-size: 16px; color: #111; }
+            blockquote {
+              margin: 8px 0 0 0;
+              padding-left: 12px;
+              border-left: 2px solid #d0d0d0;
+              color: #555;
+            }
+            img { max-width: 100%; height: auto; }
+          </style>
+        </head>
+        <body>
+          <div><br><br></div>
+          <div>\(escapeHTML(header))</div>
+          <blockquote>\(bodyHTML)</blockquote>
+        </body>
+        </html>
+        """
+
+        if let attributed = attributedBody(fromHTML: html) {
+            return attributed
+        }
+
+        // Fallback to compact plain-text quote
+        let plainBody = plainTextFromHTML(rawBody)
+        let quotePreview = summarizeForQuote(plainBody)
+        let fallback = "\n\n\(header)\n> \(quotePreview.replacingOccurrences(of: "\n", with: "\n> "))"
+        return Self.attributedBody(from: fallback)
     }
 
     private func buildForwardedMessage(_ email: EmailDetail) -> String {
@@ -2016,6 +2055,47 @@ class ComposeViewModel: ObservableObject {
 
     private func plainBody() -> String {
         bodyAttributed.string
+    }
+
+    private func attributedBody(fromHTML html: String) -> NSAttributedString? {
+        let trimmed = html.count > 250_000 ? String(html.prefix(250_000)) : html
+        guard let data = trimmed.data(using: .utf8) else { return nil }
+        let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
+            .documentType: NSAttributedString.DocumentType.html,
+            .characterEncoding: String.Encoding.utf8.rawValue
+        ]
+        return try? NSAttributedString(data: data, options: options, documentAttributes: nil)
+    }
+
+    private func isLikelyHTML(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("<html") ||
+            lower.contains("<body") ||
+            lower.contains("<div") ||
+            lower.contains("<table") ||
+            lower.contains("<img")
+    }
+
+    private func sanitizeHTMLForQuote(_ html: String) -> String {
+        var result = html
+        if result.count > 250_000 {
+            result = String(result.prefix(250_000))
+        }
+        // Remove script/style blocks to avoid junk in the quote.
+        result = result.replacingOccurrences(of: "<script[\\s\\S]*?</script>", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "<style[\\s\\S]*?</style>", with: "", options: .regularExpression)
+        // Strip html/head/body wrappers, keep inner content.
+        result = result.replacingOccurrences(of: "</?(html|head|body)[^>]*>", with: "", options: .regularExpression)
+        return result
+    }
+
+    private func escapeHTML(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 
     private func plainTextFromHTML(_ html: String) -> String {
