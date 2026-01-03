@@ -66,7 +66,7 @@ enum SummaryService {
             Summarize this email in 2-3 concise sentences. Avoid fluff and keep key facts.
             \(limited)
             """
-            let response = try await session.respond(resultType: String.self, body: prompt)
+            let response = try await session.respond(to: prompt, resultType: String.self)
             let summaryText = response.trimmingCharacters(in: .whitespacesAndNewlines)
             if !summaryText.isEmpty { return summaryText }
         }
