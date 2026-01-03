@@ -1,318 +1,314 @@
-# Offline Email Support Implementation Plan
+# Offline Email Support - Architecture Documentation
 
 ## Overview
 
-Add Gmail/Apple Mail-style offline functionality:
-1. **Read emails offline** - View previously-fetched emails when offline
-2. **Send emails offline** - Queue outgoing emails and send when back online
+SimpleMail now supports Gmail/Apple Mail-style offline functionality:
+1. **Read emails offline** - Previously-fetched emails remain accessible when offline
+2. **Send emails offline** - Outgoing emails queue locally and send automatically when online
 
 ---
 
-## Current State Analysis
+## Architecture
 
-### What Already Works
-- **SwiftData persistence** - `Email` and `EmailDetail` models are already persisted locally
-- **Email caching** - `EmailCacheManager` caches inbox metadata
-- **Background sync** - `BackgroundSyncManager` fetches emails periodically
-- **Network retry** - `NetworkRetry` handles transient failures with exponential backoff
+### Component Diagram
 
-### Gaps to Fill
-| Gap | Description |
-|-----|-------------|
-| Email body not always cached | `EmailDetail` only fetched when user opens an email |
-| No persistent outbound queue | `PendingSendManager` is in-memory only, lost on restart |
-| No network monitoring | App doesn't know when it's offline |
-| No offline UI feedback | No visual indication of offline state or pending sends |
-
----
-
-## Implementation Plan
-
-### Phase 1: Network Connectivity Monitoring
-
-**New File**: `SimpleMail/Sources/Services/NetworkMonitor.swift`
-
-Create a network reachability service using `NWPathMonitor`:
-
-```swift
-@MainActor
-@Observable
-final class NetworkMonitor {
-    static let shared = NetworkMonitor()
-
-    private(set) var isConnected: Bool = true
-    private(set) var connectionType: ConnectionType = .unknown
-
-    private let monitor = NWPathMonitor()
-    private let queue = DispatchQueue(label: "NetworkMonitor")
-
-    enum ConnectionType {
-        case wifi, cellular, wired, unknown
-    }
-
-    func start() { ... }
-    func stop() { ... }
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         SimpleMail                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────────┐    ┌──────────────────┐                   │
+│  │  NetworkMonitor  │───▶│  OutboxManager   │                   │
+│  │  (NWPathMonitor) │    │  (Queue + Send)  │                   │
+│  └────────┬─────────┘    └────────┬─────────┘                   │
+│           │                       │                              │
+│           ▼                       ▼                              │
+│  ┌──────────────────┐    ┌──────────────────┐                   │
+│  │ PendingSendMgr   │    │   QueuedEmail    │                   │
+│  │ (Undo + Offline) │───▶│  (SwiftData)     │                   │
+│  └──────────────────┘    └──────────────────┘                   │
+│                                                                  │
+│  ┌──────────────────┐    ┌──────────────────┐                   │
+│  │BodyPrefetchQueue │───▶│   EmailDetail    │                   │
+│  │ (Background)     │    │  (SwiftData)     │                   │
+│  └──────────────────┘    └──────────────────┘                   │
+│                                                                  │
+│  ┌──────────────────┐                                           │
+│  │BackgroundSyncMgr │  Processes outbox on wake                 │
+│  │ (BGTasks)        │                                           │
+│  └──────────────────┘                                           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Integration Points**:
-- Start monitoring in `SimpleMailApp.init()`
-- Inject into environment for SwiftUI views
-- Use in `GmailService` to fail fast when offline
-
 ---
 
-### Phase 2: Proactive Email Body Caching
+## New Components
 
-**Goal**: Ensure email bodies are available offline for recently-viewed and important emails.
+### 1. NetworkMonitor (`Services/NetworkMonitor.swift`)
 
-#### 2a. Cache Strategy
+Monitors network connectivity using Apple's `NWPathMonitor`.
 
-Modify `EmailCacheManager` to support body prefetching:
+**Key Features:**
+- Singleton `@Observable` class for SwiftUI integration
+- Tracks connection state (`isConnected`) and type (wifi/cellular/wired)
+- Posts `networkConnectivityChanged` notification on state changes
+- Automatically triggers `OutboxManager.processQueue()` when coming online
 
-1. **On inbox fetch**: Queue body prefetch for top N emails (e.g., 50)
-2. **On email open**: Already caches body (existing behavior)
-3. **Background sync**: Prefetch bodies for new emails
-
-**New Method in EmailCacheManager**:
+**Usage:**
 ```swift
-func prefetchBodiesIfNeeded(for emails: [Email], limit: Int = 50) async
-```
+// Start monitoring (called in app init)
+NetworkMonitor.shared.start()
 
-#### 2b. Body Prefetch Queue
-
-**New File**: `SimpleMail/Sources/Services/BodyPrefetchQueue.swift`
-
-Similar to `SummaryQueue` but for email bodies:
-- Respects battery level
-- Prioritizes unread/starred emails
-- Uses `TaskGroup` for parallel fetching
-- Skips already-cached bodies
-
----
-
-### Phase 3: Offline Send Queue (Core Feature)
-
-**New File**: `SimpleMail/Sources/Models/QueuedEmail.swift`
-
-```swift
-@Model
-final class QueuedEmail {
-    var id: UUID
-    var accountEmail: String
-    var to: [String]
-    var cc: [String]
-    var bcc: [String]
-    var subject: String
-    var body: String
-    var bodyHtml: String?
-    var attachments: [AttachmentData]  // Stored as file URLs
-    var inReplyTo: String?
-    var references: String?
-    var threadId: String?
-    var createdAt: Date
-    var status: QueueStatus  // pending, sending, failed
-    var lastError: String?
-    var retryCount: Int
+// Check connectivity
+if NetworkMonitor.shared.isConnected {
+    // Online
 }
 
-enum QueueStatus: String, Codable {
-    case pending, sending, failed
-}
-```
-
-**New File**: `SimpleMail/Sources/Services/OutboxManager.swift`
-
-```swift
-@MainActor
-@Observable
-final class OutboxManager {
-    static let shared = OutboxManager()
-
-    private(set) var pendingCount: Int = 0
-    private(set) var isSyncing: Bool = false
-
-    // Queue email for sending (works offline)
-    func queue(email: QueuedEmail) async throws
-
-    // Process queue when online
-    func processQueue() async
-
-    // Retry failed email
-    func retry(id: UUID) async
-
-    // Delete queued email
-    func delete(id: UUID) async
-
-    // Get all queued emails for UI
-    func fetchQueued(for account: String) -> [QueuedEmail]
-}
-```
-
-**Integration with NetworkMonitor**:
-```swift
-// When network becomes available
-NetworkMonitor.shared.$isConnected
-    .filter { $0 }
-    .sink { _ in
-        Task { await OutboxManager.shared.processQueue() }
-    }
-```
-
----
-
-### Phase 4: Modify Email Sending Flow
-
-**File**: `SimpleMail/Sources/Services/GmailService.swift`
-
-Wrap `sendEmail()` to support offline queuing:
-
-```swift
-func sendEmailWithOfflineSupport(...) async throws -> String? {
-    if NetworkMonitor.shared.isConnected {
-        // Try direct send
-        return try await sendEmail(...)
-    } else {
-        // Queue for later
-        try await OutboxManager.shared.queue(...)
-        return nil  // Indicates queued, not sent
-    }
-}
-```
-
-**File**: `SimpleMail/Sources/Views/Compose/ComposeViewModel.swift`
-
-Update send logic to:
-1. Call `sendEmailWithOfflineSupport()`
-2. Show "Queued" toast instead of "Sent" when offline
-3. Return success either way (user doesn't need to retry manually)
-
----
-
-### Phase 5: Background Queue Processing
-
-**File**: `SimpleMail/Sources/Services/BackgroundSync.swift`
-
-Add outbox processing to background sync:
-
-```swift
-// New BGTask identifier
-static let outboxTaskIdentifier = "com.simplemail.outbox"
-
-func handleOutboxTask(_ task: BGProcessingTask) async {
-    guard NetworkMonitor.shared.isConnected else {
-        task.setTaskCompleted(success: false)
-        return
-    }
-
-    await OutboxManager.shared.processQueue()
-    task.setTaskCompleted(success: true)
-}
-```
-
-Register in `SimpleMailApp`:
-```swift
-BGTaskScheduler.shared.register(
-    forTaskWithIdentifier: BackgroundSyncManager.outboxTaskIdentifier,
-    using: nil
-) { task in ... }
-```
-
----
-
-### Phase 6: UI Updates
-
-#### 6a. Offline Banner
-
-**File**: `SimpleMail/Sources/Views/Inbox/InboxView.swift`
-
-Add subtle offline indicator:
-```swift
+// React to changes in SwiftUI
 if !networkMonitor.isConnected {
-    HStack {
-        Image(systemName: "wifi.slash")
-        Text("Offline")
-    }
-    .font(.caption)
-    .foregroundStyle(.secondary)
+    OfflineBanner()
 }
 ```
 
-#### 6b. Outbox Section (Optional)
+---
 
-Could add an "Outbox" mailbox showing queued emails:
-- Shows pending count badge
-- Allows viewing/editing/deleting queued emails
-- Manual retry button for failed sends
+### 2. QueuedEmail (`Models/QueuedEmail.swift`)
 
-#### 6c. Send Button Feedback
+SwiftData model for persisting outgoing emails when offline.
 
-In compose view, update send button:
-- Online: "Send" → sends immediately
-- Offline: "Send" → shows "Will send when online" toast
+**Schema:**
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Unique identifier |
+| accountEmail | String | Sender account |
+| toRecipients | [String] | To addresses |
+| ccRecipients | [String] | CC addresses |
+| bccRecipients | [String] | BCC addresses |
+| subject | String | Email subject |
+| body | String | Plain text body |
+| bodyHtml | String? | HTML body |
+| attachmentsData | Data? | JSON-encoded attachments |
+| inReplyTo | String? | Reply threading |
+| threadId | String? | Gmail thread ID |
+| createdAt | Date | Queue timestamp |
+| statusRaw | String | pending/sending/failed |
+| lastError | String? | Last failure reason |
+| retryCount | Int | Retry attempts |
+
+**Attachment Storage:**
+- Attachments stored as files in `Documents/outbox_attachments/`
+- `QueuedAttachmentStorage` helper handles save/load/cleanup
+- File URLs stored in JSON, not inline data (memory efficient)
 
 ---
 
-### Phase 7: SwiftData Schema Update
+### 3. OutboxManager (`Services/OutboxManager.swift`)
 
-**File**: `SimpleMail/Sources/SimpleMailApp.swift`
+Manages the offline email queue with send retry logic.
 
-Add `QueuedEmail` to ModelContainer:
-
+**Key Methods:**
 ```swift
-let schema = Schema([
-    Email.self,
-    EmailDetail.self,
-    SnoozedEmail.self,
-    SenderPreference.self,
-    QueuedEmail.self  // NEW
-])
+// Queue an email for offline sending
+func queue(accountEmail:to:cc:bcc:subject:body:...) async throws
+
+// Process all pending emails (called when online)
+func processQueue() async
+
+// Retry a failed email
+func retry(id: UUID) async
+
+// Delete a queued email
+func delete(id: UUID) async
+
+// Get queued emails for display
+func fetchQueued(for accountEmail: String) -> [QueuedEmailDTO]
+```
+
+**Retry Logic:**
+- Max 3 retries before marking as `failed`
+- Failed emails require manual retry
+- Successful sends delete the queued email and attachment files
+
+---
+
+### 4. BodyPrefetchQueue (`Services/BodyPrefetchQueue.swift`)
+
+Background queue for prefetching email bodies for offline reading.
+
+**Behavior:**
+- Enqueues top 50 emails from inbox fetches
+- Prioritizes: unread > starred > non-newsletter
+- Respects battery level (stops below 20%)
+- Skips in low power mode
+- Uses `TaskGroup` for concurrent fetching (3 at a time)
+- Caches to `EmailDetail` SwiftData model
+
+**Trigger Points:**
+- Background sync (`performSync`)
+- Manual refresh
+
+---
+
+## Modified Components
+
+### PendingSendManager
+
+**Changes:**
+- Added `wasQueuedOffline` flag
+- Added `accountEmail` to `PendingEmail` struct
+- `queueSend()` now checks `NetworkMonitor.shared.isConnected`
+- If offline, immediately queues to `OutboxManager`
+- If online but loses connection during delay, queues to `OutboxManager`
+- Added `clearQueuedOfflineFlag()` for UI toast dismissal
+
+**Flow:**
+```
+User taps Send
+     │
+     ▼
+┌─────────────────┐
+│ Online?         │───No───▶ OutboxManager.queue() ──▶ "Queued" toast
+└────────┬────────┘
+         │ Yes
+         ▼
+   Wait N seconds (undo delay)
+         │
+         ▼
+┌─────────────────┐
+│ Still online?   │───No───▶ OutboxManager.queue() ──▶ "Queued" toast
+└────────┬────────┘
+         │ Yes
+         ▼
+   GmailService.sendEmail()
+         │
+         ▼
+   Success ──▶ Haptic feedback
 ```
 
 ---
 
-## File Changes Summary
+### BackgroundSyncManager
 
-| File | Change Type | Description |
-|------|-------------|-------------|
-| `Services/NetworkMonitor.swift` | NEW | Network reachability monitoring |
-| `Models/QueuedEmail.swift` | NEW | Outbox email model (SwiftData) |
-| `Services/OutboxManager.swift` | NEW | Outbox queue management |
-| `Services/BodyPrefetchQueue.swift` | NEW | Background body prefetching |
-| `Services/EmailCacheManager.swift` | MODIFY | Add body prefetch support |
-| `Services/GmailService.swift` | MODIFY | Add offline-aware send wrapper |
-| `Services/BackgroundSync.swift` | MODIFY | Add outbox task processing |
-| `Views/Compose/ComposeViewModel.swift` | MODIFY | Use offline-aware sending |
-| `Views/Inbox/InboxView.swift` | MODIFY | Add offline indicator |
-| `SimpleMailApp.swift` | MODIFY | Register NetworkMonitor, update schema |
+**New Task:**
+- `com.simplemail.app.outbox` - BGProcessingTask for outbox
+- Requires network connectivity
+- Scheduled when pending emails exist
+
+**Changes to Existing Tasks:**
+- `checkForNewEmails()` now also processes outbox queue
+- `performSync()` now enqueues to `BodyPrefetchQueue`
 
 ---
 
-## Implementation Order
+### SimpleMailApp
 
-1. **NetworkMonitor** - Foundation for all offline features
-2. **QueuedEmail model** - SwiftData persistence for outbox
-3. **OutboxManager** - Core queuing logic
-4. **Modify send flow** - Wire up offline sending
-5. **Background processing** - Auto-send when back online
-6. **UI feedback** - Offline banner + send confirmation
-7. **Body prefetching** - Enhanced offline reading (can be Phase 2)
+**Changes:**
+- Added `QueuedEmail` to SwiftData schema
+- ContentView now configures `OutboxManager`
+- ContentView now starts `NetworkMonitor`
 
 ---
 
-## Testing Considerations
+### InboxView
 
-- Enable Airplane Mode in Simulator to test offline behavior
-- Test app restart with queued emails (persistence)
-- Test background wake to process queue
-- Test failed sends and retry logic
-- Test multi-account outbox isolation
+**UI Additions:**
+- `offlineBannerContent` - Shows "You're offline" pill at top
+- Updated `undoSendToastContent` to show "Queued" toast for offline sends
 
 ---
 
-## Questions for User
+### ComposeView
 
-1. **Outbox UI**: Should there be a visible "Outbox" folder showing queued emails, or just a subtle badge/indicator?
-2. **Body prefetch limit**: How many email bodies to prefetch? (50? 100? Configurable?)
-3. **Failed send behavior**: Auto-retry forever, or max retries then require manual action?
-4. **Attachments**: Large attachments could consume storage - any size limits for offline queue?
+**New Views:**
+- `QueuedOfflineToast` - Orange toast showing "Queued - will send when online"
+- `OfflineBanner` - Gray capsule showing "You're offline"
+
+---
+
+## Data Flow
+
+### Offline Send Flow
+```
+1. User composes email and taps Send
+2. PendingSendManager checks NetworkMonitor.isConnected
+3. If offline:
+   a. OutboxManager.queue() creates QueuedEmail
+   b. Attachments saved to Documents/outbox_attachments/
+   c. QueuedEmail inserted to SwiftData
+   d. UI shows "Queued" toast
+4. When network returns:
+   a. NetworkMonitor posts notification
+   b. OutboxManager.processQueue() triggered
+   c. Each QueuedEmail sent via GmailService
+   d. On success: QueuedEmail deleted, attachments cleaned up
+   e. On failure: retryCount++, if >= 3 mark as failed
+```
+
+### Offline Read Flow
+```
+1. Background sync fetches inbox metadata
+2. BodyPrefetchQueue.enqueueCandidates() called
+3. Top 50 emails (prioritized) queued for body fetch
+4. Bodies fetched and cached to EmailDetail (SwiftData)
+5. When offline, user can:
+   - View inbox list (Email model cached)
+   - Open emails (EmailDetail model cached)
+   - Bodies available for previously-synced emails
+```
+
+---
+
+## Configuration
+
+| Setting | Value | Location |
+|---------|-------|----------|
+| Body prefetch limit | 50 emails | BodyPrefetchQueue.maxPrefetchPerSession |
+| Max retry attempts | 3 | OutboxManager.maxRetries |
+| Concurrent body fetches | 3 | BodyPrefetchQueue.concurrentFetchLimit |
+| Min battery for prefetch | 20% | BodyPrefetchQueue.canRunNow() |
+
+---
+
+## Testing
+
+### Manual Testing Steps
+1. **Offline Send:**
+   - Enable Airplane Mode
+   - Compose and send email
+   - Verify "Queued" toast appears
+   - Disable Airplane Mode
+   - Verify email sends automatically
+
+2. **Offline Read:**
+   - Open app online, let it sync
+   - Enable Airplane Mode
+   - Verify can browse inbox
+   - Verify can open previously-viewed emails
+
+3. **Persistence:**
+   - Queue email offline
+   - Force-quit app
+   - Relaunch app
+   - Verify queued email still exists and sends when online
+
+4. **Failed Sends:**
+   - Queue email with invalid recipient
+   - Verify retry logic (3 attempts)
+   - Verify marked as failed after max retries
+
+---
+
+## File Summary
+
+| File | Type | Description |
+|------|------|-------------|
+| `Services/NetworkMonitor.swift` | NEW | NWPathMonitor connectivity |
+| `Models/QueuedEmail.swift` | NEW | Outbox SwiftData model |
+| `Services/OutboxManager.swift` | NEW | Queue management |
+| `Services/BodyPrefetchQueue.swift` | NEW | Background body caching |
+| `Services/PendingSendManager.swift` | MOD | Offline queue fallback |
+| `Services/BackgroundSync.swift` | MOD | Outbox BGTask + prefetch |
+| `Views/ComposeView.swift` | MOD | Queued toast + banner |
+| `Views/InboxView.swift` | MOD | Offline banner |
+| `SimpleMailApp.swift` | MOD | Schema + init |
