@@ -1810,6 +1810,19 @@ class EmailDetailViewModel: ObservableObject {
                 }
                 img { max-width: 100%; height: auto; }
                 a { color: #007AFF; }
+                /* Fix table layouts for printing */
+                table { width: 100% !important; table-layout: auto !important; }
+                td, th {
+                    width: auto !important;
+                    min-width: 0 !important;
+                    word-wrap: break-word;
+                    white-space: normal !important;
+                }
+                /* Prevent single-character-per-line issue */
+                * {
+                    max-width: 100% !important;
+                    word-break: normal !important;
+                }
             </style>
         </head>
         <body>
@@ -1840,7 +1853,7 @@ class EmailDetailViewModel: ObservableObject {
                 <div><strong>Date:</strong> \(dateString)</div>
             </div>
             <div class="message-body">
-                \(message.body)
+                \(sanitizeHTMLForPrint(message.body))
             </div>
             """
         }
@@ -1871,6 +1884,40 @@ class EmailDetailViewModel: ObservableObject {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    private func sanitizeHTMLForPrint(_ html: String) -> String {
+        var result = html
+
+        // Remove fixed width attributes from tables and cells
+        result = result.replacingOccurrences(
+            of: "\\s+width\\s*=\\s*[\"']?\\d+[\"']?",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove inline width styles that cause narrow columns
+        result = result.replacingOccurrences(
+            of: "width\\s*:\\s*\\d+px",
+            with: "width: auto",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        // Remove max-width constraints that might be too narrow
+        result = result.replacingOccurrences(
+            of: "max-width\\s*:\\s*\\d+px",
+            with: "max-width: 100%",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        // Remove min-width that forces narrow columns
+        result = result.replacingOccurrences(
+            of: "min-width\\s*:\\s*\\d+px",
+            with: "min-width: 0",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        return result
     }
 }
 
