@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import OSLog
+import UIKit
 
 private let logger = Logger(subsystem: "com.simplemail.app", category: "OutboxManager")
 
