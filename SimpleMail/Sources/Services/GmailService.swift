@@ -1551,6 +1551,40 @@ actor GmailService: GmailAPIProvider {
         text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
     }
 
+    /// Check if HTML content is visually empty (contains only tags, whitespace, &nbsp;, <br>, etc.)
+    /// This handles cases like Gmail sending `<div dir="ltr"><br></div>` for empty emails
+    private nonisolated func isVisuallyEmptyHTML(_ html: String) -> Bool {
+        var text = html
+
+        // Remove all HTML tags
+        text = text.replacingOccurrences(of: "<[^>]*>", with: "", options: .regularExpression)
+
+        // Decode common HTML entities that represent whitespace/empty content
+        text = text.replacingOccurrences(of: "&nbsp;", with: " ")
+        text = text.replacingOccurrences(of: "&#160;", with: " ")
+        text = text.replacingOccurrences(of: "&#xA0;", with: " ")
+        text = text.replacingOccurrences(of: "&amp;", with: "&")
+        text = text.replacingOccurrences(of: "&lt;", with: "<")
+        text = text.replacingOccurrences(of: "&gt;", with: ">")
+        text = text.replacingOccurrences(of: "&quot;", with: "\"")
+        text = text.replacingOccurrences(of: "&#39;", with: "'")
+
+        // Remove zero-width characters
+        text = text.replacingOccurrences(of: "\u{200B}", with: "") // zero-width space
+        text = text.replacingOccurrences(of: "\u{200C}", with: "") // zero-width non-joiner
+        text = text.replacingOccurrences(of: "\u{200D}", with: "") // zero-width joiner
+        text = text.replacingOccurrences(of: "\u{FEFF}", with: "") // byte order mark
+        text = text.replacingOccurrences(of: "\u{00A0}", with: " ") // non-breaking space
+
+        // Trim all whitespace (including newlines, tabs, etc.)
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Collapse any remaining internal whitespace
+        text = text.replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+
+        return text.isEmpty
+    }
+
     private nonisolated func cleanBodyContent(_ body: String, mimeType: String) -> String {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
@@ -1561,18 +1595,48 @@ actor GmailService: GmailAPIProvider {
             lower.contains("mime-version:")
 
         if looksLikeHeaders {
+            // Check if content is base64 encoded before stripping headers
+            let isBase64Encoded = lower.contains("content-transfer-encoding:") &&
+                lower.contains("base64")
+
             let withoutHeaders = stripMIMEHeaders(from: trimmed)
-            let collapsed = withoutHeaders
+            var collapsed = withoutHeaders
                 .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+
             if collapsed.isEmpty {
                 return ""
+            }
+
+            // If the original content indicated base64 encoding, decode the remaining content
+            if isBase64Encoded {
+                // Remove any whitespace that might have been in the base64 data
+                let base64Data = collapsed.replacingOccurrences(of: " ", with: "")
+                if let decoded = Base64URL.decode(base64Data), !decoded.isEmpty {
+                    collapsed = decoded
+                } else if let data = Data(base64Encoded: base64Data),
+                          let decoded = String(data: data, encoding: .utf8), !decoded.isEmpty {
+                    // Try standard base64 decoding as fallback
+                    collapsed = decoded
+                }
+            }
+
+            // Recursively clean the decoded content (it might be HTML that needs further processing)
+            let cleanedMimeType = lower.contains("text/html") ? "text/html" : mimeType
+            if collapsed != trimmed {
+                return cleanBodyContent(collapsed, mimeType: cleanedMimeType)
             }
             return collapsed
         }
 
         if mimeType == "text/plain" && lower.contains("<html") {
             return stripHTMLTags(from: trimmed)
+        }
+
+        // For HTML content, check if it's visually empty (only tags, whitespace, &nbsp;, etc.)
+        // This handles cases like Gmail sending `<div dir="ltr"><br></div>` for empty emails
+        if mimeType == "text/html" && isVisuallyEmptyHTML(trimmed) {
+            return ""
         }
 
         return trimmed
