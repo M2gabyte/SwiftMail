@@ -639,19 +639,22 @@ struct EmailBodyWebView: UIViewRepresentable {
                 @media (prefers-color-scheme: dark) {
                     body { color: #f0f0f0; background-color: transparent; }
                 }
-                /* Constrain content to viewport */
-                body * { max-width: 100% !important; min-width: 0 !important; }
+                /* Constrain content to viewport - preserve table layouts */
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
-                table { max-width: 100% !important; width: 100% !important; table-layout: fixed !important; }
-                td, th { max-width: 100% !important; word-break: break-word; }
+                /* Allow tables to scroll horizontally if needed, preserving layout */
+                .email-content-wrapper {
+                    width: 100%;
+                    overflow-x: auto;
+                    -webkit-overflow-scrolling: touch;
+                }
+                table { max-width: 100%; }
                 div[style*="width:600"], div[style*="width:640"], div[style*="width:700"] {
-                    width: 100% !important;
-                    max-width: 100% !important;
+                    max-width: 100%;
                 }
                 a { color: #007AFF; }
-                /* Collapse empty elements that create whitespace */
-                div:empty, span:empty, td:empty, p:empty {
+                /* Collapse truly empty divs/spans but preserve table structure */
+                div:empty, span:empty, p:empty {
                     display: none !important;
                 }
                 /* Reduce excessive spacing from marketing emails */
@@ -694,16 +697,19 @@ struct EmailBodyWebView: UIViewRepresentable {
                     heightTimer = setTimeout(postHeight, 50);
                 }
                 function collapseEmptySpacers() {
-                    var elements = document.querySelectorAll('td, tr');
+                    // Only collapse obvious spacer divs, not table structure
+                    var elements = document.querySelectorAll('div, span');
                     elements.forEach(function(el) {
                         var text = (el.textContent || '').replace(/\\u00a0/g, '').trim();
-                        var hasMedia = el.querySelector('img, svg, video, iframe, a, button, input, textarea, select');
-                        if (!hasMedia && text.length === 0) {
-                            el.style.display = 'none';
-                            el.style.height = '0';
-                            el.style.minHeight = '0';
-                            el.style.padding = '0';
-                            el.style.margin = '0';
+                        var hasMedia = el.querySelector('img, svg, video, iframe, a, button, input, textarea, select, table');
+                        var hasBackground = el.style.backgroundColor || el.style.backgroundImage;
+                        // Only collapse if truly empty and not used for layout
+                        if (!hasMedia && text.length === 0 && !hasBackground && el.children.length === 0) {
+                            var rect = el.getBoundingClientRect();
+                            // Only collapse tiny spacers, not layout elements
+                            if (rect.height < 5 && rect.width < 5) {
+                                el.style.display = 'none';
+                            }
                         }
                     });
                 }
@@ -755,7 +761,7 @@ struct EmailBodyWebView: UIViewRepresentable {
             </script>
         </head>
         <body>
-            \(safeHTML)
+            <div class="email-content-wrapper">\(safeHTML)</div>
         </body>
         </html>
         """
