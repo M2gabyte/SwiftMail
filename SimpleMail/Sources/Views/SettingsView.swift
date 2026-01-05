@@ -9,6 +9,7 @@ struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
     @StateObject private var themeManager = ThemeManager.shared
     @State private var showingSignOutAlert = false
+    @State private var summaryStats = SummaryQueue.statsSnapshot()
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -46,7 +47,7 @@ struct SettingsView: View {
                                 Spacer()
 
                                 if viewModel.currentAccount?.id == account.id {
-                                    Image(systemName: "checkmark")
+                                    Label("Current", systemImage: "checkmark")
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.secondary)
                                 }
@@ -194,6 +195,43 @@ struct SettingsView: View {
                     Text("Powered by on-device Apple Intelligence. Aggressive background summaries may use more battery.")
                 }
 
+                Section {
+                    summaryStatRow("Queued", value: summaryStats.enqueued)
+                    summaryStatRow("Processed", value: summaryStats.processed)
+                    summaryStatRow("Skipped (Short)", value: summaryStats.skippedShort)
+                    summaryStatRow("Skipped (Battery)", value: summaryStats.skippedBattery)
+                    summaryStatRow("Skipped (Throttle)", value: summaryStats.skippedThrottle)
+                    summaryStatRow("Skipped (Cached)", value: summaryStats.skippedCached)
+                    summaryStatRow("Skipped (No Account)", value: summaryStats.skippedNoAccount)
+                    summaryStatRow("Failed", value: summaryStats.failed)
+
+                    if let lastRun = summaryStats.lastRun {
+                        let date = Date(timeIntervalSince1970: lastRun)
+                        HStack {
+                            Text("Last Run")
+                            Spacer()
+                            Text(date, style: .time)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    HStack {
+                        Button("Refresh") {
+                            summaryStats = SummaryQueue.statsSnapshot()
+                        }
+                        Spacer()
+                        Button("Reset") {
+                            SummaryQueue.resetStats()
+                            summaryStats = SummaryQueue.statsSnapshot()
+                        }
+                        .foregroundStyle(.red)
+                    }
+                } header: {
+                    Text("Summary Debug")
+                } footer: {
+                    Text("Counts are local to this device. Use Refresh after sync to see new activity.")
+                }
+
                 // Gmail Settings Sync Section
                 Section {
                     NavigationLink("Vacation Responder") {
@@ -256,12 +294,6 @@ struct SettingsView: View {
 
                 // Advanced Section
                 Section {
-                    Picker("Search Placement", selection: $viewModel.settings.searchPlacement) {
-                        Text("Bottom bar").tag(SearchPlacement.bottomBar)
-                        Text("Pull-down").tag(SearchPlacement.pullDown)
-                    }
-                    .onChange(of: viewModel.settings.searchPlacement) { _, _ in viewModel.saveSettings() }
-
                     Toggle("Conversation Threading", isOn: $viewModel.settings.conversationThreading)
                         .onChange(of: viewModel.settings.conversationThreading) { _, _ in viewModel.saveSettings() }
 
@@ -305,6 +337,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            .listSectionSpacing(12)
             .navigationTitle("Settings")
             .alert("Sign Out?", isPresented: $showingSignOutAlert) {
                 Button("Cancel", role: .cancel) {}
@@ -316,6 +349,9 @@ struct SettingsView: View {
             } message: {
                 Text("You'll need to sign in again to access your email.")
             }
+            .onAppear {
+                summaryStats = SummaryQueue.statsSnapshot()
+            }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -323,6 +359,15 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+
+    private func summaryStatRow(_ title: String, value: Int) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text("\(value)")
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -368,11 +413,6 @@ enum AppTheme: String, Codable {
     case dark
 }
 
-enum SearchPlacement: String, Codable {
-    case bottomBar = "Bottom bar"
-    case pullDown = "Pull-down"
-}
-
 struct AppSettings: Codable {
     var leftSwipeAction: SwipeAction = .archive
     var rightSwipeAction: SwipeAction = .markRead
@@ -395,7 +435,6 @@ struct AppSettings: Codable {
     var undoSendDelaySeconds: Int = 5
 
     // Advanced settings
-    var searchPlacement: SearchPlacement = .bottomBar
     var conversationThreading: Bool = true
     // Note: listDensity (already above) is also surfaced in Advanced as "Preview density"
 }

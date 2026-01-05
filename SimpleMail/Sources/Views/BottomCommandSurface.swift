@@ -1,191 +1,241 @@
 import SwiftUI
 
-/// Single anchored bottom surface for inbox navigation (Apple Mail-style).
-/// Contains filter, search, and compose controls in a unified command surface.
+/// Apple Mail-style bottom command bar (iOS 26).
+/// Left: filter/menu button, Center: search, Right: compose button.
 struct BottomCommandSurface: View {
     let isFilterActive: Bool
     let activeFilterLabel: String?
-    var showSearchPill: Bool = true
-    let onTapFilter: () -> Void
+    var searchMode: SearchMode = .idle
+    var showSearchField: Bool = true
+    @Binding var searchText: String
+    @Binding var searchFocused: Bool
+    let onSubmitSearch: () -> Void
     let onTapSearch: () -> Void
+    let onCancelSearch: () -> Void
+    let onTapFilter: () -> Void
     let onTapCompose: () -> Void
 
-    @State private var searchPillPressed = false
-
-    // MARK: - Computed Properties
-
-    private var filterButtonWidth: CGFloat {
-        if !showSearchPill {
-            // When search is hidden, filter chip can be wider
-            return isFilterActive ? 200 : 44
-        }
-        return isFilterActive ? 180 : 44
-    }
-
     var body: some View {
-        HStack(spacing: 12) {
-            // Left: Filter button/chip
-            filterControl
-                .frame(width: filterButtonWidth, alignment: .leading)
+        let isSearchActive = (searchMode == .editing) || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        HStack(spacing: 10) {
+            leftButton
 
-            // Center: Search pill (expands to fill) - hidden when search placement is pull-down
-            if showSearchPill {
-                searchPill
-                    .frame(maxWidth: .infinity)
-            } else {
-                Spacer()
-            }
+            centerSearchContent
+                .frame(maxWidth: .infinity)
 
-            // Right: Compose button
-            composeButton
-                .frame(width: 44)
+            rightButton
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 5)
+        .padding(.bottom, 2)
+        .animation(.snappy(duration: 0.22), value: isSearchActive)
+    }
+
+    private var leftButton: some View {
+        Button(action: onTapFilter) {
+            Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(isFilterActive ? .blue : .secondary)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(.ultraThinMaterial))
+                .overlay(
+                    Circle()
+                        .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+        .opacity(searchMode == .editing ? 0 : 1)
+        .allowsHitTesting(searchMode != .editing)
+        .accessibilityLabel(isFilterActive ? "Filter: \(activeFilterLabel ?? "active")" : "Filter")
+    }
+
+    private var rightButton: some View {
+        ZStack {
+            Button(action: onTapCompose) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(.blue)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(.ultraThinMaterial))
+                    .overlay(
+                        Circle()
+                            .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .accessibilityLabel("Compose new email")
+            .opacity(searchMode == .editing ? 0 : 1)
+            .allowsHitTesting(searchMode != .editing)
+
+            Button(action: onCancelSearch) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .accessibilityLabel("Cancel search")
+            .opacity(searchMode == .editing ? 1 : 0)
+            .allowsHitTesting(searchMode == .editing)
+        }
+    }
+
+    @ViewBuilder
+    private var centerSearchContent: some View {
+        MailSearchBar(
+            text: $searchText,
+            isFocused: $searchFocused,
+            onSubmit: onSubmitSearch,
+            onBeginEditing: onTapSearch
+        )
+        .frame(height: 32)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isFilterActive)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showSearchPill)
-    }
-
-    // MARK: - Filter Control
-
-    @ViewBuilder
-    private var filterControl: some View {
-        Button(action: onTapFilter) {
-            HStack(spacing: 6) {
-                Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(isFilterActive ? .blue : .primary)
-
-                if isFilterActive, let label = activeFilterLabel {
-                    Text("Filtered: \(label)")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, isFilterActive ? 12 : 0)
-            .padding(.vertical, 8)
-            .frame(height: 40)
-            .background(
-                Group {
-                    if isFilterActive {
-                        Capsule()
-                            .fill(Color.blue.opacity(0.12))
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(Color.blue.opacity(0.25), lineWidth: 1)
-                            )
-                    }
-                }
-            )
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isFilterActive ? "Filter: \(activeFilterLabel ?? "active")" : "Filter")
-        .accessibilityHint("Opens filter options")
-    }
-
-    // MARK: - Search Pill
-
-    @ViewBuilder
-    private var searchPill: some View {
-        Button(action: onTapSearch) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(isFilterActive ? Color.secondary : Color.primary.opacity(0.7))
-
-                Text("Search")
-                    .font(.subheadline)
-                    .foregroundStyle(isFilterActive ? Color.secondary : Color.primary.opacity(0.6))
-
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(height: 40)
-            .background(
-                Capsule()
-                    .fill(Color(.systemGray5).opacity(isFilterActive ? 0.5 : 0.8))
-            )
-            .opacity(isFilterActive ? 0.7 : 1.0)
-            .scaleEffect(searchPillPressed ? 0.97 : 1.0)
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in searchPillPressed = true }
-                .onEnded { _ in searchPillPressed = false }
+        .overlay(
+            Capsule()
+                .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
         )
+        .opacity(showSearchField ? 1 : 0)
+        .allowsHitTesting(showSearchField)
+        .accessibilityHidden(!showSearchField)
         .accessibilityLabel("Search emails")
-        .accessibilityIdentifier("searchButton")
-    }
-
-    // MARK: - Compose Button
-
-    @ViewBuilder
-    private var composeButton: some View {
-        Button(action: onTapCompose) {
-            Image(systemName: "square.and.pencil")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.blue)
-                .frame(width: 40, height: 40)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Compose new email")
-        .accessibilityIdentifier("composeButton")
     }
 }
 
-// MARK: - Preview
-
-#Preview("Default State") {
-    ZStack {
-        Color(.systemGroupedBackground)
-            .ignoresSafeArea()
-
-        VStack {
-            Spacer()
-            BottomCommandSurface(
-                isFilterActive: false,
-                activeFilterLabel: nil,
-                onTapFilter: { print("Filter tapped") },
-                onTapSearch: { print("Search tapped") },
-                onTapCompose: { print("Compose tapped") }
-            )
-        }
-    }
+enum SearchMode: Equatable {
+    case idle
+    case editing
 }
 
-#Preview("Filter Active") {
-    ZStack {
-        Color(.systemGroupedBackground)
-            .ignoresSafeArea()
+#Preview("Mail Bottom Bar") {
+    struct BottomBarPreview: View {
+        @State private var searchText = ""
+        @State private var searchFocused = false
 
-        VStack {
-            Spacer()
-            BottomCommandSurface(
-                isFilterActive: true,
-                activeFilterLabel: "Unread",
-                onTapFilter: { print("Filter tapped") },
-                onTapSearch: { print("Search tapped") },
-                onTapCompose: { print("Compose tapped") }
-            )
+        var body: some View {
+            ZStack {
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
+                VStack {
+                    Spacer()
+                    BottomCommandSurface(
+                        isFilterActive: false,
+                        activeFilterLabel: nil,
+                        searchMode: .idle,
+                        showSearchField: true,
+                        searchText: $searchText,
+                        searchFocused: $searchFocused,
+                        onSubmitSearch: { },
+                        onTapSearch: { },
+                        onCancelSearch: { },
+                        onTapFilter: { },
+                        onTapCompose: { }
+                    )
+                }
+            }
+        }
+    }
+
+    return BottomBarPreview()
+}
+
+// MARK: - UIKit Search Bar
+
+struct MailSearchBar: UIViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    let onSubmit: () -> Void
+    let onBeginEditing: () -> Void
+
+    func makeUIView(context: Context) -> UISearchBar {
+        let searchBar = UISearchBar(frame: .zero)
+        searchBar.searchBarStyle = .minimal
+        searchBar.placeholder = "Search"
+        searchBar.autocapitalizationType = .none
+        searchBar.autocorrectionType = .no
+        searchBar.returnKeyType = .search
+        searchBar.enablesReturnKeyAutomatically = true
+        searchBar.isTranslucent = true
+        searchBar.backgroundColor = .clear
+        searchBar.barTintColor = .clear
+        searchBar.delegate = context.coordinator
+
+        let textField = searchBar.searchTextField
+        textField.textColor = .label
+        textField.tintColor = .systemBlue
+        textField.clearButtonMode = .whileEditing
+        textField.backgroundColor = .clear
+
+        let mic = UIImageView(image: UIImage(systemName: "mic.fill"))
+        mic.tintColor = .secondaryLabel
+        mic.contentMode = .scaleAspectFit
+        mic.frame = CGRect(x: 0, y: 0, width: 18, height: 18)
+        textField.rightView = mic
+        textField.rightViewMode = .always
+
+        searchBar.backgroundImage = UIImage()
+        searchBar.setBackgroundImage(UIImage(), for: .any, barMetrics: .default)
+        searchBar.setSearchFieldBackgroundImage(UIImage(), for: .normal)
+        return searchBar
+    }
+
+    func updateUIView(_ uiView: UISearchBar, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+        let textField = uiView.searchTextField
+        textField.rightView?.isHidden = isFocused
+        if isFocused && !textField.isFirstResponder {
+            textField.becomeFirstResponder()
+        } else if !isFocused && textField.isFirstResponder {
+            textField.resignFirstResponder()
+        }
+        if let rightView = textField.rightView as? UIImageView {
+            rightView.alpha = isFocused ? 0.25 : 1.0
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, isFocused: $isFocused, onSubmit: onSubmit, onBeginEditing: onBeginEditing)
+    }
+
+    final class Coordinator: NSObject, UISearchBarDelegate {
+        @Binding var text: String
+        @Binding var isFocused: Bool
+        let onSubmit: () -> Void
+        let onBeginEditing: () -> Void
+
+        init(text: Binding<String>, isFocused: Binding<Bool>, onSubmit: @escaping () -> Void, onBeginEditing: @escaping () -> Void) {
+            _text = text
+            _isFocused = isFocused
+            self.onSubmit = onSubmit
+            self.onBeginEditing = onBeginEditing
+        }
+
+        func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+            text = searchText
+        }
+
+        func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
+            isFocused = true
+            onBeginEditing()
+        }
+
+        func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
+            isFocused = false
+        }
+
+        func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+            onSubmit()
+            searchBar.searchTextField.resignFirstResponder()
         }
     }
 }

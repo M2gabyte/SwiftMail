@@ -157,7 +157,22 @@ final class InboxViewModel {
                 self.nextPageToken = nil
                 Task {
                     try? await Task.sleep(for: .seconds(1))
-                    await SummaryQueue.shared.enqueueCandidates(self.emails)
+                    let candidates = self.emails.compactMap { email -> SummaryQueue.Candidate? in
+                        guard let accountEmail = email.accountEmail else { return nil }
+                        return SummaryQueue.Candidate(
+                            emailId: email.id,
+                            threadId: email.threadId,
+                            accountEmail: accountEmail,
+                            subject: email.subject,
+                            from: email.from,
+                            snippet: email.snippet,
+                            date: email.date,
+                            isUnread: email.isUnread,
+                            isStarred: email.isStarred,
+                            listUnsubscribe: email.listUnsubscribe
+                        )
+                    }
+                    await SummaryQueue.shared.enqueueCandidates(candidates)
                 }
             } else {
                 let labelIds = labelIdsForMailbox(currentMailbox)
@@ -172,7 +187,22 @@ final class InboxViewModel {
                 self.nextPageToken = pageToken
                 Task {
                     try? await Task.sleep(for: .seconds(1))
-                    await SummaryQueue.shared.enqueueCandidates(self.emails)
+                    let candidates = self.emails.compactMap { email -> SummaryQueue.Candidate? in
+                        guard let accountEmail = email.accountEmail else { return nil }
+                        return SummaryQueue.Candidate(
+                            emailId: email.id,
+                            threadId: email.threadId,
+                            accountEmail: accountEmail,
+                            subject: email.subject,
+                            from: email.from,
+                            snippet: email.snippet,
+                            date: email.date,
+                            isUnread: email.isUnread,
+                            isStarred: email.isStarred,
+                            listUnsubscribe: email.listUnsubscribe
+                        )
+                    }
+                    await SummaryQueue.shared.enqueueCandidates(candidates)
                 }
             }
         } catch {
@@ -217,8 +247,14 @@ final class InboxViewModel {
                 labelIds: labelIds
             )
             let moreEmailModels = moreEmails.map(Email.init(dto:))
-            let existingThreadIds = Set(emails.map { $0.threadId })
-            let uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
+            let uniqueNewEmails: [Email]
+            if conversationThreading {
+                let existingThreadIds = Set(emails.map { $0.threadId })
+                uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
+            } else {
+                let existingIds = Set(emails.map { $0.id })
+                uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
+            }
             emails.append(contentsOf: uniqueNewEmails)
             nextPageToken = newPageToken
             updateFilterCounts()
@@ -422,25 +458,73 @@ final class InboxViewModel {
     private func groupEmailsByDate(_ emails: [Email]) -> [EmailSection] {
         let calendar = Calendar.current
         let now = Date()
+        let weekInterval = calendar.dateInterval(of: .weekOfYear, for: now)
+        let lastWeekInterval = weekInterval.flatMap { interval in
+            calendar.dateInterval(of: .weekOfYear, for: interval.start.addingTimeInterval(-1))
+        }
 
         var today: [Email] = []
         var yesterday: [Email] = []
-        var thisWeek: [Email] = []
-        var earlier: [Email] = []
+        var weekdayBuckets: [Int: [Email]] = [:]
+        var orderedWeekdays: [Int] = []
+        var lastWeek: [Email] = []
+        var monthBuckets: [String: [Email]] = [:]
+        var orderedMonths: [String] = []
+        var yearBuckets: [String: [Email]] = [:]
+        var orderedYears: [String] = []
+        let oneYearAgo = calendar.date(byAdding: .year, value: -1, to: now)
 
         for email in emails.sorted(by: { $0.date > $1.date }) {
             if calendar.isDateInToday(email.date) {
                 today.append(email)
             } else if calendar.isDateInYesterday(email.date) {
                 yesterday.append(email)
-            } else if calendar.isDate(email.date, equalTo: now, toGranularity: .weekOfYear) {
-                thisWeek.append(email)
+            } else if let weekInterval, weekInterval.contains(email.date) {
+                let weekday = calendar.component(.weekday, from: email.date)
+                if weekdayBuckets[weekday] == nil {
+                    orderedWeekdays.append(weekday)
+                    weekdayBuckets[weekday] = []
+                }
+                weekdayBuckets[weekday]?.append(email)
+            } else if let lastWeekInterval, lastWeekInterval.contains(email.date) {
+                lastWeek.append(email)
             } else {
-                earlier.append(email)
+                if let oneYearAgo, email.date >= oneYearAgo {
+                    let year = calendar.component(.year, from: email.date)
+                    let month = calendar.component(.month, from: email.date)
+                    let monthKey = String(format: "%04d-%02d", year, month)
+                    if monthBuckets[monthKey] == nil {
+                        orderedMonths.append(monthKey)
+                        monthBuckets[monthKey] = []
+                    }
+                    monthBuckets[monthKey]?.append(email)
+                } else {
+                    let year = calendar.component(.year, from: email.date)
+                    let yearKey = String(year)
+                    if yearBuckets[yearKey] == nil {
+                        orderedYears.append(yearKey)
+                        yearBuckets[yearKey] = []
+                    }
+                    yearBuckets[yearKey]?.append(email)
+                }
             }
         }
 
         var sections: [EmailSection] = []
+        let weekdayFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.locale = .current
+            formatter.calendar = calendar
+            formatter.dateFormat = "EEEE"
+            return formatter
+        }()
+        let monthFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.locale = .current
+            formatter.calendar = calendar
+            formatter.dateFormat = "MMMM yyyy"
+            return formatter
+        }()
 
         if !today.isEmpty {
             sections.append(EmailSection(id: "today", title: "Today", emails: today))
@@ -448,11 +532,22 @@ final class InboxViewModel {
         if !yesterday.isEmpty {
             sections.append(EmailSection(id: "yesterday", title: "Yesterday", emails: yesterday))
         }
-        if !thisWeek.isEmpty {
-            sections.append(EmailSection(id: "thisWeek", title: "This Week", emails: thisWeek))
+        for weekday in orderedWeekdays {
+            guard let emailsForDay = weekdayBuckets[weekday], let first = emailsForDay.first else { continue }
+            let title = weekdayFormatter.string(from: first.date)
+            sections.append(EmailSection(id: "weekday-\(weekday)", title: title, emails: emailsForDay))
         }
-        if !earlier.isEmpty {
-            sections.append(EmailSection(id: "earlier", title: "Earlier", emails: earlier))
+        if !lastWeek.isEmpty {
+            sections.append(EmailSection(id: "lastWeek", title: "Last Week", emails: lastWeek))
+        }
+        for monthKey in orderedMonths {
+            guard let emailsForMonth = monthBuckets[monthKey], let first = emailsForMonth.first else { continue }
+            let title = monthFormatter.string(from: first.date)
+            sections.append(EmailSection(id: "month-\(monthKey)", title: title, emails: emailsForMonth))
+        }
+        for yearKey in orderedYears {
+            guard let emailsForYear = yearBuckets[yearKey] else { continue }
+            sections.append(EmailSection(id: "year-\(yearKey)", title: yearKey, emails: emailsForYear))
         }
 
         return sections

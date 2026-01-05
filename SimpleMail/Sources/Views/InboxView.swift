@@ -4,6 +4,13 @@ import OSLog
 private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxView")
 typealias SelectionID = String
 
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Inbox View
 
 struct InboxView: View {
@@ -27,19 +34,15 @@ struct InboxView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var restoredComposeMode: ComposeMode?
     @State private var showingFilterSheet = false
-    @State private var searchPlacement: SearchPlacement = .bottomBar
-    @FocusState private var isSearchFieldFocused: Bool
+    @State private var showAvatars = true
+    @State private var searchFieldFocused = false
+    @State private var isSearchMode = false
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
 
     /// Computed active filter label for bottom command surface
     private var activeFilterLabel: String? {
         viewModel.activeFilter?.rawValue
-    }
-
-    /// Whether to show search pill in bottom command surface
-    private var showSearchInBottomBar: Bool {
-        searchPlacement == .bottomBar
     }
 
     private var isHeaderCollapsed: Bool {
@@ -71,6 +74,18 @@ struct InboxView: View {
         }
     }
 
+    private var searchModeResults: [Email] {
+        let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+        let lower = query.lowercased()
+        return viewModel.emails.filter { email in
+            email.senderName.lowercased().contains(lower) ||
+            email.senderEmail.lowercased().contains(lower) ||
+            email.subject.lowercased().contains(lower) ||
+            email.snippet.lowercased().contains(lower)
+        }
+    }
+
     /// Save search to history when user commits
     private func commitSearch() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -92,36 +107,41 @@ struct InboxView: View {
     /// Email row with all actions - extracted to help compiler
     @ViewBuilder
     private func emailRowView(for email: Email, isSelectionMode: Bool, isContinuationInSenderRun: Bool = false, isFirstInSenderRun: Bool = true) -> some View {
-        SwipeActionRow(
-            leadingAction: SwipeAction(
-                icon: email.isUnread ? "envelope.open" : "envelope.badge",
-                label: email.isUnread ? "Read" : "Unread",
-                color: .blue,
-                action: { viewModel.toggleRead(email) }
-            ),
-            trailingAction: SwipeAction(
-                icon: "archivebox",
-                label: "Archive",
-                color: .green,
-                action: { viewModel.archiveEmail(email) }
-            )
-        ) {
-            EmailRow(
-                email: email,
-                isCompact: listDensity == .compact,
-                showAccountBadge: viewModel.currentMailbox == .allInboxes,
-                highlightTerms: highlightTerms,
-                isContinuationInSenderRun: isContinuationInSenderRun
-            )
-            .background(Color(.systemBackground))
-        }
+        EmailRow(
+            email: email,
+            isCompact: listDensity == .compact,
+            showAvatars: showAvatars,
+            showAccountBadge: viewModel.currentMailbox == .allInboxes,
+            highlightTerms: highlightTerms,
+            isContinuationInSenderRun: isContinuationInSenderRun
+        )
+        .background(Color(.systemBackground))
         .listRowBackground(Color(.systemBackground))
         .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
         .listRowSeparator(.visible)
-        .listRowSeparatorTint(Color(.separator).opacity(0.4))
+        .listRowSeparatorTint(Color(.separator).opacity(0.5))
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button { viewModel.toggleRead(email) } label: {
+                Label(email.isUnread ? "Read" : "Unread",
+                      systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
+            }
+            .tint(.blue)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button { viewModel.archiveEmail(email) } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+            .tint(.green)
+        }
         .onTapGesture {
             if !isSelectionMode {
-                viewModel.openEmail(email)
+                if isSearchMode {
+                    isSearchMode = false
+                    searchFieldFocused = false
+                }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.openEmail(email)
+                }
             }
         }
         .onLongPressGesture {
@@ -131,162 +151,250 @@ struct InboxView: View {
     }
 
     var body: some View {
-        inboxList
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.bar, for: .navigationBar)
-            .toolbar { toolbarContent }
-            .searchable(text: $searchText, prompt: "Search")
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled(true)
-            .searchSuggestions { searchSuggestionsContent }
-            .onSubmit(of: .search) {
-                commitSearch()
-                debouncedSearchText = searchText
-                // Perform server-side search
+        baseView
+    }
+
+    private var baseView: AnyView {
+        var view: AnyView = AnyView(baseContentView)
+        view = AnyView(view.sheet(isPresented: $showingSettings) { SettingsView() })
+        view = AnyView(view.sheet(isPresented: $showingCompose) { ComposeView() })
+        view = AnyView(view.sheet(item: $restoredComposeMode) { mode in
+            ComposeView(mode: mode)
+        })
+        view = AnyView(view.sheet(isPresented: $showingLocationSheet) {
+            LocationSheetView(
+                selectedMailbox: $viewModel.currentMailbox,
+                onSelectMailbox: { mailbox in
+                    viewModel.selectMailbox(mailbox)
+                },
+                onSelectScope: { scope in
+                    handleScopeSelection(scope)
+                }
+            )
+        })
+        view = AnyView(view.sheet(isPresented: $showingBulkSnooze) {
+            SnoozePickerSheet { date in
+                performBulkSnooze(until: date)
+            }
+        })
+        view = AnyView(view.sheet(isPresented: $showingFilterSheet) {
+            FilterSheet(
+                scope: viewModel.scope,
+                activeFilter: $viewModel.activeFilter,
+                filterCounts: viewModel.filterCounts
+            )
+            .presentationDetents([.medium])
+        })
+        view = AnyView(view.confirmationDialog("Move to", isPresented: $showingMoveDialog) {
+            Button("Inbox") { performBulkMove(to: .inbox) }
+            Button("Archive") { performBulkArchive() }
+            Button("Trash", role: .destructive) { performBulkTrash() }
+            Button("Cancel", role: .cancel) { }
+        })
+        view = AnyView(view.navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination })
+        view = AnyView(view.refreshable { await viewModel.refresh() })
+        view = AnyView(view.task(id: searchText) { await debounceSearch() })
+        view = AnyView(view.onChange(of: searchText) { _, newValue in
+            if newValue.isEmpty && viewModel.isSearchActive {
+                viewModel.clearSearch()
+            }
+            if isSearchMode {
                 Task {
-                    await viewModel.performSearch(query: searchText)
+                    try? await Task.sleep(for: .milliseconds(250))
+                    debouncedSearchText = newValue
                 }
             }
-            .searchToolbarBehavior(showSearchInBottomBar ? .hidden : .minimize)
-            .overlay { overlayContent }
-            .overlay(alignment: .top) { offlineBannerContent }
+        })
+        view = AnyView(view.onChange(of: viewModel.scope) { _, newValue in
+            if let active = viewModel.activeFilter,
+               !availableFilters(for: newValue).contains(active) {
+                viewModel.activeFilter = nil
+            }
+        })
+        view = AnyView(view.onChange(of: viewModel.currentMailbox) { _, _ in
+            exitSelectionMode()
+        })
+        view = AnyView(view.onChange(of: viewModel.activeFilter) { _, _ in
+            exitSelectionMode()
+            if showingFilterSheet {
+                showingFilterSheet = false
+            }
+        })
+        view = AnyView(view.onChange(of: viewModel.emails) { _, _ in
+            let valid = Set(viewModel.emails.map { $0.threadId })
+            selectedThreadIds = selectedThreadIds.intersection(valid)
+            if selectedThreadIds.isEmpty && isSelectionMode {
+                exitSelectionMode()
+            }
+        })
+        view = AnyView(view.onChange(of: scenePhase) { oldPhase, newPhase in
+            if newPhase == .background {
+                exitSelectionMode()
+            } else if newPhase == .active && oldPhase == .background {
+                Task { await viewModel.refresh() }
+            }
+        })
+        view = AnyView(view.onChange(of: pendingSendManager.hasRestoredDraft) { _, hasRestored in
+            if hasRestored, let draft = pendingSendManager.restoredDraft {
+                restoredComposeMode = .restoredDraft(
+                    draftId: draft.draftId,
+                    to: draft.to,
+                    cc: draft.cc,
+                    bcc: draft.bcc,
+                    subject: draft.subject,
+                    body: draft.body,
+                    bodyHtml: draft.bodyHtml,
+                    inReplyTo: draft.inReplyTo,
+                    threadId: draft.threadId
+                )
+                pendingSendManager.clearRestoredDraft()
+            }
+        })
+        view = AnyView(view.onChange(of: isSearchMode) { _, newValue in
+            if !newValue {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    searchFieldFocused = false
+                }
+            }
+        })
+        view = AnyView(view.onChange(of: searchFieldFocused) { _, focused in
+            if focused {
+                withAnimation(.snappy(duration: 0.22)) {
+                    isSearchMode = true
+                }
+            } else if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                withAnimation(.snappy(duration: 0.22)) {
+                    isSearchMode = false
+                }
+            }
+        })
+        view = AnyView(view.onAppear { handleAppear() })
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() })
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() })
+        return view
+    }
+
+    private var baseContentView: some View {
+        ZStack {
+            inboxList
+                .opacity(isSearchMode ? 0.3 : 1.0)
+                .blur(radius: isSearchMode ? 4 : 0)
+                .allowsHitTesting(!isSearchMode)
+
+            if isSearchMode {
+                ZStack {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            searchFieldFocused = false
+                            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                withAnimation(.snappy(duration: 0.22)) {
+                                    isSearchMode = false
+                                }
+                            }
+                        }
+
+                    searchModeList
+                        .transition(.opacity)
+                        .zIndex(10)
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: isSearchMode)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.bar, for: .navigationBar)
+        .toolbar { toolbarContent }
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled(true)
+        .overlay { overlayContent }
+        .overlay(alignment: .top) { offlineBannerContent }
             .overlay(alignment: .bottom) { bulkToastContent }
             .overlay(alignment: .bottom) {
                 undoSendToastContent
                     .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
                     .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
             }
-            .sheet(isPresented: $showingSettings) { SettingsView() }
-            .sheet(isPresented: $showingCompose) { ComposeView() }
-            .sheet(item: $restoredComposeMode) { mode in
-                ComposeView(mode: mode)
-            }
-            .sheet(isPresented: $showingLocationSheet) {
-                LocationSheetView(
-                    selectedMailbox: $viewModel.currentMailbox,
-                    onSelectMailbox: { mailbox in
-                        viewModel.selectMailbox(mailbox)
-                    },
-                    onSelectScope: { scope in
-                        handleScopeSelection(scope)
-                    }
-                )
-            }
-            .sheet(isPresented: $showingBulkSnooze) {
-                SnoozePickerSheet { date in
-                    performBulkSnooze(until: date)
-                }
-            }
-            .sheet(isPresented: $showingFilterSheet) {
-                FilterSheet(
-                    scope: viewModel.scope,
-                    activeFilter: $viewModel.activeFilter,
-                    filterCounts: viewModel.filterCounts
-                )
-                .presentationDetents([.medium])
-            }
-            .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
-                Button("Inbox") { performBulkMove(to: .inbox) }
-                Button("Archive") { performBulkArchive() }
-                Button("Trash", role: .destructive) { performBulkTrash() }
-                Button("Cancel", role: .cancel) { }
-            }
-            .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
-            .refreshable { await viewModel.refresh() }
-            .task(id: searchText) { await debounceSearch() }
-            .onChange(of: searchText) { _, newValue in
-                // Clear server search when search text is cleared
-                if newValue.isEmpty && viewModel.isSearchActive {
-                    viewModel.clearSearch()
-                }
-            }
-            .onChange(of: viewModel.scope) { _, newValue in
-                if let active = viewModel.activeFilter,
-                   !availableFilters(for: newValue).contains(active) {
-                    viewModel.activeFilter = nil
-                }
-            }
-            .onChange(of: viewModel.currentMailbox) { _, _ in
-                exitSelectionMode()
-            }
-            .onChange(of: viewModel.activeFilter) { _, _ in
-                exitSelectionMode()
-            }
-            .onChange(of: viewModel.emails) { _, _ in
-                let valid = Set(viewModel.emails.map { $0.threadId })
-                selectedThreadIds = selectedThreadIds.intersection(valid)
-                if selectedThreadIds.isEmpty && isSelectionMode {
-                    exitSelectionMode()
-                }
-            }
-            .onChange(of: scenePhase) { oldPhase, newPhase in
-                if newPhase == .background {
-                    exitSelectionMode()
-                } else if newPhase == .active && oldPhase == .background {
-                    Task { await viewModel.refresh() }
-                }
-            }
-            .onChange(of: pendingSendManager.hasRestoredDraft) { _, hasRestored in
-                if hasRestored, let draft = pendingSendManager.restoredDraft {
-                    restoredComposeMode = .restoredDraft(
-                        draftId: draft.draftId,
-                        to: draft.to,
-                        cc: draft.cc,
-                        bcc: draft.bcc,
-                        subject: draft.subject,
-                        body: draft.body,
-                        bodyHtml: draft.bodyHtml,
-                        inReplyTo: draft.inReplyTo,
-                        threadId: draft.threadId
+            .overlay(alignment: .bottom) {
+                if !isSelectionMode && !showingFilterSheet {
+                    BottomCommandSurface(
+                        isFilterActive: viewModel.activeFilter != nil,
+                        activeFilterLabel: activeFilterLabel,
+                        searchMode: isSearchMode ? .editing : .idle,
+                        showSearchField: true,
+                        searchText: $searchText,
+                        searchFocused: $searchFieldFocused,
+                        onSubmitSearch: {
+                            commitSearch()
+                            debouncedSearchText = searchText
+                            Task { await viewModel.performSearch(query: searchText) }
+                        },
+                        onTapSearch: {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                isSearchMode = true
+                            }
+                            searchFieldFocused = true
+                        },
+                        onCancelSearch: {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                isSearchMode = false
+                            }
+                            searchFieldFocused = false
+                            searchText = ""
+                            debouncedSearchText = ""
+                            viewModel.clearSearch()
+                        },
+                        onTapFilter: { showingFilterSheet = true },
+                        onTapCompose: { showingCompose = true }
                     )
-                    pendingSendManager.clearRestoredDraft()
+                    .zIndex(20)
                 }
             }
-            .onAppear { handleAppear() }
-            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() }
-            .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() }
     }
 
     // MARK: - Extracted View Components
 
     private var inboxList: some View {
-        ScrollViewReader { proxy in
-            List(selection: $selectedThreadIds) {
-                Section {
-                    InboxHeaderBlock(
-                        scope: scopeBinding,
-                        activeFilter: $viewModel.activeFilter,
-                        filterCounts: viewModel.filterCounts,
-                        isCollapsed: isHeaderCollapsed
-                    )
-                }
-                .listRowInsets(EdgeInsets())
+        List {
+            if !isSearchMode {
+                InboxHeaderBlock(
+                    scope: scopeBinding,
+                    activeFilter: $viewModel.activeFilter,
+                    filterCounts: viewModel.filterCounts,
+                    isCollapsed: isHeaderCollapsed,
+                    onOpenFilters: { showingFilterSheet = true }
+                )
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .preference(
+                                key: ScrollOffsetKey.self,
+                                value: proxy.frame(in: .named("inboxScroll")).minY
+                            )
+                    }
+                )
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .listSectionSpacing(0)
 
-                // Filter active indicator banner
                 if let activeFilter = viewModel.activeFilter {
-                    Section {
-                        FilterActiveBanner(
-                            filterLabel: activeFilter.rawValue,
-                            filterColor: activeFilter.color,
-                            onClear: {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    viewModel.activeFilter = nil
-                                }
+                    FilterActiveBanner(
+                        filterLabel: activeFilter.rawValue,
+                        filterColor: activeFilter.color,
+                        onClear: {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                viewModel.activeFilter = nil
                             }
-                        )
-                    }
-                    .listRowInsets(EdgeInsets())
+                        }
+                    )
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listSectionSpacing(0)
                 }
+            }
 
-            ForEach(displaySections) { section in
+            ForEach(Array(displaySections.enumerated()), id: \.element.id) { index, section in
                 Section {
                     ForEach(Array(section.emails.enumerated()), id: \.element.id) { index, email in
                         let previousEmail = index > 0 ? section.emails[index - 1] : nil
@@ -300,27 +408,10 @@ struct InboxView: View {
                             isFirstInSenderRun: isFirst
                         )
                         .tag(email.threadId)
-                        .padding(.top, index == 0 ? 6 : 0)
+                        .padding(.top, index == 0 ? 0 : 0)
                     }
                 } header: {
-                    // Section headers: solid background for high contrast while scrolling
-                    VStack(spacing: 0) {
-                        Text(section.title)
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .textCase(.uppercase)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 10)
-                            .padding(.bottom, 7)
-
-                        // Hairline bottom divider (native 1px)
-                        Rectangle()
-                            .fill(Color(.separator).opacity(0.6))
-                            .frame(height: 1.0 / displayScale)
-                    }
-                    .background(Color(.systemBackground))
-                    .listRowInsets(EdgeInsets())
+                    SectionHeaderRow(title: section.title, isFirst: index == 0)
                 }
             }
 
@@ -329,31 +420,63 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .safeAreaInset(edge: .bottom) {
-                if !isSelectionMode && !showingFilterSheet {
-                    BottomCommandSurface(
-                        isFilterActive: viewModel.activeFilter != nil,
-                        activeFilterLabel: activeFilterLabel,
-                        showSearchPill: showSearchInBottomBar,
-                        onTapFilter: { showingFilterSheet = true },
-                        onTapSearch: { isSearchFieldFocused = true },
-                        onTapCompose: { showingCompose = true }
-                    )
-                } else {
-                    Color.clear.frame(height: 56)
-                }
-            }
-            .environment(\.editMode, $editMode)
-            .simultaneousGesture(
-                DragGesture()
-                    .onChanged { value in
-                        scrollOffset = -value.translation.height
-                    }
-            )
         }
+        .listStyle(.plain)
+        .listSectionSpacing(0)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .contentMargins(.bottom, 56, for: .scrollContent)
+        .scrollContentBackground(.hidden)
+        .coordinateSpace(name: "inboxScroll")
+        .onPreferenceChange(ScrollOffsetKey.self) { value in
+            scrollOffset = value
+        }
+    }
+
+    @ViewBuilder
+    private var searchModeContent: some View {
+        Rectangle()
+            .fill(Color(.separator).opacity(0.3))
+            .frame(height: 1.0 / displayScale)
+            .listRowInsets(.init())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+
+        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !searchHistory.recentSearches.isEmpty {
+                Section("Recent") {
+                    ForEach(searchHistory.recentSearches.prefix(8), id: \.self) { query in
+                        Button {
+                            searchText = query
+                            debouncedSearchText = query
+                        } label: {
+                            Label(query, systemImage: "clock.arrow.circlepath")
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                }
+            } else {
+                ContentUnavailableView.search(text: "")
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        } else {
+            ForEach(searchModeResults.prefix(50)) { email in
+                emailRowView(for: email, isSelectionMode: isSelectionMode)
+            }
+            if searchModeResults.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        }
+    }
+
+    private var searchModeList: some View {
+        List {
+            searchModeContent
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     @ToolbarContentBuilder
@@ -374,6 +497,12 @@ struct InboxView: View {
 
             ToolbarItemGroup(placement: .bottomBar) {
                 bulkActionBar
+            }
+        } else if isSearchMode {
+            ToolbarItem(placement: .topBarTrailing) {
+                Text("Select")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.primary.opacity(0.75))
             }
         } else {
             ToolbarItem(placement: .topBarLeading) {
@@ -398,7 +527,7 @@ struct InboxView: View {
                     Image(systemName: "gearshape")
                 }
             }
-            // Bottom command surface is now overlaid on the list, not in toolbar
+            // Bottom command surface is overlaid on the list
         }
     }
 
@@ -674,11 +803,18 @@ struct InboxView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(.systemBackground).opacity(0.8))
         } else if viewModel.isSearchActive && viewModel.searchResults.isEmpty {
-            ContentUnavailableView(
-                "No Results",
-                systemImage: "magnifyingglass",
-                description: Text("No emails found for \"\(viewModel.currentSearchQuery)\"")
-            )
+            ContentUnavailableView {
+                Label("No Results", systemImage: "magnifyingglass")
+            } description: {
+                Text("No emails found for \"\(viewModel.currentSearchQuery)\"")
+            } actions: {
+                Button("Clear Search") {
+                    searchText = ""
+                    debouncedSearchText = ""
+                    viewModel.clearSearch()
+                }
+                .buttonStyle(.bordered)
+            }
         } else if let error = viewModel.error, viewModel.emailSections.isEmpty {
             VStack(spacing: 16) {
                 Image(systemName: "wifi.exclamationmark")
@@ -714,11 +850,16 @@ struct InboxView: View {
                     .buttonStyle(.borderedProminent)
                 }
             } else {
-                ContentUnavailableView(
-                    emptyStateTitle,
-                    systemImage: emptyStateIcon,
-                    description: Text(emptyStateDescription)
-                )
+                ContentUnavailableView {
+                    Label(emptyStateTitle, systemImage: emptyStateIcon)
+                } description: {
+                    Text(emptyStateDescription)
+                } actions: {
+                    Button("Check for New Mail") {
+                        Task { await viewModel.refresh() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
         } else if viewModel.isLoading && viewModel.emailSections.isEmpty {
             InboxSkeletonView()
@@ -761,7 +902,7 @@ struct InboxView: View {
         do {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             listDensity = settings.listDensity
-            searchPlacement = settings.searchPlacement
+            showAvatars = settings.showAvatars
 
             // Update threading setting on viewModel
             let threadingChanged = viewModel.conversationThreading != settings.conversationThreading
@@ -816,6 +957,7 @@ struct InboxHeaderBlock: View {
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
     let isCollapsed: Bool
+    let onOpenFilters: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -826,47 +968,85 @@ struct InboxHeaderBlock: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
-            .padding(.top, 6)
-            .padding(.bottom, 3)
+            .padding(.top, 0)
+            .padding(.bottom, 0)
 
-            // Filter pills - hide when collapsed
-            if !isCollapsed {
-                ScrollView(.horizontal, showsIndicators: false) {
+            if let activeFilter {
+                Button(action: onOpenFilters) {
                     HStack(spacing: 8) {
-                        let filters = scope == .people ? [InboxFilter.unread, .needsReply] : InboxFilter.allCases
-                        ForEach(filters, id: \.self) { filter in
-                            FilterPill(
-                                filter: filter,
-                                count: filterCounts[filter] ?? 0,
-                                isActive: activeFilter == filter,
-                                anyFilterActive: activeFilter != nil,
-                                onTap: {
-                                    withAnimation(.easeInOut(duration: 0.15)) {
-                                        activeFilter = activeFilter == filter ? nil : filter
-                                    }
-                                }
-                            )
+                        Text("Filtered by \(activeFilter.rawValue) (\(filterCounts[activeFilter] ?? 0))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                self.activeFilter = nil
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.top, 2)
-                    .padding(.bottom, 4)
-                    .padding(.leading, 8)
-                }
-                .overlay(alignment: .trailing) {
-                    LinearGradient(
-                        colors: [Color.clear, Color(.systemBackground)],
-                        startPoint: .leading,
-                        endPoint: .trailing
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color(.systemGray6))
                     )
-                    .frame(width: 24)
-                    .allowsHitTesting(false)
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .transition(.opacity)
             }
         }
-        .padding(.bottom, 4)
+        .padding(.top, 0)
+        .padding(.bottom, 0)
         .animation(.easeInOut(duration: 0.25), value: isCollapsed)
     }
+}
+
+struct SectionHeaderRow: View {
+    let title: String
+    let isFirst: Bool
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+            VStack(spacing: 0) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, isFirst ? 6 : 14)
+                    .padding(.bottom, 4)
+
+                Rectangle()
+                    .fill(Color(.separator).opacity(0.6))
+                    .frame(height: 1.0 / displayScale)
+            }
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color(.systemBackground))
+    }
+}
+
+private enum MailTypography {
+    static let sender = Font.subheadline.weight(.semibold)
+    static let senderCompact = Font.subheadline.weight(.semibold)
+    static let senderContinuation = Font.footnote.weight(.regular)
+    static let subject = Font.subheadline.weight(.medium)
+    static let subjectCompact = Font.footnote.weight(.medium)
+    static let snippet = Font.caption
+    static let meta = Font.caption2
 }
 
 // MARK: - Scope
@@ -1071,6 +1251,7 @@ private enum DateFormatters {
 struct EmailRow: View {
     let email: Email
     var isCompact: Bool = false
+    var showAvatars: Bool = true
     var showAccountBadge: Bool = false
     var highlightTerms: [String] = []
     var isContinuationInSenderRun: Bool = false
@@ -1138,7 +1319,7 @@ struct EmailRow: View {
         HStack(spacing: isCompact ? 8 : 10) {
             // Avatar (hidden in compact mode)
             // For sender-run continuation: hide avatar but keep alignment
-            if !isCompact {
+            if showAvatars {
                 if isContinuationInSenderRun {
                     // Empty space to maintain alignment
                     Color.clear
@@ -1158,8 +1339,7 @@ struct EmailRow: View {
                 HStack(alignment: .center, spacing: 6) {
                     // Sender name: reduced emphasis for sender-run continuation
                     highlightedText(email.senderName, font: isCompact ? .caption : .subheadline)
-                        .font(isCompact ? .caption : (isContinuationInSenderRun ? .caption : .subheadline))
-                        .fontWeight(isContinuationInSenderRun ? .regular : (email.isUnread ? .semibold : .medium))
+                        .font(isCompact ? MailTypography.senderCompact : (isContinuationInSenderRun ? MailTypography.senderContinuation : MailTypography.sender))
                         .foregroundStyle(isContinuationInSenderRun ? .secondary : .primary)
                         .lineLimit(1)
 
@@ -1186,7 +1366,7 @@ struct EmailRow: View {
                         }
 
                         Text(DateFormatters.formatEmailDate(email.date))
-                            .font(.caption2)
+                            .font(MailTypography.meta)
                             .foregroundStyle(email.isUnread ? .primary : .secondary)
 
                         // Unread dot aligned with timestamp
@@ -1201,21 +1381,20 @@ struct EmailRow: View {
 
                 // Subject line (normalized to remove Fwd:/Re: prefixes)
                 highlightedText(EmailPreviewNormalizer.normalizeSubjectForDisplay(email.subject), font: isCompact ? .caption2 : .subheadline)
-                    .font(isCompact ? .caption2 : .subheadline)
-                    .fontWeight(email.isUnread ? .medium : .regular)
+                    .font(isCompact ? MailTypography.subjectCompact : MailTypography.subject)
                     .foregroundStyle(email.isUnread ? .primary : Color.primary.opacity(0.85))
                     .lineLimit(1)
 
                 // Snippet (not in compact mode, normalized to remove forwarded boilerplate)
                 if !isCompact {
                     highlightedText(EmailPreviewNormalizer.normalizeSnippetForDisplay(email.snippet), font: .caption, baseColor: .secondary)
-                        .font(.caption)
+                        .font(MailTypography.snippet)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
             }
         }
-        .padding(.vertical, isCompact ? 2 : 4)
+        .padding(.vertical, isCompact ? 3 : 4)
         .contentShape(Rectangle())
     }
 }
@@ -1409,6 +1588,9 @@ struct FilterSheet: View {
                     }
                 } header: {
                     Text("Filter by")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
                 } footer: {
                     if scope == .people {
                         Text("Only Unread and Needs Reply filters are available in People view.")
@@ -1434,6 +1616,7 @@ struct FilterSheet: View {
             }
             .navigationTitle("Filters")
             .navigationBarTitleDisplayMode(.inline)
+            .listSectionSpacing(8)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
