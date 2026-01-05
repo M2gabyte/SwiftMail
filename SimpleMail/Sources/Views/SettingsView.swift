@@ -66,17 +66,23 @@ struct SettingsView: View {
 
                 // Swipe Actions Section
                 Section {
-                    Picker("Left Swipe", selection: $viewModel.settings.leftSwipeAction) {
-                        ForEach(SwipeAction.allCases, id: \.self) { action in
-                            Label(action.title, systemImage: action.icon)
-                                .tag(action)
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "arrow.left", color: .blue)
+                        Picker("Left Swipe", selection: $viewModel.settings.leftSwipeAction) {
+                            ForEach(SwipeAction.allCases, id: \.self) { action in
+                                Label(action.title, systemImage: action.icon)
+                                    .tag(action)
+                            }
                         }
                     }
 
-                    Picker("Right Swipe", selection: $viewModel.settings.rightSwipeAction) {
-                        ForEach(SwipeAction.allCases, id: \.self) { action in
-                            Label(action.title, systemImage: action.icon)
-                                .tag(action)
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "arrow.right", color: .blue)
+                        Picker("Right Swipe", selection: $viewModel.settings.rightSwipeAction) {
+                            ForEach(SwipeAction.allCases, id: \.self) { action in
+                                Label(action.title, systemImage: action.icon)
+                                    .tag(action)
+                            }
                         }
                     }
                 } header: {
@@ -87,19 +93,28 @@ struct SettingsView: View {
 
                 // Display Section
                 Section {
-                    Toggle("Show Avatars", isOn: $viewModel.settings.showAvatars)
-                        .onChange(of: viewModel.settings.showAvatars) { _, _ in viewModel.saveSettings() }
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "person.circle.fill", color: .cyan)
+                        Toggle("Show Avatars", isOn: $viewModel.settings.showAvatars)
+                    }
+                    .onChange(of: viewModel.settings.showAvatars) { _, _ in viewModel.saveSettings() }
 
-                    Picker("List Density", selection: $viewModel.settings.listDensity) {
-                        Text("Comfortable").tag(ListDensity.comfortable)
-                        Text("Compact").tag(ListDensity.compact)
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "text.alignleft", color: .indigo)
+                        Picker("List Density", selection: $viewModel.settings.listDensity) {
+                            Text("Comfortable").tag(ListDensity.comfortable)
+                            Text("Compact").tag(ListDensity.compact)
+                        }
                     }
                     .onChange(of: viewModel.settings.listDensity) { _, _ in viewModel.saveSettings() }
 
-                    Picker("Theme", selection: $themeManager.currentTheme) {
-                        Text("System").tag(AppTheme.system)
-                        Text("Light").tag(AppTheme.light)
-                        Text("Dark").tag(AppTheme.dark)
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "circle.lefthalf.filled", color: .purple)
+                        Picker("Theme", selection: $themeManager.currentTheme) {
+                            Text("System").tag(AppTheme.system)
+                            Text("Light").tag(AppTheme.light)
+                            Text("Dark").tag(AppTheme.dark)
+                        }
                     }
                 } header: {
                     Text("Display")
@@ -109,23 +124,37 @@ struct SettingsView: View {
 
                 // Notifications Section
                 Section {
-                    Toggle("Enable Notifications", isOn: $viewModel.settings.notificationsEnabled)
-                        .onChange(of: viewModel.settings.notificationsEnabled) { _, newValue in
-                            if newValue {
-                                Task {
-                                    await viewModel.requestNotificationPermission()
-                                }
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "bell.badge.fill", color: .red)
+                        Toggle("Enable Notifications", isOn: $viewModel.settings.notificationsEnabled)
+                    }
+                    .onChange(of: viewModel.settings.notificationsEnabled) { _, newValue in
+                        if newValue {
+                            Task {
+                                await viewModel.requestNotificationPermission()
                             }
-                            viewModel.saveSettings()
                         }
+                        viewModel.saveSettings()
+                    }
 
                     if viewModel.settings.notificationsEnabled {
-                        Toggle("New Emails", isOn: $viewModel.settings.notifyNewEmails)
-                            .onChange(of: viewModel.settings.notifyNewEmails) { _, _ in viewModel.saveSettings() }
-                        Toggle("Needs Reply", isOn: $viewModel.settings.notifyNeedsReply)
-                            .onChange(of: viewModel.settings.notifyNeedsReply) { _, _ in viewModel.saveSettings() }
-                        Toggle("VIP Senders", isOn: $viewModel.settings.notifyVIPSenders)
-                            .onChange(of: viewModel.settings.notifyVIPSenders) { _, _ in viewModel.saveSettings() }
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "envelope.fill", color: .orange)
+                            Toggle("New Emails", isOn: $viewModel.settings.notifyNewEmails)
+                        }
+                        .onChange(of: viewModel.settings.notifyNewEmails) { _, _ in viewModel.saveSettings() }
+
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "arrowshape.turn.up.left.fill", color: .yellow)
+                            Toggle("Needs Reply", isOn: $viewModel.settings.notifyNeedsReply)
+                        }
+                        .onChange(of: viewModel.settings.notifyNeedsReply) { _, _ in viewModel.saveSettings() }
+
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "star.fill", color: .yellow)
+                            Toggle("VIP Senders", isOn: $viewModel.settings.notifyVIPSenders)
+                        }
+                        .onChange(of: viewModel.settings.notifyVIPSenders) { _, _ in viewModel.saveSettings() }
                     }
                 } header: {
                     Text("Notifications")
@@ -135,14 +164,29 @@ struct SettingsView: View {
 
                 // Privacy Section
                 Section {
-                    Toggle("Require Face ID", isOn: $viewModel.settings.biometricLock)
-                        .onChange(of: viewModel.settings.biometricLock) { _, _ in viewModel.saveSettings() }
-                    Toggle("Block Remote Images", isOn: $viewModel.settings.blockRemoteImages)
-                        .onChange(of: viewModel.settings.blockRemoteImages) { _, _ in viewModel.saveSettings() }
-                    Toggle("Block Tracking Pixels", isOn: $viewModel.settings.blockTrackingPixels)
-                        .onChange(of: viewModel.settings.blockTrackingPixels) { _, _ in viewModel.saveSettings() }
-                    Toggle("Strip Link Tracking Parameters", isOn: $viewModel.settings.stripTrackingParameters)
-                        .onChange(of: viewModel.settings.stripTrackingParameters) { _, _ in viewModel.saveSettings() }
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "faceid", color: .blue)
+                        Toggle("Require Face ID", isOn: $viewModel.settings.biometricLock)
+                    }
+                    .onChange(of: viewModel.settings.biometricLock) { _, _ in viewModel.saveSettings() }
+
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "photo.on.rectangle.angled", color: .orange)
+                        Toggle("Block Remote Images", isOn: $viewModel.settings.blockRemoteImages)
+                    }
+                    .onChange(of: viewModel.settings.blockRemoteImages) { _, _ in viewModel.saveSettings() }
+
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "shield.lefthalf.filled", color: .green)
+                        Toggle("Block Tracking Pixels", isOn: $viewModel.settings.blockTrackingPixels)
+                    }
+                    .onChange(of: viewModel.settings.blockTrackingPixels) { _, _ in viewModel.saveSettings() }
+
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "link.badge.plus", color: .mint)
+                        Toggle("Strip Link Tracking Parameters", isOn: $viewModel.settings.stripTrackingParameters)
+                    }
+                    .onChange(of: viewModel.settings.stripTrackingParameters) { _, _ in viewModel.saveSettings() }
                 } header: {
                     Text("Privacy & Security")
                 } footer: {
@@ -151,20 +195,33 @@ struct SettingsView: View {
 
                 // Signature Section
                 Section {
-                    NavigationLink("Email Signature") {
+                    NavigationLink {
                         SignatureEditorView(signature: $viewModel.settings.signature)
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "signature", color: .teal)
+                            Text("Email Signature")
+                        }
                     }
 
-                    Picker("Undo Send", selection: $viewModel.settings.undoSendDelaySeconds) {
-                        Text("5 seconds").tag(5)
-                        Text("10 seconds").tag(10)
-                        Text("20 seconds").tag(20)
-                        Text("30 seconds").tag(30)
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "arrow.uturn.backward.circle.fill", color: .purple)
+                        Picker("Undo Send", selection: $viewModel.settings.undoSendDelaySeconds) {
+                            Text("5 seconds").tag(5)
+                            Text("10 seconds").tag(10)
+                            Text("20 seconds").tag(20)
+                            Text("30 seconds").tag(30)
+                        }
                     }
                     .onChange(of: viewModel.settings.undoSendDelaySeconds) { _, _ in viewModel.saveSettings() }
 
-                    NavigationLink("Scheduled Sends") {
+                    NavigationLink {
                         ScheduledSendsView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "calendar.badge.clock", color: .orange)
+                            Text("Scheduled Sends")
+                        }
                     }
                 } header: {
                     Text("Compose")
@@ -172,22 +229,47 @@ struct SettingsView: View {
 
                 // Smart Features Section
                 Section {
-                    Toggle("Auto-Summarize Long Emails", isOn: $viewModel.settings.autoSummarize)
-                        .onChange(of: viewModel.settings.autoSummarize) { _, _ in viewModel.saveSettings() }
-                    Toggle("Precompute Summaries (Recommended)", isOn: $viewModel.settings.precomputeSummaries)
-                        .onChange(of: viewModel.settings.precomputeSummaries) { _, _ in viewModel.saveSettings() }
-                    Toggle("Aggressive Background Summaries", isOn: $viewModel.settings.backgroundSummaryProcessing)
-                        .onChange(of: viewModel.settings.backgroundSummaryProcessing) { _, _ in viewModel.saveSettings() }
-                        .disabled(!viewModel.settings.precomputeSummaries)
-                    Toggle("Smart Reply Suggestions", isOn: $viewModel.settings.smartReplies)
-                        .onChange(of: viewModel.settings.smartReplies) { _, _ in viewModel.saveSettings() }
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "sparkles", color: .purple)
+                        Toggle("Auto-Summarize Long Emails", isOn: $viewModel.settings.autoSummarize)
+                    }
+                    .onChange(of: viewModel.settings.autoSummarize) { _, _ in viewModel.saveSettings() }
 
-                    NavigationLink("VIP Senders") {
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "bolt.fill", color: .orange)
+                        Toggle("Precompute Summaries (Recommended)", isOn: $viewModel.settings.precomputeSummaries)
+                    }
+                    .onChange(of: viewModel.settings.precomputeSummaries) { _, _ in viewModel.saveSettings() }
+
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "clock.badge.checkmark", color: .indigo)
+                        Toggle("Aggressive Background Summaries", isOn: $viewModel.settings.backgroundSummaryProcessing)
+                    }
+                    .onChange(of: viewModel.settings.backgroundSummaryProcessing) { _, _ in viewModel.saveSettings() }
+                    .disabled(!viewModel.settings.precomputeSummaries)
+
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "reply.all.fill", color: .blue)
+                        Toggle("Smart Reply Suggestions", isOn: $viewModel.settings.smartReplies)
+                    }
+                    .onChange(of: viewModel.settings.smartReplies) { _, _ in viewModel.saveSettings() }
+
+                    NavigationLink {
                         VIPSendersView(accountEmail: viewModel.currentAccount?.email)
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "star.fill", color: .yellow)
+                            Text("VIP Senders")
+                        }
                     }
 
-                    NavigationLink("Blocked Senders") {
+                    NavigationLink {
                         BlockedSendersView(accountEmail: viewModel.currentAccount?.email)
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "hand.raised.fill", color: .red)
+                            Text("Blocked Senders")
+                        }
                     }
                 } header: {
                     Text("Smart Features")
@@ -234,16 +316,31 @@ struct SettingsView: View {
 
                 // Gmail Settings Sync Section
                 Section {
-                    NavigationLink("Vacation Responder") {
+                    NavigationLink {
                         VacationResponderView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "palm.tree.fill", color: .orange)
+                            Text("Vacation Responder")
+                        }
                     }
 
-                    NavigationLink("Labels") {
+                    NavigationLink {
                         LabelsManagementView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "tag.fill", color: .green)
+                            Text("Labels")
+                        }
                     }
 
-                    NavigationLink("Filters") {
+                    NavigationLink {
                         FiltersManagementView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "line.3.horizontal.decrease.circle.fill", color: .blue)
+                            Text("Filters")
+                        }
                     }
 
                     Button(action: {
@@ -251,7 +348,8 @@ struct SettingsView: View {
                             await viewModel.syncGmailSettings()
                         }
                     }) {
-                        HStack {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "arrow.triangle.2.circlepath", color: .cyan)
                             Text("Sync Gmail Settings")
                             Spacer()
                             if viewModel.isSyncingSettings {
@@ -275,7 +373,8 @@ struct SettingsView: View {
                             await viewModel.clearLocalCache()
                         }
                     }) {
-                        HStack {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "trash.fill", color: .red)
                             Text("Clear Local Cache")
                             Spacer()
                             Text(viewModel.cacheSize)
@@ -283,8 +382,13 @@ struct SettingsView: View {
                         }
                     }
 
-                    NavigationLink("Snoozed Emails") {
+                    NavigationLink {
                         SnoozedEmailsView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "clock.fill", color: .orange)
+                            Text("Snoozed Emails")
+                        }
                     }
                 } header: {
                     Text("Data")
@@ -294,12 +398,18 @@ struct SettingsView: View {
 
                 // Advanced Section
                 Section {
-                    Toggle("Conversation Threading", isOn: $viewModel.settings.conversationThreading)
-                        .onChange(of: viewModel.settings.conversationThreading) { _, _ in viewModel.saveSettings() }
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "rectangle.stack.fill", color: .indigo)
+                        Toggle("Conversation Threading", isOn: $viewModel.settings.conversationThreading)
+                    }
+                    .onChange(of: viewModel.settings.conversationThreading) { _, _ in viewModel.saveSettings() }
 
-                    Picker("Preview Density", selection: $viewModel.settings.listDensity) {
-                        Text("Comfortable").tag(ListDensity.comfortable)
-                        Text("Compact").tag(ListDensity.compact)
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "line.3.horizontal", color: .blue)
+                        Picker("Preview Density", selection: $viewModel.settings.listDensity) {
+                            Text("Comfortable").tag(ListDensity.comfortable)
+                            Text("Compact").tag(ListDensity.compact)
+                        }
                     }
                     .onChange(of: viewModel.settings.listDensity) { _, _ in viewModel.saveSettings() }
                 } header: {
@@ -310,7 +420,8 @@ struct SettingsView: View {
 
                 // About Section
                 Section {
-                    HStack {
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "info.circle.fill", color: .gray)
                         Text("Version")
                         Spacer()
                         Text("1.0.0")
@@ -318,13 +429,22 @@ struct SettingsView: View {
                     }
 
                     if let privacyURL = URL(string: "https://simplemail.app/privacy") {
-                        Link("Privacy Policy", destination: privacyURL)
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "hand.raised.fill", color: .green)
+                            Link("Privacy Policy", destination: privacyURL)
+                        }
                     }
                     if let termsURL = URL(string: "https://simplemail.app/terms") {
-                        Link("Terms of Service", destination: termsURL)
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "doc.text.fill", color: .blue)
+                            Link("Terms of Service", destination: termsURL)
+                        }
                     }
                     if let feedbackURL = URL(string: "mailto:support@simplemail.app") {
-                        Link("Send Feedback", destination: feedbackURL)
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "envelope.fill", color: .orange)
+                            Link("Send Feedback", destination: feedbackURL)
+                        }
                     }
                 } header: {
                     Text("About")
@@ -337,7 +457,10 @@ struct SettingsView: View {
                     }
                 }
             }
+            .listStyle(.insetGrouped)
             .listSectionSpacing(12)
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Settings")
             .alert("Sign Out?", isPresented: $showingSignOutAlert) {
                 Button("Cancel", role: .cancel) {}
@@ -369,6 +492,22 @@ struct SettingsView: View {
             Text("\(value)")
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct SettingsIcon: View {
+    let systemName: String
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(color.opacity(0.2))
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color)
+        }
+        .frame(width: 28, height: 28)
     }
 }
 

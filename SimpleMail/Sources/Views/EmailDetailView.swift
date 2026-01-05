@@ -716,6 +716,52 @@ struct EmailBodyWebView: UIViewRepresentable {
                     );
                     window.webkit.messageHandlers.heightHandler.postMessage(height);
                 }
+                function parseRGB(value) {
+                    var match = value.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/i);
+                    if (!match) { return null; }
+                    return { r: parseInt(match[1], 10), g: parseInt(match[2], 10), b: parseInt(match[3], 10) };
+                }
+                function luminance(rgb) {
+                    var a = [rgb.r, rgb.g, rgb.b].map(function(v) {
+                        v /= 255;
+                        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+                    });
+                    return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+                }
+                function contrastRatio(l1, l2) {
+                    var light = Math.max(l1, l2);
+                    var dark = Math.min(l1, l2);
+                    return (light + 0.05) / (dark + 0.05);
+                }
+                function getBackgroundRGB(el) {
+                    var node = el;
+                    while (node && node !== document.documentElement) {
+                        var bg = getComputedStyle(node).backgroundColor;
+                        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+                            return parseRGB(bg);
+                        }
+                        node = node.parentElement;
+                    }
+                    return parseRGB(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255 };
+                }
+                // Improve readability by clamping low-contrast text colors.
+                // This preserves brand styling unless the contrast ratio drops below 3:1.
+                function adjustLowContrastText() {
+                    var elements = document.querySelectorAll('p, span, td, div, li, a, h1, h2, h3, h4, h5, h6');
+                    elements.forEach(function(el) {
+                        if (!el.textContent || el.textContent.trim().length === 0) { return; }
+                        var style = getComputedStyle(el);
+                        var color = parseRGB(style.color);
+                        if (!color) { return; }
+                        var bg = getBackgroundRGB(el);
+                        var ratio = contrastRatio(luminance(color), luminance(bg));
+                        // 3.0 is a pragmatic threshold for small body text in emails.
+                        if (ratio < 3.0) {
+                            var bgLum = luminance(bg);
+                            el.style.color = bgLum > 0.6 ? '#222222' : '#e6e6e6';
+                        }
+                    });
+                }
                 function setupImageListeners() {
                     document.querySelectorAll('img').forEach(function(img) {
                         if (img.complete) {
@@ -727,9 +773,11 @@ struct EmailBodyWebView: UIViewRepresentable {
                     });
                 }
                 // Post height after load and after images load
+                // Run on load and after DOM mutations to handle dynamic email content.
                 window.onload = function() {
                     collapseEmptySpacers();
                     setupImageListeners();
+                    adjustLowContrastText();
                     postHeight();
                     // Recheck after delays for dynamic content and slow-loading images
                     setTimeout(postHeight, 100);
@@ -742,6 +790,7 @@ struct EmailBodyWebView: UIViewRepresentable {
                 document.addEventListener('DOMContentLoaded', function() {
                     collapseEmptySpacers();
                     setupImageListeners();
+                    adjustLowContrastText();
                     postHeight();
                 });
                 if (window.ResizeObserver) {
@@ -749,7 +798,10 @@ struct EmailBodyWebView: UIViewRepresentable {
                     ro.observe(document.body);
                 }
                 if (window.MutationObserver) {
-                    var mo = new MutationObserver(function() { scheduleHeight(); });
+                    var mo = new MutationObserver(function() {
+                        adjustLowContrastText();
+                        scheduleHeight();
+                    });
                     mo.observe(document.body, { childList: true, subtree: true, attributes: true });
                 }
             </script>

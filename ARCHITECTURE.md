@@ -520,6 +520,7 @@ ContentView
 - HTMLSanitizer strips scripts/iframes/handlers/meta refresh
 - Remote images blocked via `data-blocked-src` and CSS
 - WebView height updates via JS + Resize/Mutation observers
+- **Readability clamp:** JS detects low-contrast text in email HTML and bumps it to a readable color (>= ~3:1 contrast) without overriding normal styling. Runs on load and DOM changes.
 
 **ComposeView:**
 - FlowLayout recipient chips + CC/BCC toggle
