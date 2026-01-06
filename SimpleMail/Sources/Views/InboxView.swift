@@ -1043,9 +1043,9 @@ private enum MailTypography {
     static let sender = Font.subheadline.weight(.semibold)
     static let senderCompact = Font.subheadline.weight(.semibold)
     static let senderContinuation = Font.footnote.weight(.regular)
-    static let subject = Font.subheadline.weight(.medium)
-    static let subjectCompact = Font.footnote.weight(.medium)
-    static let snippet = Font.caption
+    static let subject = Font.subheadline.weight(.regular)
+    static let subjectCompact = Font.footnote.weight(.regular)
+    static let snippet = Font.footnote
     static let meta = Font.caption2
 }
 
@@ -1301,8 +1301,7 @@ struct EmailRow: View {
 
         var lastEnd = text.startIndex
         var highlight = AttributeContainer()
-        highlight.foregroundColor = .yellow
-        highlight.font = font.bold()
+        highlight.backgroundColor = Color(.systemYellow).opacity(0.35)
 
         for range in matches where range.lowerBound >= lastEnd {
             if let start = AttributedString.Index(range.lowerBound, within: attributed),
