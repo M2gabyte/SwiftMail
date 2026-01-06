@@ -503,9 +503,11 @@ struct InboxView: View {
             }
         } else if isSearchMode {
             ToolbarItem(placement: .topBarTrailing) {
-                Text("Select")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.primary.opacity(0.75))
+                Button("Select") {
+                    startSelectionMode()
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.primary.opacity(0.75))
             }
         } else {
             ToolbarItem(placement: .topBarLeading) {
@@ -662,6 +664,13 @@ struct InboxView: View {
             editMode = .active
         }
         selectedThreadIds.insert(threadId)
+    }
+
+    private func startSelectionMode() {
+        if !isSelectionMode {
+            isSelectionMode = true
+            editMode = .active
+        }
     }
 
     private func exitSelectionMode() {
