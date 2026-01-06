@@ -382,40 +382,38 @@ struct ComposeView: View {
 
         ToolbarItem(placement: .primaryAction) {
             Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
+                Image(systemName: "paperplane.circle.fill")
                     .font(.title2)
                     .foregroundStyle(viewModel.canSend ? Color.accentColor : .gray)
             }
             .disabled(!viewModel.canSend)
             .accessibilityIdentifier("sendButton")
-            .contextMenu {
-                Button(action: send) {
-                    Label("Send Now", systemImage: "paperplane")
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button(action: { showingAttachmentOptions = true }) {
+                    Label("Add Attachment", systemImage: "paperclip")
                 }
-                .disabled(!viewModel.canSend)
 
                 Button(action: { showingScheduleSheet = true }) {
                     Label("Schedule Send", systemImage: "clock")
                 }
                 .disabled(!viewModel.canSend)
-            }
-        }
 
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
+                Divider()
+
                 Button(action: { showingAIDraft = true }) {
                     Label("AI Draft", systemImage: "sparkles")
                 }
-                .accessibilityLabel("AI Draft")
 
                 Button(action: { showingTemplates = true }) {
-                    Label("Templates", systemImage: "doc.on.doc")
+                    Label("Templates", systemImage: "doc.text")
                 }
-                .accessibilityLabel("Templates")
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .frame(width: 32, height: 32)
-                    .accessibilityLabel("More compose actions")
+                    .accessibilityLabel("More options")
             }
         }
     }
