@@ -12,6 +12,9 @@
 		A1000002 /* Email.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* Email.swift */; };
 		A1000003 /* Briefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Briefing.swift */; };
 		A1000060 /* InboxTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000060 /* InboxTab.swift */; };
+		A1000061 /* PinnedTabOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000061 /* PinnedTabOption.swift */; };
+		A1000062 /* PrimaryRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* PrimaryRule.swift */; };
+		A1000063 /* InboxPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000063 /* InboxPreferences.swift */; };
 		A1000004 /* BriefingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000004 /* BriefingEngine.swift */; };
 		A1000005 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000005 /* InboxView.swift */; };
 		A1000007 /* EmailDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000007 /* EmailDetailView.swift */; };
@@ -76,6 +79,9 @@
 		B1000002 /* Email.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Email.swift; sourceTree = "<group>"; };
 		B1000003 /* Briefing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Briefing.swift; sourceTree = "<group>"; };
 		B1000060 /* InboxTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxTab.swift; sourceTree = "<group>"; };
+		B1000061 /* PinnedTabOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabOption.swift; sourceTree = "<group>"; };
+		B1000062 /* PrimaryRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryRule.swift; sourceTree = "<group>"; };
+		B1000063 /* InboxPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxPreferences.swift; sourceTree = "<group>"; };
 		B1000004 /* BriefingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingEngine.swift; sourceTree = "<group>"; };
 		B1000005 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
 		B1000007 /* EmailDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailDetailView.swift; sourceTree = "<group>"; };
@@ -192,6 +198,8 @@
 				B1000003 /* Briefing.swift */,
 				B1000040 /* SearchFilter.swift */,
 				B1000060 /* InboxTab.swift */,
+				B1000061 /* PinnedTabOption.swift */,
+				B1000062 /* PrimaryRule.swift */,
 				B1000049 /* QueuedEmail.swift */,
 			);
 			path = Models;
@@ -274,6 +282,7 @@
 				B1000031 /* Color+Hex.swift */,
 				B1000033 /* EmailFilters.swift */,
 				B1000034 /* AccountDefaults.swift */,
+				B1000063 /* InboxPreferences.swift */,
 				B1000036 /* NetworkRetry.swift */,
 				B1000099 /* EmailPreviewParser.swift */,
 				B1000050 /* EmailPreviewNormalizer.swift */,
@@ -417,6 +426,8 @@
 				A1000002 /* Email.swift in Sources */,
 				A1000003 /* Briefing.swift in Sources */,
 				A1000060 /* InboxTab.swift in Sources */,
+				A1000061 /* PinnedTabOption.swift in Sources */,
+				A1000062 /* PrimaryRule.swift in Sources */,
 				A1000004 /* BriefingEngine.swift in Sources */,
 				A1000005 /* InboxView.swift in Sources */,
 				A1000042 /* LocationSheetView.swift in Sources */,
@@ -443,6 +454,7 @@
 				A1000031 /* Color+Hex.swift in Sources */,
 				A1000033 /* EmailFilters.swift in Sources */,
 				A1000034 /* AccountDefaults.swift in Sources */,
+				A1000063 /* InboxPreferences.swift in Sources */,
 				A1000099 /* EmailPreviewParser.swift in Sources */,
 				A1000035 /* ScheduledSendManager.swift in Sources */,
 				A1000036 /* NetworkRetry.swift in Sources */,
