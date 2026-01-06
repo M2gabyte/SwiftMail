@@ -30,7 +30,6 @@ struct InboxView: View {
     @State private var showingBulkSnooze = false
     @State private var showingMoveDialog = false
     @State private var showingLocationSheet = false
-    @State private var scope: InboxScope = .all
     @State private var scrollOffset: CGFloat = 0
     @State private var restoredComposeMode: ComposeMode?
     @State private var showingFilterSheet = false
@@ -205,12 +204,6 @@ struct InboxView: View {
                 }
             }
         })
-        view = AnyView(view.onChange(of: viewModel.scope) { _, newValue in
-            if let active = viewModel.activeFilter,
-               !availableFilters(for: newValue).contains(active) {
-                viewModel.activeFilter = nil
-            }
-        })
         view = AnyView(view.onChange(of: viewModel.currentMailbox) { _, _ in
             exitSelectionMode()
         })
@@ -363,8 +356,11 @@ struct InboxView: View {
         List {
             if !isSearchMode {
                 InboxHeaderBlock(
-                    scope: scopeBinding,
-                    isCollapsed: isHeaderCollapsed
+                    currentTab: currentTabBinding,
+                    activeFilter: $viewModel.activeFilter,
+                    filterCounts: viewModel.filterCounts,
+                    isCollapsed: isHeaderCollapsed,
+                    onOpenFilters: { showingFilterSheet = true }
                 )
                 .background(
                     GeometryReader { proxy in
@@ -735,20 +731,13 @@ struct InboxView: View {
         exitSelectionMode()
     }
 
-    private var scopeBinding: Binding<InboxScope> {
+    private var currentTabBinding: Binding<InboxTab> {
         Binding(
-            get: { viewModel.scope },
+            get: { viewModel.currentTab },
             set: { newValue in
-                viewModel.scope = newValue
+                viewModel.currentTab = newValue
             }
         )
-    }
-
-    private func availableFilters(for scope: InboxScope) -> [InboxFilter] {
-        if scope == .people {
-            return [.unread, .needsReply]
-        }
-        return InboxFilter.allCases
     }
 
     @ViewBuilder
@@ -933,8 +922,11 @@ struct InboxView: View {
         if let filter = viewModel.activeFilter {
             return "No \(filter.rawValue)"
         }
-        if viewModel.scope == .people {
-            return "No People"
+        if viewModel.currentTab == .primary {
+            return "No Primary"
+        }
+        if viewModel.currentTab == .other {
+            return "No Other Mail"
         }
         return "Inbox Zero"
     }
@@ -943,8 +935,11 @@ struct InboxView: View {
         if let _ = viewModel.activeFilter {
             return "Try clearing your filter."
         }
-        if viewModel.scope == .people {
-            return "No person-to-person emails yet."
+        if viewModel.currentTab == .primary {
+            return "No primary emails yet."
+        }
+        if viewModel.currentTab == .other {
+            return "No other emails yet."
         }
         return "You're all caught up."
     }
@@ -963,19 +958,26 @@ struct InboxView: View {
 // MARK: - Inbox Header Block (Tight Filter Chips)
 
 struct InboxHeaderBlock: View {
-    @Binding var scope: InboxScope
+    @Binding var currentTab: InboxTab
+    @Binding var activeFilter: InboxFilter?
+    let filterCounts: [InboxFilter: Int]
     let isCollapsed: Bool
 
     var body: some View {
+        if viewModel.currentTab == .other {
+            return "tray.2"
+        }
         VStack(alignment: .leading, spacing: 6) {
-            // All/People segmented control - always visible
-            Picker("", selection: $scope) {
-                Text(InboxScope.all.rawValue).tag(InboxScope.all)
-                Text(InboxScope.people.rawValue).tag(InboxScope.people)
+            // All/Primary/Other segmented control - always visible
+            Picker("", selection: $currentTab) {
+                Text(InboxTab.all.rawValue).tag(InboxTab.all)
+                Text(InboxTab.primary.rawValue).tag(InboxTab.primary)
+                Text(InboxTab.other.rawValue).tag(InboxTab.other)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.top, 0)
+    let onOpenFilters: () -> Void
             .padding(.bottom, 0)
         }
         .padding(.top, 0)
