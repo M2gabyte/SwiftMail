@@ -86,8 +86,27 @@ final class InboxViewModel {
 
     var showingUndoToast = false
     var undoToastMessage = ""
+    var undoRemainingSeconds = 0
     private var pendingArchive: PendingArchive?
     private var undoTask: Task<Void, Never>?
+    private var undoCountdownTask: Task<Void, Never>?
+
+    private struct PendingBulkItem {
+        let email: Email
+        let index: Int
+    }
+
+    private enum PendingBulkActionType {
+        case archive
+        case trash
+    }
+
+    private struct PendingBulkAction {
+        let items: [PendingBulkItem]
+        let action: PendingBulkActionType
+    }
+
+    private var pendingBulkAction: PendingBulkAction?
 
     struct PendingArchive {
         let email: Email
@@ -671,6 +690,10 @@ final class InboxViewModel {
             undoTask?.cancel()
             finalizeArchive(pending.email)
         }
+        if let pendingBulkAction {
+            undoTask?.cancel()
+            finalizeBulkAction(pendingBulkAction)
+        }
 
         // Find the email's current index before removing
         guard let index = emails.firstIndex(where: { $0.id == email.id }) else { return }
@@ -691,10 +714,13 @@ final class InboxViewModel {
             showingUndoToast = true
         }
 
-        // Start 4-second countdown to finalize
+        let delaySeconds = undoDelaySeconds()
+        startUndoCountdown(seconds: delaySeconds)
+
+        // Start countdown to finalize
         let emailId = email.id
         undoTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(delaySeconds))
 
             // Check if task was cancelled (user tapped undo)
             guard !Task.isCancelled else { return }
@@ -709,29 +735,25 @@ final class InboxViewModel {
 
     func undoArchive() {
         // Cancel the pending archive task
-        undoTask?.cancel()
-        undoTask = nil
+        clearUndoState()
 
-        // Restore the email at its original position
-        guard let pending = pendingArchive else { return }
-
-        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
-            // Insert at original index, clamped to valid range
-            let insertIndex = min(pending.index, emails.count)
-            emails.insert(pending.email, at: insertIndex)
-            showingUndoToast = false
+        if let pendingBulkAction {
+            restoreBulkAction(pendingBulkAction)
+        } else if let pendingArchive {
+            animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+                let insertIndex = min(pending.index, emails.count)
+                emails.insert(pending.email, at: insertIndex)
+                showingUndoToast = false
+            }
+            self.pendingArchive = nil
         }
 
-        pendingArchive = nil
         updateFilterCounts()
         HapticFeedback.light()
     }
 
     private func finalizeArchive(_ email: Email) {
-        // Hide toast
-        animate(.easeOut(duration: 0.2)) {
-            showingUndoToast = false
-        }
+        clearUndoState()
         pendingArchive = nil
 
         // Call Gmail API to actually archive
@@ -1043,15 +1065,11 @@ final class InboxViewModel {
     // MARK: - Bulk Actions
 
     func bulkArchive(threadIds: Set<String>) {
-        performBulkAction(threadIds: threadIds, action: "Archive") { email, account in
-            try await GmailService.shared.archive(messageId: email.id, account: account)
-        }
+        performUndoableBulkAction(threadIds: threadIds, action: .archive)
     }
 
     func bulkTrash(threadIds: Set<String>) {
-        performBulkAction(threadIds: threadIds, action: "Trash") { email, account in
-            try await GmailService.shared.trash(messageId: email.id, account: account)
-        }
+        performUndoableBulkAction(threadIds: threadIds, action: .trash)
     }
 
     func bulkMarkRead(threadIds: Set<String>) {
@@ -1140,6 +1158,126 @@ final class InboxViewModel {
             // Clear toast after 3 seconds
             try? await Task.sleep(for: .seconds(3))
             bulkToastMessage = nil
+        }
+    }
+
+    private func performUndoableBulkAction(threadIds: Set<String>, action: PendingBulkActionType) {
+        let pendingItems = emails.enumerated().compactMap { index, email in
+            threadIds.contains(email.threadId) ? PendingBulkItem(email: email, index: index) : nil
+        }
+        guard !pendingItems.isEmpty else { return }
+
+        if let pending = pendingArchive {
+            undoTask?.cancel()
+            finalizeArchive(pending.email)
+        }
+        if let pendingBulkAction {
+            undoTask?.cancel()
+            finalizeBulkAction(pendingBulkAction)
+        }
+
+        animate {
+            emails.removeAll { threadIds.contains($0.threadId) }
+        }
+        updateFilterCounts()
+
+        pendingBulkAction = PendingBulkAction(items: pendingItems, action: action)
+        undoToastMessage = action == .archive ? "Archived" : "Moved to Trash"
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showingUndoToast = true
+        }
+
+        let delaySeconds = undoDelaySeconds()
+        startUndoCountdown(seconds: delaySeconds)
+
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delaySeconds))
+            guard !Task.isCancelled else { return }
+            guard let self, let pending = self.pendingBulkAction else { return }
+            self.finalizeBulkAction(pending)
+        }
+    }
+
+    private func restoreBulkAction(_ pending: PendingBulkAction) {
+        let sorted = pending.items.sorted { $0.index < $1.index }
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+            for item in sorted {
+                let insertIndex = min(item.index, emails.count)
+                emails.insert(item.email, at: insertIndex)
+            }
+            showingUndoToast = false
+        }
+        pendingBulkAction = nil
+    }
+
+    private func finalizeBulkAction(_ pending: PendingBulkAction) {
+        clearUndoState()
+        pendingBulkAction = nil
+
+        Task {
+            var failedCount = 0
+
+            for item in pending.items {
+                guard let account = accountForEmail(item.email) else {
+                    failedCount += 1
+                    continue
+                }
+
+                do {
+                    switch pending.action {
+                    case .archive:
+                        try await GmailService.shared.archive(messageId: item.email.id, account: account)
+                    case .trash:
+                        try await GmailService.shared.trash(messageId: item.email.id, account: account)
+                    }
+                } catch {
+                    logger.error("Bulk action failed for \(item.email.id): \(error.localizedDescription)")
+                    failedCount += 1
+                }
+            }
+
+            if failedCount > 0 {
+                bulkToastMessage = "Action failed for \(failedCount) email(s)"
+                bulkToastIsError = true
+                bulkToastShowsRetry = true
+                try? await Task.sleep(for: .seconds(3))
+                bulkToastMessage = nil
+            }
+        }
+    }
+
+    private func undoDelaySeconds() -> Int {
+        let accountEmail = AuthService.shared.currentAccount?.email
+        if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
+           let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            return settings.undoSendDelaySeconds
+        }
+        return 5
+    }
+
+    private func startUndoCountdown(seconds: Int) {
+        undoCountdownTask?.cancel()
+        undoRemainingSeconds = seconds
+        guard seconds > 0 else { return }
+        undoCountdownTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for remaining in stride(from: seconds, through: 1, by: -1) {
+                self.undoRemainingSeconds = remaining
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            self.undoRemainingSeconds = 0
+        }
+    }
+
+    private func clearUndoState() {
+        undoTask?.cancel()
+        undoTask = nil
+        undoCountdownTask?.cancel()
+        undoCountdownTask = nil
+        undoRemainingSeconds = 0
+        animate(.easeOut(duration: 0.2)) {
+            showingUndoToast = false
         }
     }
 

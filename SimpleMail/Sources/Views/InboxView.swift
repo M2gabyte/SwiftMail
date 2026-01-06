@@ -368,6 +368,12 @@ struct InboxView: View {
                 }
             }
             .overlay(alignment: .bottom) {
+                undoActionToastContent
+                    .padding(.bottom, 62)
+                    .zIndex(28)
+                    .animation(.easeInOut(duration: 0.25), value: viewModel.showingUndoToast)
+            }
+            .overlay(alignment: .bottom) {
                 undoSendToastContent
                     .padding(.bottom, 62)
                     .zIndex(30)
@@ -668,6 +674,19 @@ struct InboxView: View {
                 onRetry: { viewModel.retryPendingMutations() }
             )
             .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
+    private var undoActionToastContent: some View {
+        if viewModel.showingUndoToast {
+            UndoToast(
+                message: viewModel.undoToastMessage,
+                remainingSeconds: viewModel.undoRemainingSeconds,
+                onUndo: { viewModel.undoArchive() }
+            )
             .padding(.bottom, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
@@ -1506,6 +1525,7 @@ enum Mailbox: String, CaseIterable {
 
 struct UndoToast: View {
     let message: String
+    let remainingSeconds: Int
     let onUndo: () -> Void
 
     var body: some View {
@@ -1514,10 +1534,24 @@ struct UndoToast: View {
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.8))
 
-            Text(message)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(.white)
+            HStack(spacing: 6) {
+                Text(message)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.white)
+
+                if remainingSeconds > 0 {
+                    Text("·")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.5))
+
+                    Text("\(remainingSeconds)s")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .monospacedDigit()
+                }
+            }
 
             Spacer()
 
