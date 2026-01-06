@@ -53,11 +53,12 @@ struct BottomCommandSurface: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFilterActive)
         }
         .buttonStyle(.plain)
-        .frame(width: 40, height: 40)
+        .frame(width: 44, height: 44)
         .contentShape(Rectangle())
         .opacity(searchMode == .editing ? 0 : 1)
         .allowsHitTesting(searchMode != .editing)
         .accessibilityLabel(filterAccessibilityLabel)
+        .accessibilityHint(isFilterActive ? "Double tap to change or clear filter" : "Double tap to add a filter")
     }
 
     private var rightButton: some View {
@@ -74,9 +75,10 @@ struct BottomCommandSurface: View {
                     )
             }
             .buttonStyle(.plain)
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
             .accessibilityLabel("Compose new email")
+            .accessibilityHint("Double tap to write a new message")
             .opacity(searchMode == .editing ? 0 : 1)
             .allowsHitTesting(searchMode != .editing)
 
@@ -87,9 +89,10 @@ struct BottomCommandSurface: View {
                     .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
             .accessibilityLabel("Cancel search")
+            .accessibilityHint("Double tap to close search")
             .opacity(searchMode == .editing ? 1 : 0)
             .allowsHitTesting(searchMode == .editing)
         }

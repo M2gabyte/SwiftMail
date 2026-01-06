@@ -537,6 +537,8 @@ struct InboxView: View {
                 Button { showingSettings = true } label: {
                     Image(systemName: "gearshape")
                 }
+                .accessibilityLabel("Settings")
+                .accessibilityHint("Double tap to open settings")
             }
             // Bottom command surface is overlaid on the list
         }
@@ -1020,16 +1022,17 @@ struct SectionHeaderRow: View {
         VStack(spacing: 0) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.primary.opacity(0.7))
+                .foregroundStyle(Color.primary.opacity(0.8))
                 .textCase(nil)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
                 .padding(.top, isFirst ? 4 : 10)
                 .padding(.bottom, 4)
+                .accessibilityAddTraits(.isHeader)
 
             // Inset separator with softer opacity
             Rectangle()
-                .fill(Color(.separator).opacity(0.2))
+                .fill(Color(.separator).opacity(0.25))
                 .frame(height: 1.0 / displayScale)
                 .padding(.leading, 16)
         }
@@ -1139,6 +1142,11 @@ struct FilterPill: View {
             )
         }
         .buttonStyle(.plain)
+        .frame(minHeight: 44)
+        .contentShape(Capsule())
+        .accessibilityLabel("\(filter.rawValue) filter\(count > 0 ? ", \(count) emails" : "")")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityHint(isActive ? "Double tap to clear filter" : "Double tap to apply filter")
         .animation(.easeInOut(duration: 0.15), value: isActive)
     }
 }
