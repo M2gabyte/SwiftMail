@@ -181,16 +181,16 @@ actor SummaryQueue {
                 await saveStats(stats)
             return false
         }
-        if remainingAllowance() <= 0 {
+        if await remainingAllowance() <= 0 {
             var stats = loadStats()
             stats.skippedThrottle += 1
-                await saveStats(stats)
+            await saveStats(stats)
             return false
         }
         return true
     }
 
-    private func remainingAllowance() -> Int {
+    private func remainingAllowance() async -> Int {
         let now = Date().timeIntervalSince1970
         let windowStart = now - 3600
         let timestamps = loadTimestamps().filter { $0 >= windowStart }
