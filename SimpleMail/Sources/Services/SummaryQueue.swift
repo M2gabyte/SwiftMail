@@ -4,13 +4,42 @@ import UIKit
 actor SummaryQueue {
     static let shared = SummaryQueue()
 
-    private struct Job: Sendable {
+    struct Stats: Codable, Sendable {
+        var enqueued: Int = 0
+        var processed: Int = 0
+        var skippedCached: Int = 0
+        var skippedNoAccount: Int = 0
+        var skippedShort: Int = 0
+        var skippedBattery: Int = 0
+        var skippedThrottle: Int = 0
+        var failed: Int = 0
+        var lastRun: TimeInterval?
+    }
+
+    struct Candidate: Sendable {
         let emailId: String
+        let threadId: String
         let accountEmail: String
         let subject: String
         let from: String
         let snippet: String
         let date: Date
+        let isUnread: Bool
+        let isStarred: Bool
+        let listUnsubscribe: String?
+    }
+
+    private struct Job: Sendable {
+        let emailId: String
+        let threadId: String
+        let accountEmail: String
+        let subject: String
+        let from: String
+        let snippet: String
+        let date: Date
+        let isUnread: Bool
+        let isStarred: Bool
+        let listUnsubscribe: String?
     }
 
     private var queue: [Job] = []
@@ -18,34 +47,39 @@ actor SummaryQueue {
     private var isProcessing = false
     private let maxPerHour = 10
     private let timestampsKey = "summaryQueueTimestamps"
+    private let statsKey = "summaryQueueStats"
 
     private init() {}
 
-    func enqueueCandidates(_ emails: [Email]) async {
-        guard !emails.isEmpty else { return }
+    func enqueueCandidates(_ candidates: [Candidate]) async {
+        guard !candidates.isEmpty else { return }
 
-        for email in prioritized(emails) {
-            if queuedIds.contains(email.id) {
+        var stats = loadStats()
+        for candidate in prioritized(candidates) {
+            if queuedIds.contains(candidate.emailId) {
                 continue
             }
-            if SummaryCache.shared.summary(for: email.id, accountEmail: email.accountEmail) != nil {
+            if SummaryCache.shared.summary(for: candidate.emailId, accountEmail: candidate.accountEmail) != nil {
+                stats.skippedCached += 1
                 continue
             }
-            // Skip if no account email (shouldn't happen but be defensive)
-            guard let accountEmail = email.accountEmail else {
-                continue
-            }
-            queuedIds.insert(email.id)
+            queuedIds.insert(candidate.emailId)
             let job = Job(
-                emailId: email.id,
-                accountEmail: accountEmail,
-                subject: email.subject,
-                from: email.from,
-                snippet: email.snippet,
-                date: email.date
+                emailId: candidate.emailId,
+                threadId: candidate.threadId,
+                accountEmail: candidate.accountEmail,
+                subject: candidate.subject,
+                from: candidate.from,
+                snippet: candidate.snippet,
+                date: candidate.date,
+                isUnread: candidate.isUnread,
+                isStarred: candidate.isStarred,
+                listUnsubscribe: candidate.listUnsubscribe
             )
             queue.append(job)
+            stats.enqueued += 1
         }
+        await saveStats(stats)
 
         await processIfNeeded()
     }
@@ -67,23 +101,44 @@ actor SummaryQueue {
                 continue
             }
 
+            let body = await resolveBody(for: job)
+            guard let body else {
+                var stats = loadStats()
+                stats.failed += 1
+                await saveStats(stats)
+                continue
+            }
+
             // Use the job data directly instead of fetching
-            // Note: Using snippet as a fallback - ideally we'd fetch the full body
-            // but this prevents SwiftData Sendable issues
+            // Note: Use full body when available; falls back to snippet if body is empty
+            let plain = SummaryService.plainText(body)
+            if plain.count < SummaryService.minLength {
+                var stats = loadStats()
+                stats.skippedShort += 1
+                await saveStats(stats)
+                continue
+            }
+
             let summary = await SummaryService.summarizeIfNeeded(
                 messageId: job.emailId,
-                body: job.snippet,
+                body: body,
                 accountEmail: job.accountEmail
             )
 
+            var stats = loadStats()
             if summary != nil {
-                recordRun()
+                stats.processed += 1
+                stats.lastRun = Date().timeIntervalSince1970
+                await recordRun()
+            } else {
+                stats.failed += 1
             }
+            await saveStats(stats)
         }
     }
 
-    private func prioritized(_ emails: [Email]) -> [Email] {
-        emails.sorted { lhs, rhs in
+    private func prioritized(_ candidates: [Candidate]) -> [Candidate] {
+        candidates.sorted { lhs, rhs in
             let lhsScore = priorityScore(lhs)
             let rhsScore = priorityScore(rhs)
             if lhsScore == rhsScore {
@@ -93,7 +148,7 @@ actor SummaryQueue {
         }
     }
 
-    private func priorityScore(_ email: Email) -> Int {
+    private func priorityScore(_ email: Candidate) -> Int {
         var score = 0
         if email.isUnread { score += 2 }
         if email.isStarred { score += 1 }
@@ -111,6 +166,9 @@ actor SummaryQueue {
 
     private func canRunNow() async -> Bool {
         if ProcessInfo.processInfo.isLowPowerModeEnabled {
+            var stats = loadStats()
+            stats.skippedBattery += 1
+                await saveStats(stats)
             return false
         }
         let batteryLevel: Float = await MainActor.run(resultType: Float.self, body: {
@@ -118,31 +176,102 @@ actor SummaryQueue {
             return UIDevice.current.batteryLevel
         })
         if batteryLevel >= 0 && batteryLevel < 0.2 {
+            var stats = loadStats()
+            stats.skippedBattery += 1
+                await saveStats(stats)
             return false
         }
-        return remainingAllowance() > 0
+        if remainingAllowance() <= 0 {
+            var stats = loadStats()
+            stats.skippedThrottle += 1
+                await saveStats(stats)
+            return false
+        }
+        return true
     }
 
     private func remainingAllowance() -> Int {
         let now = Date().timeIntervalSince1970
         let windowStart = now - 3600
         let timestamps = loadTimestamps().filter { $0 >= windowStart }
-        saveTimestamps(timestamps)
+        await saveTimestamps(timestamps)
         return max(0, maxPerHour - timestamps.count)
     }
 
-    private func recordRun() {
+    private func recordRun() async {
         var timestamps = loadTimestamps()
         timestamps.append(Date().timeIntervalSince1970)
-        saveTimestamps(timestamps)
+        await saveTimestamps(timestamps)
     }
 
     private func loadTimestamps() -> [TimeInterval] {
         UserDefaults.standard.array(forKey: timestampsKey) as? [TimeInterval] ?? []
     }
 
-    private func saveTimestamps(_ timestamps: [TimeInterval]) {
-        UserDefaults.standard.set(timestamps, forKey: timestampsKey)
+    private func saveTimestamps(_ timestamps: [TimeInterval]) async {
+        await MainActor.run {
+            UserDefaults.standard.set(timestamps, forKey: timestampsKey)
+        }
+    }
+
+    private func resolveBody(for job: Job) async -> String? {
+        let cachedBody = await MainActor.run {
+            EmailCacheManager.shared.loadCachedEmailDetail(id: job.emailId)?.body
+        }
+        if let cachedBody {
+            return cachedBody
+        }
+
+        let account = await MainActor.run(resultType: AuthService.Account?.self, body: {
+            AuthService.shared.accounts.first { $0.email.lowercased() == job.accountEmail.lowercased() }
+        })
+
+        guard let account else {
+            var stats = loadStats()
+            stats.skippedNoAccount += 1
+            await saveStats(stats)
+            return nil
+        }
+
+        if let thread = try? await GmailService.shared.fetchThread(threadId: job.threadId, account: account) {
+            let detail = thread.first(where: { $0.id == job.emailId }) ??
+                thread.sorted(by: { $0.date > $1.date }).first
+            if let detail {
+                await MainActor.run {
+                    EmailCacheManager.shared.cacheEmailDetail(EmailDetail(dto: detail))
+                }
+                return detail.body
+            }
+        }
+
+        return job.snippet.isEmpty ? nil : job.snippet
+    }
+
+    private func loadStats() -> Stats {
+        guard let data = UserDefaults.standard.data(forKey: statsKey),
+              let stats = try? JSONDecoder().decode(Stats.self, from: data) else {
+            return Stats()
+        }
+        return stats
+    }
+
+    private func saveStats(_ stats: Stats) async {
+        guard let data = try? JSONEncoder().encode(stats) else { return }
+        await MainActor.run {
+            UserDefaults.standard.set(data, forKey: statsKey)
+        }
+    }
+
+    nonisolated static func statsSnapshot() -> Stats {
+        guard let data = UserDefaults.standard.data(forKey: "summaryQueueStats"),
+              let stats = try? JSONDecoder().decode(Stats.self, from: data) else {
+            return Stats()
+        }
+        return stats
+    }
+
+    nonisolated static func resetStats() {
+        UserDefaults.standard.removeObject(forKey: "summaryQueueStats")
     }
 
 }
