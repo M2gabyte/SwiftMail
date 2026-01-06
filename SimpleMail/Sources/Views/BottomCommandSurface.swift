@@ -82,18 +82,6 @@ struct BottomCommandSurface: View {
             .opacity(searchMode == .editing ? 0 : 1)
             .allowsHitTesting(searchMode != .editing)
 
-            Button(action: onCancelSearch) {
-                Text("Cancel")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .frame(width: 60, height: 44)
-            .contentShape(Rectangle())
-            .accessibilityLabel("Cancel search")
-            .accessibilityHint("Double tap to close search")
-            .opacity(searchMode == .editing ? 1 : 0)
-            .allowsHitTesting(searchMode == .editing)
         }
     }
 
