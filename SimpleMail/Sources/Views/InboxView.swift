@@ -1040,11 +1040,15 @@ struct SectionHeaderRow: View {
 }
 
 private enum MailTypography {
-    static let sender = Font.subheadline.weight(.semibold)
-    static let senderCompact = Font.subheadline.weight(.semibold)
+    static let senderUnread = Font.subheadline.weight(.semibold)
+    static let senderRead = Font.subheadline.weight(.medium)
+    static let senderCompactUnread = Font.subheadline.weight(.semibold)
+    static let senderCompactRead = Font.subheadline.weight(.medium)
     static let senderContinuation = Font.footnote.weight(.regular)
-    static let subject = Font.subheadline.weight(.regular)
-    static let subjectCompact = Font.footnote.weight(.regular)
+    static let subjectUnread = Font.subheadline.weight(.semibold)
+    static let subjectRead = Font.subheadline.weight(.regular)
+    static let subjectCompactUnread = Font.footnote.weight(.semibold)
+    static let subjectCompactRead = Font.footnote.weight(.regular)
     static let snippet = Font.footnote
     static let meta = Font.caption2
 }
@@ -1329,6 +1333,30 @@ struct EmailRow: View {
                         name: email.senderName,
                         size: 40
                     )
+        let senderFont: Font = {
+            if isContinuationInSenderRun {
+                return MailTypography.senderContinuation
+            }
+            if isCompact {
+                return email.isUnread ? MailTypography.senderCompactUnread : MailTypography.senderCompactRead
+            }
+            return email.isUnread ? MailTypography.senderUnread : MailTypography.senderRead
+        }()
+        let senderColor: Color = {
+            if isContinuationInSenderRun {
+                return .secondary
+            }
+            return email.isUnread ? .primary : Color.primary.opacity(0.78)
+        }()
+        let subjectFont: Font = {
+            if isCompact {
+                return email.isUnread ? MailTypography.subjectCompactUnread : MailTypography.subjectCompactRead
+            }
+            return email.isUnread ? MailTypography.subjectUnread : MailTypography.subjectRead
+        }()
+        let subjectColor: Color = email.isUnread ? .primary : Color.primary.opacity(0.82)
+        let snippetColor: Color = email.isUnread ? Color.secondary.opacity(0.9) : Color.secondary.opacity(0.7)
+
                 }
             }
 
@@ -1337,9 +1365,8 @@ struct EmailRow: View {
                 // Top row: sender + metadata cluster
                 HStack(alignment: .center, spacing: 6) {
                     // Sender name: reduced emphasis for sender-run continuation
-                    highlightedText(email.senderName, font: isCompact ? .caption : .subheadline)
-                        .font(isCompact ? MailTypography.senderCompact : (isContinuationInSenderRun ? MailTypography.senderContinuation : MailTypography.sender))
-                        .foregroundStyle(isContinuationInSenderRun ? .secondary : .primary)
+                    highlightedText(email.senderName, font: senderFont)
+                        .foregroundStyle(senderColor)
                         .lineLimit(1)
 
                     if isVIPSender && !isContinuationInSenderRun {
@@ -1379,16 +1406,19 @@ struct EmailRow: View {
                 }
 
                 // Subject line (normalized to remove Fwd:/Re: prefixes)
-                highlightedText(EmailPreviewNormalizer.normalizeSubjectForDisplay(email.subject), font: isCompact ? .caption2 : .subheadline)
-                    .font(isCompact ? MailTypography.subjectCompact : MailTypography.subject)
-                    .foregroundStyle(email.isUnread ? .primary : Color.primary.opacity(0.85))
+                highlightedText(EmailPreviewNormalizer.normalizeSubjectForDisplay(email.subject), font: subjectFont)
+                    .foregroundStyle(subjectColor)
                     .lineLimit(1)
 
                 // Snippet (not in compact mode, normalized to remove forwarded boilerplate)
                 if !isCompact {
-                    highlightedText(EmailPreviewNormalizer.normalizeSnippetForDisplay(email.snippet), font: .caption, baseColor: .secondary)
+                    highlightedText(
+                        EmailPreviewNormalizer.normalizeSnippetForDisplay(email.snippet),
+                        font: MailTypography.snippet,
+                        baseColor: snippetColor
+                    )
                         .font(MailTypography.snippet)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(snippetColor)
                         .lineLimit(2)
                 }
             }
