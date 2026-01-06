@@ -118,7 +118,7 @@ struct InboxView: View {
         .listRowBackground(Color(.systemBackground))
         .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
         .listRowSeparator(.visible)
-        .listRowSeparatorTint(Color(.separator).opacity(0.5))
+        .listRowSeparatorTint(Color(.separator).opacity(0.25))
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button { viewModel.toggleRead(email) } label: {
                 Label(email.isUnread ? "Read" : "Unread",
@@ -415,7 +415,7 @@ struct InboxView: View {
             }
         }
         .listStyle(.plain)
-        .listSectionSpacing(0)
+        .listSectionSpacing(6)
         .contentMargins(.top, 0, for: .scrollContent)
         .contentMargins(.bottom, 56, for: .scrollContent)
         .scrollContentBackground(.hidden)
@@ -788,6 +788,7 @@ struct InboxView: View {
 
     @ViewBuilder
     private var overlayContent: some View {
+        let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if viewModel.isSearching {
             VStack(spacing: 12) {
                 ProgressView()
@@ -802,6 +803,19 @@ struct InboxView: View {
                 Label("No Results", systemImage: "magnifyingglass")
             } description: {
                 Text("No emails found for \"\(viewModel.currentSearchQuery)\"")
+            } actions: {
+                Button("Clear Search") {
+                    searchText = ""
+                    debouncedSearchText = ""
+                    viewModel.clearSearch()
+                }
+                .buttonStyle(.bordered)
+            }
+        } else if !query.isEmpty && !viewModel.isSearchActive && displaySections.isEmpty {
+            ContentUnavailableView {
+                Label("No Results", systemImage: "magnifyingglass")
+            } description: {
+                Text("No emails found for \"\(query)\"")
             } actions: {
                 Button("Clear Search") {
                     searchText = ""
@@ -941,11 +955,11 @@ struct InboxView: View {
     }
 
     private var emptyStateIcon: String {
-        if viewModel.scope == .people {
-            return "person.2"
-        }
         if viewModel.activeFilter != nil {
             return "line.3.horizontal.decrease.circle"
+        }
+        if viewModel.currentTab == .other {
+            return "tray.2"
         }
         return "tray"
     }
@@ -958,11 +972,9 @@ struct InboxHeaderBlock: View {
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
     let isCollapsed: Bool
+    let onOpenFilters: () -> Void
 
     var body: some View {
-        if viewModel.currentTab == .other {
-            return "tray.2"
-        }
         VStack(alignment: .leading, spacing: 6) {
             // All/Primary/Other segmented control - always visible
             Picker("", selection: $currentTab) {
@@ -973,7 +985,6 @@ struct InboxHeaderBlock: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.top, 0)
-    let onOpenFilters: () -> Void
             .padding(.bottom, 0)
         }
         .padding(.top, 0)
@@ -988,26 +999,25 @@ struct SectionHeaderRow: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        ZStack {
-            Color(.systemGroupedBackground)
-            VStack(spacing: 0) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.primary.opacity(0.8))
-                    .textCase(nil)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.top, isFirst ? 6 : 14)
-                    .padding(.bottom, 6)
+        VStack(spacing: 0) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.primary.opacity(0.7))
+                .textCase(nil)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, isFirst ? 4 : 10)
+                .padding(.bottom, 4)
 
-                Rectangle()
-                    .fill(Color(.separator).opacity(0.35))
-                    .frame(height: 1.0 / displayScale)
-            }
+            // Inset separator with softer opacity
+            Rectangle()
+                .fill(Color(.separator).opacity(0.2))
+                .frame(height: 1.0 / displayScale)
+                .padding(.leading, 16)
         }
+        .background(.ultraThinMaterial)
         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
         .listRowSeparator(.hidden)
-        .listRowBackground(Color(.systemGroupedBackground))
     }
 }
 
@@ -1291,20 +1301,6 @@ struct EmailRow: View {
     }
 
     var body: some View {
-        HStack(spacing: isCompact ? 8 : 10) {
-            // Avatar (hidden in compact mode)
-            // For sender-run continuation: hide avatar but keep alignment
-            if showAvatars {
-                if isContinuationInSenderRun {
-                    // Empty space to maintain alignment
-                    Color.clear
-                        .frame(width: 40, height: 40)
-                } else {
-                    SmartAvatarView(
-                        email: email.senderEmail,
-                        name: email.senderName,
-                        size: 40
-                    )
         let senderFont: Font = {
             if isContinuationInSenderRun {
                 return MailTypography.senderContinuation
@@ -1329,6 +1325,20 @@ struct EmailRow: View {
         let subjectColor: Color = email.isUnread ? .primary : Color.primary.opacity(0.82)
         let snippetColor: Color = email.isUnread ? Color.secondary.opacity(0.9) : Color.secondary.opacity(0.7)
 
+        HStack(spacing: isCompact ? 8 : 10) {
+            // Avatar (hidden in compact mode)
+            // For sender-run continuation: hide avatar but keep alignment
+            if showAvatars {
+                if isContinuationInSenderRun {
+                    // Empty space to maintain alignment
+                    Color.clear
+                        .frame(width: 40, height: 40)
+                } else {
+                    SmartAvatarView(
+                        email: email.senderEmail,
+                        name: email.senderName,
+                        size: 40
+                    )
                 }
             }
 
@@ -1395,7 +1405,7 @@ struct EmailRow: View {
                 }
             }
         }
-        .padding(.vertical, isCompact ? 3 : 4)
+        .padding(.vertical, isCompact ? 5 : 7)
         .contentShape(Rectangle())
     }
 }
@@ -1547,6 +1557,9 @@ struct FilterSheet: View {
                     filterSection(title: "Smart", filters: smartFilters)
                     filterSection(title: "Other", filters: otherFilters)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
             }
             .navigationTitle("Filters")
             .navigationBarTitleDisplayMode(.inline)
@@ -1564,16 +1577,6 @@ struct FilterSheet: View {
             }
         }
     }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
-}
-
-// MARK: - Preview
-
-#Preview {
-    InboxView()
-}
 
     @ViewBuilder
     private func filterSection(title: String, filters: [InboxFilter]) -> some View {
@@ -1641,3 +1644,10 @@ struct SmartFilterCard: View {
         .opacity(count == 0 ? 0.5 : 1)
         .disabled(count == 0)
     }
+}
+
+// MARK: - Preview
+
+#Preview {
+    InboxView()
+}
