@@ -15,6 +15,8 @@
 		A1000061 /* PinnedTabOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000061 /* PinnedTabOption.swift */; };
 		A1000062 /* PrimaryRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* PrimaryRule.swift */; };
 		A1000063 /* InboxPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000063 /* InboxPreferences.swift */; };
+		A1000064 /* PrimaryInboxRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000064 /* PrimaryInboxRulesView.swift */; };
+		A1000065 /* PinnedTabSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000065 /* PinnedTabSettingsView.swift */; };
 		A1000004 /* BriefingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000004 /* BriefingEngine.swift */; };
 		A1000005 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000005 /* InboxView.swift */; };
 		A1000007 /* EmailDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000007 /* EmailDetailView.swift */; };
@@ -82,6 +84,8 @@
 		B1000061 /* PinnedTabOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabOption.swift; sourceTree = "<group>"; };
 		B1000062 /* PrimaryRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryRule.swift; sourceTree = "<group>"; };
 		B1000063 /* InboxPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxPreferences.swift; sourceTree = "<group>"; };
+		B1000064 /* PrimaryInboxRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryInboxRulesView.swift; sourceTree = "<group>"; };
+		B1000065 /* PinnedTabSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabSettingsView.swift; sourceTree = "<group>"; };
 		B1000004 /* BriefingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingEngine.swift; sourceTree = "<group>"; };
 		B1000005 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
 		B1000007 /* EmailDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailDetailView.swift; sourceTree = "<group>"; };
@@ -215,6 +219,8 @@
 				B1000008 /* ComposeView.swift */,
 				B1000009 /* SnoozePickerSheet.swift */,
 				B1000011 /* SettingsView.swift */,
+				B1000064 /* PrimaryInboxRulesView.swift */,
+				B1000065 /* PinnedTabSettingsView.swift */,
 				B1000021 /* AttachmentViewer.swift */,
 				B1000022 /* BatchOperations.swift */,
 				B1000024 /* SmartAvatarView.swift */,
@@ -435,6 +441,8 @@
 				A1000008 /* ComposeView.swift in Sources */,
 				A1000009 /* SnoozePickerSheet.swift in Sources */,
 				A1000011 /* SettingsView.swift in Sources */,
+				A1000064 /* PrimaryInboxRulesView.swift in Sources */,
+				A1000065 /* PinnedTabSettingsView.swift in Sources */,
 				A1000012 /* InboxViewModel.swift in Sources */,
 				A1000013 /* GmailService.swift in Sources */,
 				A1000014 /* AuthService.swift in Sources */,

@@ -239,6 +239,28 @@ struct SettingsView: View {
                     Text("Compose")
                 }
 
+                Section {
+                    NavigationLink {
+                        PrimaryInboxRulesView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "tray.full.fill", color: .indigo)
+                            Text("Primary Inbox")
+                        }
+                    }
+
+                    NavigationLink {
+                        PinnedTabSettingsView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemName: "pin.fill", color: .orange)
+                            Text("Pinned Tab")
+                        }
+                    }
+                } header: {
+                    Text("Inbox")
+                }
+
                 // Smart Features Section
                 Section {
                     HStack(spacing: 12) {
