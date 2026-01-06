@@ -83,13 +83,12 @@ struct BottomCommandSurface: View {
             .allowsHitTesting(searchMode != .editing)
 
             Button(action: onCancelSearch) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16, weight: .regular))
+                Text("Cancel")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
-            .frame(width: 44, height: 44)
+            .frame(width: 60, height: 44)
             .contentShape(Rectangle())
             .accessibilityLabel("Cancel search")
             .accessibilityHint("Double tap to close search")
