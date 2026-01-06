@@ -601,6 +601,7 @@ struct FeatureRow: View {
 
 // MARK: - Haptic Feedback
 
+@MainActor
 enum HapticFeedback {
     private static var isEnabled: Bool {
         let accountEmail = AuthService.shared.currentAccount?.email
