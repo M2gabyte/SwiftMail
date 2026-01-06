@@ -508,12 +508,14 @@ struct InboxView: View {
                 bulkActionBar
             }
         } else if isSearchMode {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Select") {
-                    startSelectionMode()
+            if !searchModeResults.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Select") {
+                        startSelectionMode()
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.primary.opacity(0.75))
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.primary.opacity(0.75))
             }
         } else {
             ToolbarItem(placement: .topBarLeading) {
