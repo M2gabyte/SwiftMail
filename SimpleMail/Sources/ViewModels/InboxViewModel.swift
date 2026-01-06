@@ -462,9 +462,9 @@ final class InboxViewModel {
     }
 
     private func isDeadlineEmail(_ email: Email) -> Bool {
-        let deadlineKeywords = ["today", "tomorrow", "urgent", "asap", "deadline", "due"]
-        let emailText = "\(email.subject) \(email.snippet)".lowercased()
-        return deadlineKeywords.contains(where: { emailText.contains($0) })
+        let text = "\(email.subject) \(email.snippet)".lowercased()
+        return text.contains("today") || text.contains("tomorrow") ||
+            text.contains("urgent") || text.contains("deadline")
     }
 
     private func isMoneyOrDeadline(_ email: Email) -> Bool {
