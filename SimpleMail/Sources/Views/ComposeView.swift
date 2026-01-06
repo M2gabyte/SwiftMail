@@ -401,19 +401,21 @@ struct ComposeView: View {
             }
         }
 
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            HStack(spacing: 12) {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
                 Button(action: { showingAIDraft = true }) {
-                    Image(systemName: "sparkles")
-                        .frame(width: 32, height: 32)
-                        .accessibilityLabel("AI Draft")
+                    Label("AI Draft", systemImage: "sparkles")
                 }
+                .accessibilityLabel("AI Draft")
 
                 Button(action: { showingTemplates = true }) {
-                    Image(systemName: "doc.on.doc")
-                        .frame(width: 32, height: 32)
-                        .accessibilityLabel("Templates")
+                    Label("Templates", systemImage: "doc.on.doc")
                 }
+                .accessibilityLabel("Templates")
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .frame(width: 32, height: 32)
+                    .accessibilityLabel("More compose actions")
             }
         }
     }
