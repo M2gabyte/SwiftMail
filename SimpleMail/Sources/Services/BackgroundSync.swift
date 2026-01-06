@@ -269,10 +269,37 @@ final class BackgroundSyncManager {
         logger.info("Synced \(allEmails.count) emails to cache")
 
         let emailModels = allEmails.map(Email.init(dto:))
-        await SummaryQueue.shared.enqueueCandidates(emailModels)
+        let summaryCandidates = emailModels.compactMap { email -> SummaryQueue.Candidate? in
+            guard let accountEmail = email.accountEmail else { return nil }
+            return SummaryQueue.Candidate(
+                emailId: email.id,
+                threadId: email.threadId,
+                accountEmail: accountEmail,
+                subject: email.subject,
+                from: email.from,
+                snippet: email.snippet,
+                date: email.date,
+                isUnread: email.isUnread,
+                isStarred: email.isStarred,
+                listUnsubscribe: email.listUnsubscribe
+            )
+        }
+        await SummaryQueue.shared.enqueueCandidates(summaryCandidates)
 
         // Prefetch bodies for offline reading
-        await BodyPrefetchQueue.shared.enqueueCandidates(emailModels)
+        let prefetchCandidates = emailModels.compactMap { email -> BodyPrefetchQueue.Candidate? in
+            guard let accountEmail = email.accountEmail else { return nil }
+            return BodyPrefetchQueue.Candidate(
+                emailId: email.id,
+                threadId: email.threadId,
+                accountEmail: accountEmail,
+                date: email.date,
+                isUnread: email.isUnread,
+                isStarred: email.isStarred,
+                listUnsubscribe: email.listUnsubscribe
+            )
+        }
+        await BodyPrefetchQueue.shared.enqueueCandidates(prefetchCandidates)
     }
 
     private func processSummaryQueue() async throws {
@@ -287,14 +314,28 @@ final class BackgroundSyncManager {
 
         for account in accounts {
             if Task.isCancelled { break }
-            let cached = await MainActor.run {
+            let summaryCandidates = await MainActor.run {
                 EmailCacheManager.shared.loadCachedEmails(
                     mailbox: .inbox,
                     limit: 100,
                     accountEmail: account.email
-                )
+                ).compactMap { email -> SummaryQueue.Candidate? in
+                    guard let accountEmail = email.accountEmail else { return nil }
+                    return SummaryQueue.Candidate(
+                        emailId: email.id,
+                        threadId: email.threadId,
+                        accountEmail: accountEmail,
+                        subject: email.subject,
+                        from: email.from,
+                        snippet: email.snippet,
+                        date: email.date,
+                        isUnread: email.isUnread,
+                        isStarred: email.isStarred,
+                        listUnsubscribe: email.listUnsubscribe
+                    )
+                }
             }
-            await SummaryQueue.shared.enqueueCandidates(cached)
+            await SummaryQueue.shared.enqueueCandidates(summaryCandidates)
         }
     }
 
@@ -311,11 +352,7 @@ final class BackgroundSyncManager {
         await ScheduledSendManager.shared.processDueSends()
 
         // Process offline outbox queue
-        await MainActor.run {
-            Task {
-                await OutboxManager.shared.processQueue()
-            }
-        }
+        await OutboxManager.shared.processQueue()
 
         // Check for cancellation after scheduled sends
         try Task.checkCancellation()
