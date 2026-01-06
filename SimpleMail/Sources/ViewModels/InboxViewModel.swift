@@ -830,8 +830,8 @@ final class InboxViewModel {
             restoreBulkAction(pendingBulkAction)
         } else if let pendingArchive {
             animate(.spring(response: 0.3, dampingFraction: 0.8)) {
-                let insertIndex = min(pending.index, emails.count)
-                emails.insert(pending.email, at: insertIndex)
+                let insertIndex = min(pendingArchive.index, emails.count)
+                emails.insert(pendingArchive.email, at: insertIndex)
                 showingUndoToast = false
             }
             self.pendingArchive = nil
