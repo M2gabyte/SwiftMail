@@ -21,8 +21,12 @@ final class InboxViewModel {
     // MARK: - State
 
     var emails: [Email] = []
-    var scope: InboxScope = .all
     var currentTab: InboxTab = .all {
+        didSet {
+            updateFilterCounts()
+        }
+    }
+    var pinnedTabOption: PinnedTabOption = .other {
         didSet {
             updateFilterCounts()
         }
@@ -120,6 +124,7 @@ final class InboxViewModel {
     @ObservationIgnored private var accountChangeObserver: NSObjectProtocol?
     @ObservationIgnored private var archiveThreadObserver: NSObjectProtocol?
     @ObservationIgnored private var trashThreadObserver: NSObjectProtocol?
+    @ObservationIgnored private var inboxPreferencesObserver: NSObjectProtocol?
 
     // MARK: - Computed Properties
 
@@ -142,6 +147,9 @@ final class InboxViewModel {
     // MARK: - Init
 
     init() {
+        InboxPreferences.ensureDefaultsInitialized()
+        pinnedTabOption = InboxPreferences.getPinnedTabOption()
+
         // Listen for blocked senders changes from EmailDetailView
         blockedSendersObserver = NotificationCenter.default.addObserver(
             forName: .blockedSendersDidChange,
@@ -162,6 +170,17 @@ final class InboxViewModel {
             Task { @MainActor in
                 await self?.loadEmails()
             }
+        }
+
+        inboxPreferencesObserver = NotificationCenter.default.addObserver(
+            forName: .inboxPreferencesDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            pinnedTabOption = InboxPreferences.getPinnedTabOption()
+            filterVersion += 1
+            updateFilterCounts()
         }
 
         archiveThreadObserver = NotificationCenter.default.addObserver(
@@ -200,6 +219,9 @@ final class InboxViewModel {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = trashThreadObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = inboxPreferencesObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -439,7 +461,10 @@ final class InboxViewModel {
     }
 
     private func recomputeFilterCounts(from emails: [Email]) {
-        let base = applyBaseContext(emails)
+        let base = applyTabContext(emails.filter { email in
+            let blocked = blockedSenders(for: email.accountEmail)
+            return !blocked.contains(email.senderEmail.lowercased())
+        })
         var counts: [InboxFilter: Int] = [:]
 
         counts[.unread] = base.filter { $0.isUnread }.count
@@ -449,15 +474,15 @@ final class InboxViewModel {
                 counts[.needsReply, default: 0] += 1
             }
 
-            if isDeadlineEmail(email) {
+            if isDeadline(email) {
                 counts[.deadlines, default: 0] += 1
             }
 
-            if isMoneyEmail(email) {
+            if isMoney(email) {
                 counts[.money, default: 0] += 1
             }
 
-            if email.labelIds.contains("CATEGORY_PROMOTIONS") || email.listUnsubscribe != nil {
+            if isNewsletter(email) {
                 counts[.newsletters, default: 0] += 1
             }
         }
@@ -494,7 +519,7 @@ final class InboxViewModel {
         if primary.contains(sender) { return .primary }
 
         let other = alwaysOtherSenders(for: accountEmail)
-        if other.contains(sender) { return .other }
+        if other.contains(sender) { return .pinned }
 
         return nil
     }
@@ -504,23 +529,23 @@ final class InboxViewModel {
         return vipSenders.contains(email.senderEmail.lowercased())
     }
 
-    private func isMoneyEmail(_ email: Email) -> Bool {
+    private func isNewsletter(_ email: Email) -> Bool {
+        email.labelIds.contains("CATEGORY_PROMOTIONS") || email.listUnsubscribe != nil
+    }
+
+    private func isMoney(_ email: Email) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         return text.contains("receipt") || text.contains("order") ||
             text.contains("payment") || text.contains("invoice")
     }
 
-    private func isDeadlineEmail(_ email: Email) -> Bool {
+    private func isDeadline(_ email: Email) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         return text.contains("today") || text.contains("tomorrow") ||
             text.contains("urgent") || text.contains("deadline")
     }
 
-    private func isMoneyOrDeadline(_ email: Email) -> Bool {
-        isMoneyEmail(email) || isDeadlineEmail(email)
-    }
-
-    private func isSecurityOrAccount(_ email: Email) -> Bool {
+    private func isSecurity(_ email: Email) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         let keywords = [
             "security alert", "new sign-in", "sign-in", "password",
@@ -530,52 +555,83 @@ final class InboxViewModel {
         return keywords.contains { text.contains($0) }
     }
 
-    private func classifyEmail(_ email: Email) -> InboxTab {
-        if let override = senderOverride(for: email) { return override }
-
-        if isVIPSender(email) || EmailFilters.looksLikeHumanSender(email) { return .primary }
-        if isSecurityOrAccount(email) { return .primary }
-        if isMoneyOrDeadline(email) { return .primary }
-
-        if email.labelIds.contains("CATEGORY_SOCIAL")
-            || email.labelIds.contains("CATEGORY_FORUMS")
-            || email.labelIds.contains("CATEGORY_PROMOTIONS") {
-            return .other
-        }
-
-        if EmailFilters.isBulk(email) || email.listUnsubscribe != nil {
-            return .other
-        }
-
-        if email.labelIds.contains("CATEGORY_UPDATES") {
-            return .other
-        }
-
-        return .primary
+    private func isPeople(_ email: Email) -> Bool {
+        EmailFilters.looksLikeHumanSender(email) && !EmailFilters.isBulk(email)
     }
 
-    private func applyBaseContext(_ emails: [Email]) -> [Email] {
-        var filtered = emails
-
-        filtered = filtered.filter { email in
-            let blocked = blockedSenders(for: email.accountEmail)
-            return !blocked.contains(email.senderEmail.lowercased())
+    private func isPrimary(_ email: Email) -> Bool {
+        if let override = senderOverride(for: email) {
+            return override == .primary
         }
 
+        for rule in PrimaryRule.allCases where InboxPreferences.isPrimaryRuleEnabled(rule) {
+            switch rule {
+            case .people:
+                if isPeople(email) { return true }
+            case .vip:
+                if isVIPSender(email) { return true }
+            case .security:
+                if isSecurity(email) { return true }
+            case .money:
+                if isMoney(email) { return true }
+            case .deadlines:
+                if isDeadline(email) { return true }
+            case .newsletters:
+                if isNewsletter(email) { return true }
+            case .promotions:
+                if email.labelIds.contains("CATEGORY_PROMOTIONS") { return true }
+            case .social:
+                if email.labelIds.contains("CATEGORY_SOCIAL") { return true }
+            case .forums:
+                if email.labelIds.contains("CATEGORY_FORUMS") { return true }
+            case .updates:
+                if email.labelIds.contains("CATEGORY_UPDATES") { return true }
+            }
+        }
+
+        return false
+    }
+
+    private func matchesPinned(_ email: Email) -> Bool {
+        switch pinnedTabOption {
+        case .other:
+            return !isPrimary(email)
+        case .money:
+            return isMoney(email)
+        case .deadlines:
+            return isDeadline(email)
+        case .needsReply:
+            return isNeedsReplyCandidate(email)
+        case .unread:
+            return email.isUnread
+        case .newsletters:
+            return isNewsletter(email)
+        case .people:
+            return isPeople(email)
+        }
+    }
+
+    private func applyTabContext(_ emails: [Email]) -> [Email] {
+        var filtered = emails
         switch currentTab {
         case .all:
             break
         case .primary:
-            filtered = filtered.filter { classifyEmail($0) == .primary }
-        case .other:
-            filtered = filtered.filter { classifyEmail($0) == .other }
+            filtered = filtered.filter { isPrimary($0) }
+        case .pinned:
+            filtered = filtered.filter { matchesPinned($0) }
         }
 
         return filtered
     }
 
     private func applyFilters(_ emails: [Email]) -> [Email] {
-        var filtered = applyBaseContext(emails)
+        var filtered = emails.filter { email in
+            let blocked = blockedSenders(for: email.accountEmail)
+            return !blocked.contains(email.senderEmail.lowercased())
+        }
+
+        filtered = applyTabContext(filtered)
 
         if let filter = activeFilter {
             switch filter {
@@ -584,14 +640,11 @@ final class InboxViewModel {
             case .needsReply:
                 filtered = filtered.filter { isNeedsReplyCandidate($0) }
             case .deadlines:
-                filtered = filtered.filter { isDeadlineEmail($0) }
+                filtered = filtered.filter { isDeadline($0) }
             case .money:
-                filtered = filtered.filter { isMoneyEmail($0) }
+                filtered = filtered.filter { isMoney($0) }
             case .newsletters:
-                filtered = filtered.filter { email in
-                    email.labelIds.contains("CATEGORY_PROMOTIONS") ||
-                    email.listUnsubscribe != nil
-                }
+                filtered = filtered.filter { isNewsletter($0) }
             }
         }
 
