@@ -1017,25 +1017,25 @@ struct SectionHeaderRow: View {
 
     var body: some View {
         ZStack {
-            Color(.systemBackground)
+            Color(.systemGroupedBackground)
             VStack(spacing: 0) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.primary.opacity(0.8))
                     .textCase(nil)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.top, isFirst ? 6 : 14)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 6)
 
                 Rectangle()
-                    .fill(Color(.separator).opacity(0.6))
+                    .fill(Color(.separator).opacity(0.35))
                     .frame(height: 1.0 / displayScale)
             }
         }
         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
         .listRowSeparator(.hidden)
-        .listRowBackground(Color(.systemBackground))
+        .listRowBackground(Color(.systemGroupedBackground))
     }
 }
 
