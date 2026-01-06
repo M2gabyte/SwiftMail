@@ -769,9 +769,9 @@ final class InboxViewModel {
 
     func archiveEmail(_ email: Email) {
         // Cancel any existing undo task and finalize it
-        if let pending = pendingArchive {
+        if let pendingArchive {
             undoTask?.cancel()
-            finalizeArchive(pending.email)
+            finalizeArchive(pendingArchive.email)
         }
         if let pendingBulkAction {
             undoTask?.cancel()
@@ -810,8 +810,8 @@ final class InboxViewModel {
 
             // Finalize the archive
             guard let self else { return }
-            if let pending = pendingArchive, pending.email.id == emailId {
-                finalizeArchive(pending.email)
+            if let pendingArchive, pendingArchive.email.id == emailId {
+                finalizeArchive(pendingArchive.email)
             }
         }
     }
@@ -1250,9 +1250,9 @@ final class InboxViewModel {
         }
         guard !pendingItems.isEmpty else { return }
 
-        if let pending = pendingArchive {
+        if let pendingArchive {
             undoTask?.cancel()
-            finalizeArchive(pending.email)
+            finalizeArchive(pendingArchive.email)
         }
         if let pendingBulkAction {
             undoTask?.cancel()
