@@ -206,8 +206,14 @@ struct InboxView: View {
         view = AnyView(view.onChange(of: viewModel.currentMailbox) { _, _ in
             exitSelectionMode()
         })
-        view = AnyView(view.onChange(of: viewModel.activeFilter) { _, _ in
+        view = AnyView(view.onChange(of: viewModel.activeFilter) { oldValue, newValue in
             exitSelectionMode()
+            // Haptic feedback for filter changes
+            if newValue != nil {
+                HapticFeedback.light()
+            } else if oldValue != nil {
+                HapticFeedback.selection()
+            }
         })
         view = AnyView(view.onChange(of: viewModel.emails) { _, _ in
             let valid = Set(viewModel.emails.map { $0.threadId })
@@ -260,6 +266,16 @@ struct InboxView: View {
         view = AnyView(view.onAppear { handleAppear() })
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() })
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() })
+        view = AnyView(view.onChange(of: viewModel.bulkToastMessage) { _, newValue in
+            // Haptic feedback for bulk action results
+            if newValue != nil {
+                if viewModel.bulkToastIsError {
+                    HapticFeedback.error()
+                } else {
+                    HapticFeedback.success()
+                }
+            }
+        })
         return view
     }
 
@@ -652,6 +668,7 @@ struct InboxView: View {
         if !isSelectionMode {
             isSelectionMode = true
             editMode = .active
+            HapticFeedback.medium()
         }
         selectedThreadIds.insert(threadId)
     }
@@ -660,6 +677,7 @@ struct InboxView: View {
         if !isSelectionMode {
             isSelectionMode = true
             editMode = .active
+            HapticFeedback.medium()
         }
     }
 

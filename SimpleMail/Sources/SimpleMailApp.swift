@@ -602,32 +602,52 @@ struct FeatureRow: View {
 // MARK: - Haptic Feedback
 
 enum HapticFeedback {
+    private static var isEnabled: Bool {
+        let accountEmail = AuthService.shared.currentAccount?.email
+        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
+              let settings = try? JSONDecoder().decode(HapticSettings.self, from: data) else {
+            return true // Default to enabled
+        }
+        return settings.hapticsEnabled
+    }
+
+    // Minimal struct to decode just the haptics setting
+    private struct HapticSettings: Decodable {
+        var hapticsEnabled: Bool = true
+    }
+
     static func light() {
+        guard isEnabled else { return }
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
     }
 
     static func medium() {
+        guard isEnabled else { return }
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
     }
 
     static func heavy() {
+        guard isEnabled else { return }
         let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
     }
 
     static func success() {
+        guard isEnabled else { return }
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
     }
 
     static func error() {
+        guard isEnabled else { return }
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.error)
     }
 
     static func selection() {
+        guard isEnabled else { return }
         let generator = UISelectionFeedbackGenerator()
         generator.selectionChanged()
     }

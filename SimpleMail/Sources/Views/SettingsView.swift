@@ -38,9 +38,9 @@ struct SettingsView: View {
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(account.name)
-                                        .font(.headline)
+                                        .font(.subheadline.weight(.semibold))
                                     Text(account.email)
-                                        .font(.subheadline)
+                                        .font(.footnote)
                                         .foregroundStyle(.secondary)
                                 }
 
@@ -75,6 +75,7 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    .font(.callout)
 
                     HStack(spacing: 12) {
                         SettingsIcon(systemName: "arrow.right", color: .blue)
@@ -85,6 +86,7 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    .font(.callout)
                 } header: {
                     Text("Swipe Actions")
                 } footer: {
@@ -97,6 +99,7 @@ struct SettingsView: View {
                         SettingsIcon(systemName: "person.circle.fill", color: .cyan)
                         Toggle("Show Avatars", isOn: $viewModel.settings.showAvatars)
                     }
+                    .font(.callout)
                     .onChange(of: viewModel.settings.showAvatars) { _, _ in viewModel.saveSettings() }
 
                     HStack(spacing: 12) {
@@ -106,6 +109,7 @@ struct SettingsView: View {
                             Text("Compact").tag(ListDensity.compact)
                         }
                     }
+                    .font(.callout)
                     .onChange(of: viewModel.settings.listDensity) { _, _ in viewModel.saveSettings() }
 
                     HStack(spacing: 12) {
@@ -116,6 +120,14 @@ struct SettingsView: View {
                             Text("Dark").tag(AppTheme.dark)
                         }
                     }
+                    .font(.callout)
+
+                    HStack(spacing: 12) {
+                        SettingsIcon(systemName: "iphone.radiowaves.left.and.right", color: .orange)
+                        Toggle("Haptic Feedback", isOn: $viewModel.settings.hapticsEnabled)
+                    }
+                    .font(.callout)
+                    .onChange(of: viewModel.settings.hapticsEnabled) { _, _ in viewModel.saveSettings() }
                 } header: {
                     Text("Display")
                 } footer: {
@@ -404,14 +416,6 @@ struct SettingsView: View {
                     }
                     .onChange(of: viewModel.settings.conversationThreading) { _, _ in viewModel.saveSettings() }
 
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "line.3.horizontal", color: .blue)
-                        Picker("Preview Density", selection: $viewModel.settings.listDensity) {
-                            Text("Comfortable").tag(ListDensity.comfortable)
-                            Text("Compact").tag(ListDensity.compact)
-                        }
-                    }
-                    .onChange(of: viewModel.settings.listDensity) { _, _ in viewModel.saveSettings() }
                 } header: {
                     Text("Advanced")
                 } footer: {
@@ -572,6 +576,7 @@ struct AppSettings: Codable {
     var smartReplies: Bool = true
     var signature: String = ""
     var undoSendDelaySeconds: Int = 5
+    var hapticsEnabled: Bool = true
 
     // Advanced settings
     var conversationThreading: Bool = true

@@ -18,7 +18,7 @@ struct BottomCommandSurface: View {
 
     var body: some View {
         let isSearchActive = (searchMode == .editing) || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             leftButton
 
             centerSearchContent
@@ -26,8 +26,8 @@ struct BottomCommandSurface: View {
 
             rightButton
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
         .padding(.bottom, 2)
         .animation(.snappy(duration: 0.22), value: isSearchActive)
     }
@@ -35,23 +35,25 @@ struct BottomCommandSurface: View {
     private var leftButton: some View {
         Button(action: onTapFilter) {
             Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal")
-                .font(.system(size: 17, weight: .regular))
+                .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(isFilterActive ? Color.accentColor : .secondary)
-                .frame(width: 32, height: 32)
+                .frame(width: 30, height: 30)
                 .background(Circle().fill(.ultraThinMaterial))
                 .overlay(
                     Circle()
-                        .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
+                        .stroke(Color(.separator).opacity(0.22), lineWidth: 0.5)
                 )
                 .overlay(alignment: .topTrailing) {
                     if isFilterActive {
                         FilterActiveBadge(count: activeFilterCount)
                             .offset(x: 6, y: -6)
+                            .transition(.scale.combined(with: .opacity))
                     }
                 }
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFilterActive)
         }
         .buttonStyle(.plain)
-        .frame(width: 44, height: 44)
+        .frame(width: 40, height: 40)
         .contentShape(Rectangle())
         .opacity(searchMode == .editing ? 0 : 1)
         .allowsHitTesting(searchMode != .editing)
@@ -62,17 +64,17 @@ struct BottomCommandSurface: View {
         ZStack {
             Button(action: onTapCompose) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 17, weight: .regular))
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 30, height: 30)
                     .background(Circle().fill(.ultraThinMaterial))
                     .overlay(
                         Circle()
-                            .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
+                            .stroke(Color(.separator).opacity(0.22), lineWidth: 0.5)
                     )
             }
             .buttonStyle(.plain)
-            .frame(width: 44, height: 44)
+            .frame(width: 40, height: 40)
             .contentShape(Rectangle())
             .accessibilityLabel("Compose new email")
             .opacity(searchMode == .editing ? 0 : 1)
@@ -80,12 +82,12 @@ struct BottomCommandSurface: View {
 
             Button(action: onCancelSearch) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 17, weight: .regular))
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
-            .frame(width: 44, height: 44)
+            .frame(width: 40, height: 40)
             .contentShape(Rectangle())
             .accessibilityLabel("Cancel search")
             .opacity(searchMode == .editing ? 1 : 0)
@@ -101,14 +103,14 @@ struct BottomCommandSurface: View {
             onSubmit: onSubmitSearch,
             onBeginEditing: onTapSearch
         )
-        .frame(height: 32)
+        .frame(height: 38)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
         )
         .overlay(
             Capsule()
-                .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
+                .stroke(Color(.separator).opacity(0.14), lineWidth: 0.5)
         )
         .opacity(showSearchField ? 1 : 0)
         .allowsHitTesting(showSearchField)
@@ -204,13 +206,21 @@ struct MailSearchBar: UIViewRepresentable {
         searchBar.isTranslucent = true
         searchBar.backgroundColor = .clear
         searchBar.barTintColor = .clear
+        searchBar.backgroundImage = UIImage()
+        searchBar.setBackgroundImage(UIImage(), for: .any, barMetrics: .default)
         searchBar.delegate = context.coordinator
 
         let textField = searchBar.searchTextField
+        textField.font = UIFont.systemFont(ofSize: 16)
         textField.textColor = .label
         textField.tintColor = .systemBlue
         textField.clearButtonMode = .whileEditing
         textField.backgroundColor = .clear
+        textField.borderStyle = .none
+        textField.attributedPlaceholder = NSAttributedString(
+            string: "Search",
+            attributes: [.foregroundColor: UIColor.secondaryLabel]
+        )
 
         let mic = UIImageView(image: UIImage(systemName: "mic.fill"))
         mic.tintColor = .secondaryLabel
@@ -219,9 +229,6 @@ struct MailSearchBar: UIViewRepresentable {
         textField.rightView = mic
         textField.rightViewMode = .always
 
-        searchBar.backgroundImage = UIImage()
-        searchBar.setBackgroundImage(UIImage(), for: .any, barMetrics: .default)
-        searchBar.setSearchFieldBackgroundImage(UIImage(), for: .normal)
         return searchBar
     }
 
