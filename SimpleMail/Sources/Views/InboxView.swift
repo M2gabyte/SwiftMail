@@ -324,6 +324,7 @@ struct InboxView: View {
                     BottomCommandSurface(
                         isFilterActive: viewModel.activeFilter != nil,
                         activeFilterLabel: activeFilterLabel,
+                        activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
                         searchMode: isSearchMode ? .editing : .idle,
                         showSearchField: true,
                         searchText: $searchText,

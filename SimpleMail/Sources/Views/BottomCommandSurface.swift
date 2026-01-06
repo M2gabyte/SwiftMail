@@ -5,6 +5,7 @@ import SwiftUI
 struct BottomCommandSurface: View {
     let isFilterActive: Bool
     let activeFilterLabel: String?
+    let activeFilterCount: Int?
     var searchMode: SearchMode = .idle
     var showSearchField: Bool = true
     @Binding var searchText: String
@@ -42,13 +43,19 @@ struct BottomCommandSurface: View {
                     Circle()
                         .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
                 )
+                .overlay(alignment: .topTrailing) {
+                    if isFilterActive {
+                        FilterActiveBadge(count: activeFilterCount)
+                            .offset(x: 6, y: -6)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
         .opacity(searchMode == .editing ? 0 : 1)
         .allowsHitTesting(searchMode != .editing)
-        .accessibilityLabel(isFilterActive ? "Filter: \(activeFilterLabel ?? "active")" : "Filter")
+        .accessibilityLabel(filterAccessibilityLabel)
     }
 
     private var rightButton: some View {
@@ -108,6 +115,36 @@ struct BottomCommandSurface: View {
         .accessibilityHidden(!showSearchField)
         .accessibilityLabel("Search emails")
     }
+
+    private var filterAccessibilityLabel: String {
+        guard isFilterActive else {
+            return "Filter"
+        }
+        let label = activeFilterLabel ?? "active"
+        if let count = activeFilterCount, count > 0 {
+            return "Filter: \(label), \(count) messages"
+        }
+        return "Filter: \(label)"
+    }
+}
+
+private struct FilterActiveBadge: View {
+    let count: Int?
+
+    var body: some View {
+        if let count, count > 0 {
+            Text("\(count)")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color.accentColor))
+        } else {
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 8, height: 8)
+        }
+    }
 }
 
 enum SearchMode: Equatable {
@@ -129,6 +166,7 @@ enum SearchMode: Equatable {
                     BottomCommandSurface(
                         isFilterActive: false,
                         activeFilterLabel: nil,
+                        activeFilterCount: nil,
                         searchMode: .idle,
                         showSearchField: true,
                         searchText: $searchText,
