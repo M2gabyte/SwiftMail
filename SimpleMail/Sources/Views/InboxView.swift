@@ -326,7 +326,11 @@ struct InboxView: View {
         .autocorrectionDisabled(true)
         .overlay { overlayContent }
         .overlay(alignment: .top) { offlineBannerContent }
-            .overlay(alignment: .bottom) { bulkToastContent }
+            .overlay(alignment: .bottom) {
+                bulkToastContent
+                    .padding(.bottom, 62)
+                    .zIndex(25)
+            }
             .overlay(alignment: .bottom) {
                 if !isSelectionMode && !showingFilterSheet {
                     BottomCommandSurface(
