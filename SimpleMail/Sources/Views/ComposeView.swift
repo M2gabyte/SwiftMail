@@ -384,7 +384,7 @@ struct ComposeView: View {
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
-                    .foregroundStyle(viewModel.canSend ? .blue : .gray)
+                    .foregroundStyle(viewModel.canSend ? Color.accentColor : .gray)
             }
             .disabled(!viewModel.canSend)
             .accessibilityIdentifier("sendButton")

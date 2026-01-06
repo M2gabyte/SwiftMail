@@ -125,7 +125,7 @@ struct InboxView: View {
                 Label(email.isUnread ? "Read" : "Unread",
                       systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
             }
-            .tint(.blue)
+            .tint(Color.accentColor)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button { viewModel.archiveEmail(email) } label: {
@@ -364,10 +364,7 @@ struct InboxView: View {
             if !isSearchMode {
                 InboxHeaderBlock(
                     scope: scopeBinding,
-                    activeFilter: $viewModel.activeFilter,
-                    filterCounts: viewModel.filterCounts,
-                    isCollapsed: isHeaderCollapsed,
-                    onOpenFilters: { showingFilterSheet = true }
+                    isCollapsed: isHeaderCollapsed
                 )
                 .background(
                     GeometryReader { proxy in
@@ -967,10 +964,7 @@ struct InboxView: View {
 
 struct InboxHeaderBlock: View {
     @Binding var scope: InboxScope
-    @Binding var activeFilter: InboxFilter?
-    let filterCounts: [InboxFilter: Int]
     let isCollapsed: Bool
-    let onOpenFilters: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -983,39 +977,6 @@ struct InboxHeaderBlock: View {
             .padding(.horizontal, 16)
             .padding(.top, 0)
             .padding(.bottom, 0)
-
-            if let activeFilter {
-                Button(action: onOpenFilters) {
-                    HStack(spacing: 8) {
-                        Text("Filtered by \(activeFilter.rawValue) (\(filterCounts[activeFilter] ?? 0))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                self.activeFilter = nil
-                            }
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color(.systemGray6))
-                    )
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .transition(.opacity)
-            }
         }
         .padding(.top, 0)
         .padding(.bottom, 0)
@@ -1180,7 +1141,7 @@ struct FilterActiveBanner: View {
                 Text("Clear")
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accentColor)
             }
             .buttonStyle(.plain)
         }
@@ -1621,7 +1582,7 @@ struct FilterSheet: View {
                                 if activeFilter == filter {
                                     Image(systemName: "checkmark")
                                         .font(.body.weight(.semibold))
-                                        .foregroundStyle(.blue)
+                                        .foregroundStyle(Color.accentColor)
                                 }
                             }
                             .contentShape(Rectangle())

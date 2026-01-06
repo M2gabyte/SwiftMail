@@ -36,7 +36,7 @@ struct BottomCommandSurface: View {
         Button(action: onTapFilter) {
             Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal")
                 .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(isFilterActive ? .blue : .secondary)
+                .foregroundStyle(isFilterActive ? Color.accentColor : .secondary)
                 .frame(width: 32, height: 32)
                 .background(Circle().fill(.ultraThinMaterial))
                 .overlay(
@@ -63,7 +63,7 @@ struct BottomCommandSurface: View {
             Button(action: onTapCompose) {
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(.ultraThinMaterial))
                     .overlay(
