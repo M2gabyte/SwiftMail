@@ -177,10 +177,12 @@ final class InboxViewModel {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            pinnedTabOption = InboxPreferences.getPinnedTabOption()
-            filterVersion += 1
-            updateFilterCounts()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                pinnedTabOption = InboxPreferences.getPinnedTabOption()
+                filterVersion += 1
+                updateFilterCounts()
+            }
         }
 
         archiveThreadObserver = NotificationCenter.default.addObserver(
@@ -188,9 +190,11 @@ final class InboxViewModel {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self else { return }
-            guard let threadId = notification.userInfo?["threadId"] as? String else { return }
-            performUndoableBulkAction(threadIds: [threadId], action: .archive)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let threadId = notification.userInfo?["threadId"] as? String else { return }
+                performUndoableBulkAction(threadIds: [threadId], action: .archive)
+            }
         }
 
         trashThreadObserver = NotificationCenter.default.addObserver(
@@ -198,9 +202,11 @@ final class InboxViewModel {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self else { return }
-            guard let threadId = notification.userInfo?["threadId"] as? String else { return }
-            performUndoableBulkAction(threadIds: [threadId], action: .trash)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let threadId = notification.userInfo?["threadId"] as? String else { return }
+                performUndoableBulkAction(threadIds: [threadId], action: .trash)
+            }
         }
 
         Task {
