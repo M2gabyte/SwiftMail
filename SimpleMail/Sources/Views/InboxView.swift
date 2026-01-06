@@ -178,7 +178,6 @@ struct InboxView: View {
         })
         view = AnyView(view.sheet(isPresented: $showingFilterSheet) {
             FilterSheet(
-                scope: viewModel.scope,
                 activeFilter: $viewModel.activeFilter,
                 filterCounts: viewModel.filterCounts
             )
@@ -209,9 +208,6 @@ struct InboxView: View {
         })
         view = AnyView(view.onChange(of: viewModel.activeFilter) { _, _ in
             exitSelectionMode()
-            if showingFilterSheet {
-                showingFilterSheet = false
-            }
         })
         view = AnyView(view.onChange(of: viewModel.emails) { _, _ in
             let valid = Set(viewModel.emails.map { $0.threadId })
@@ -1536,99 +1532,41 @@ struct EmailSection: Identifiable {
 // MARK: - Filter Sheet
 
 struct FilterSheet: View {
-    let scope: InboxScope
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
     @Environment(\.dismiss) private var dismiss
 
-    private var availableFilters: [InboxFilter] {
-        if scope == .people {
-            return [.unread, .needsReply]
-        }
-        return InboxFilter.allCases
-    }
+    private let smartFilters: [InboxFilter] = [.unread, .needsReply, .deadlines, .money]
+    private let otherFilters: [InboxFilter] = [.newsletters]
+    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    ForEach(availableFilters, id: \.self) { filter in
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                if activeFilter == filter {
-                                    activeFilter = nil
-                                } else {
-                                    activeFilter = filter
-                                }
-                            }
-                            dismiss()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: filter.icon)
-                                    .font(.body)
-                                    .foregroundStyle(filter.color)
-                                    .frame(width: 28)
-
-                                Text(filter.rawValue)
-                                    .font(.body)
-                                    .foregroundStyle(.primary)
-
-                                Spacer()
-
-                                if let count = filterCounts[filter], count > 0 {
-                                    Text("\(count)")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                if activeFilter == filter {
-                                    Image(systemName: "checkmark")
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(Color.accentColor)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    Text("Filter by")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 6)
-                } footer: {
-                    if scope == .people {
-                        Text("Only Unread and Needs Reply filters are available in People view.")
-                    }
-                }
-
-                if activeFilter != nil {
-                    Section {
-                        Button(role: .destructive) {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                activeFilter = nil
-                            }
-                            dismiss()
-                        } label: {
-                            HStack {
-                                Image(systemName: "xmark.circle")
-                                Text("Clear Filter")
-                            }
-                            .foregroundStyle(.red)
-                        }
-                    }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    filterSection(title: "Smart", filters: smartFilters)
+                    filterSection(title: "Other", filters: otherFilters)
                 }
             }
             .navigationTitle("Filters")
             .navigationBarTitleDisplayMode(.inline)
-            .listSectionSpacing(8)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .cancellationAction) {
+                    if activeFilter != nil {
+                        Button("Clear") {
+                            activeFilter = nil
+                        }
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
         }
     }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
 }
 
 // MARK: - Preview
@@ -1636,3 +1574,70 @@ struct FilterSheet: View {
 #Preview {
     InboxView()
 }
+
+    @ViewBuilder
+    private func filterSection(title: String, filters: [InboxFilter]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(filters, id: \.self) { filter in
+                    let count = filterCounts[filter] ?? 0
+                    Button {
+                        selectFilter(filter)
+                    } label: {
+                        SmartFilterCard(
+                            filter: filter,
+                            count: count,
+                            isSelected: activeFilter == filter
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func selectFilter(_ filter: InboxFilter) {
+        activeFilter = (activeFilter == filter) ? nil : filter
+    }
+}
+
+struct SmartFilterCard: View {
+    let filter: InboxFilter
+    let count: Int
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: filter.icon)
+                    .font(.headline)
+                    .foregroundStyle(filter.color)
+                Spacer()
+                Text("\(count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(filter.rawValue)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.7) : Color(.separator).opacity(0.3), lineWidth: 1)
+        )
+        .opacity(count == 0 ? 0.5 : 1)
+        .disabled(count == 0)
+    }
