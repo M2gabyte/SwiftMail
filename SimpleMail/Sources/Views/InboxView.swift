@@ -106,14 +106,20 @@ struct InboxView: View {
     /// Email row with all actions - extracted to help compiler
     @ViewBuilder
     private func emailRowView(for email: Email, isSelectionMode: Bool, isContinuationInSenderRun: Bool = false, isFirstInSenderRun: Bool = true) -> some View {
-        EmailRow(
-            email: email,
-            isCompact: listDensity == .compact,
-            showAvatars: showAvatars,
-            showAccountBadge: viewModel.currentMailbox == .allInboxes,
-            highlightTerms: highlightTerms,
-            isContinuationInSenderRun: isContinuationInSenderRun
-        )
+        HStack(spacing: 12) {
+            if isSelectionMode {
+                SelectionIndicator(isSelected: selectedThreadIds.contains(email.threadId))
+            }
+
+            EmailRow(
+                email: email,
+                isCompact: listDensity == .compact,
+                showAvatars: showAvatars,
+                showAccountBadge: viewModel.currentMailbox == .allInboxes,
+                highlightTerms: highlightTerms,
+                isContinuationInSenderRun: isContinuationInSenderRun
+            )
+        }
         .background(Color(.systemBackground))
         .listRowBackground(Color(.systemBackground))
         .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
@@ -133,7 +139,9 @@ struct InboxView: View {
             .tint(.green)
         }
         .onTapGesture {
-            if !isSelectionMode {
+            if isSelectionMode {
+                toggleSelection(threadId: email.threadId)
+            } else {
                 if isSearchMode {
                     isSearchMode = false
                     searchFieldFocused = false
@@ -675,6 +683,17 @@ struct InboxView: View {
             HapticFeedback.medium()
         }
         selectedThreadIds.insert(threadId)
+    }
+
+    private func toggleSelection(threadId: SelectionID) {
+        if selectedThreadIds.contains(threadId) {
+            selectedThreadIds.remove(threadId)
+        } else {
+            selectedThreadIds.insert(threadId)
+        }
+        if selectedThreadIds.isEmpty {
+            exitSelectionMode()
+        }
     }
 
     private func startSelectionMode() {
@@ -1494,6 +1513,24 @@ struct UndoToast: View {
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
         )
         .padding(.horizontal, 16)
+    }
+}
+
+private struct SelectionIndicator: View {
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color(.separator).opacity(0.6), lineWidth: 1)
+                .frame(width: 22, height: 22)
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .frame(width: 24)
     }
 }
 
