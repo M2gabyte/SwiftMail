@@ -639,26 +639,16 @@ struct EmailBodyWebView: UIViewRepresentable {
                 @media (prefers-color-scheme: dark) {
                     body { color: #f0f0f0; background-color: transparent; }
                 }
-                /* Constrain content to viewport */
-                body * { max-width: 100% !important; min-width: 0 !important; }
+                /* Constrain media to viewport without breaking table layouts */
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
-                table { max-width: 100% !important; width: 100% !important; table-layout: fixed !important; }
-                td, th { max-width: 100% !important; word-break: break-word; }
-                div[style*="width:600"], div[style*="width:640"], div[style*="width:700"] {
-                    width: 100% !important;
-                    max-width: 100% !important;
-                }
+                td, th { word-break: break-word; }
                 a { color: #007AFF; }
                 /* Collapse empty elements that create whitespace */
                 div:empty, span:empty, td:empty, p:empty {
                     display: none !important;
                 }
                 /* Reduce excessive spacing from marketing emails */
-                table[width="100%"], table[width="600"], table[width="640"] {
-                    margin: 0 !important;
-                    padding: 0 !important;
-                }
                 \(trackingCSS)
                 img[data-blocked-src] {
                     display: none !important;
@@ -750,6 +740,7 @@ struct EmailBodyWebView: UIViewRepresentable {
                     var elements = document.querySelectorAll('p, span, td, div, li, a, h1, h2, h3, h4, h5, h6');
                     elements.forEach(function(el) {
                         if (!el.textContent || el.textContent.trim().length === 0) { return; }
+                        if (el.dataset && el.dataset.smContrastAdjusted === '1') { return; }
                         var style = getComputedStyle(el);
                         var color = parseRGB(style.color);
                         if (!color) { return; }
@@ -760,6 +751,7 @@ struct EmailBodyWebView: UIViewRepresentable {
                             var bgLum = luminance(bg);
                             el.style.color = bgLum > 0.6 ? '#222222' : '#e6e6e6';
                         }
+                        if (el.dataset) { el.dataset.smContrastAdjusted = '1'; }
                     });
                 }
                 function setupImageListeners() {
@@ -793,17 +785,7 @@ struct EmailBodyWebView: UIViewRepresentable {
                     adjustLowContrastText();
                     postHeight();
                 });
-                if (window.ResizeObserver) {
-                    var ro = new ResizeObserver(function() { scheduleHeight(); });
-                    ro.observe(document.body);
-                }
-                if (window.MutationObserver) {
-                    var mo = new MutationObserver(function() {
-                        adjustLowContrastText();
-                        scheduleHeight();
-                    });
-                    mo.observe(document.body, { childList: true, subtree: true, attributes: true });
-                }
+                // Avoid Resize/Mutation observers to prevent scroll jitter in long emails.
             </script>
         </head>
         <body>
@@ -1665,33 +1647,19 @@ class EmailDetailViewModel: ObservableObject {
     }
 
     func archive() async {
-        // Use batch API for efficiency (single request vs N requests)
-        let messageIds = messages.map(\.id)
-        do {
-            if let account = accountForThread() {
-                try await GmailService.shared.batchArchive(messageIds: messageIds, account: account)
-            } else {
-                try await GmailService.shared.batchArchive(messageIds: messageIds)
-            }
-        } catch {
-            detailLogger.error("Failed to archive thread: \(error.localizedDescription)")
-            self.error = error
-        }
+        NotificationCenter.default.post(
+            name: .archiveThreadRequested,
+            object: nil,
+            userInfo: ["threadId": threadId]
+        )
     }
 
     func trash() async {
-        // Use batch API for efficiency
-        let messageIds = messages.map(\.id)
-        do {
-            if let account = accountForThread() {
-                try await GmailService.shared.batchTrash(messageIds: messageIds, account: account)
-            } else {
-                try await GmailService.shared.batchTrash(messageIds: messageIds)
-            }
-        } catch {
-            detailLogger.error("Failed to trash thread: \(error.localizedDescription)")
-            self.error = error
-        }
+        NotificationCenter.default.post(
+            name: .trashThreadRequested,
+            object: nil,
+            userInfo: ["threadId": threadId]
+        )
     }
 
     func toggleStar() async {

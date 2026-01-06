@@ -11,6 +11,8 @@ private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxVie
 extension Notification.Name {
     static let blockedSendersDidChange = Notification.Name("blockedSendersDidChange")
     static let cachesDidClear = Notification.Name("cachesDidClear")
+    static let archiveThreadRequested = Notification.Name("archiveThreadRequested")
+    static let trashThreadRequested = Notification.Name("trashThreadRequested")
 }
 
 @MainActor
@@ -116,6 +118,8 @@ final class InboxViewModel {
     // MARK: - Notification Observer
     @ObservationIgnored private var blockedSendersObserver: NSObjectProtocol?
     @ObservationIgnored private var accountChangeObserver: NSObjectProtocol?
+    @ObservationIgnored private var archiveThreadObserver: NSObjectProtocol?
+    @ObservationIgnored private var trashThreadObserver: NSObjectProtocol?
 
     // MARK: - Computed Properties
 
@@ -160,6 +164,26 @@ final class InboxViewModel {
             }
         }
 
+        archiveThreadObserver = NotificationCenter.default.addObserver(
+            forName: .archiveThreadRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let threadId = notification.userInfo?["threadId"] as? String else { return }
+            performUndoableBulkAction(threadIds: [threadId], action: .archive)
+        }
+
+        trashThreadObserver = NotificationCenter.default.addObserver(
+            forName: .trashThreadRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let threadId = notification.userInfo?["threadId"] as? String else { return }
+            performUndoableBulkAction(threadIds: [threadId], action: .trash)
+        }
+
         Task {
             await loadEmails()
         }
@@ -170,6 +194,12 @@ final class InboxViewModel {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = accountChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = archiveThreadObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = trashThreadObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
