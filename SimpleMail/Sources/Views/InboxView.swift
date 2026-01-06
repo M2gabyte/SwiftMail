@@ -586,11 +586,13 @@ struct InboxView: View {
             Image(systemName: "archivebox")
         }
         .disabled(selectedThreadIds.isEmpty)
+        .help("Archive")
 
         Button { performBulkTrash() } label: {
             Image(systemName: "trash")
         }
         .disabled(selectedThreadIds.isEmpty)
+        .help("Trash")
 
         Button {
             if shouldMarkRead {
@@ -602,6 +604,7 @@ struct InboxView: View {
             Image(systemName: shouldMarkRead ? "envelope.open" : "envelope.badge")
         }
         .disabled(selectedThreadIds.isEmpty)
+        .help(shouldMarkRead ? "Mark as Read" : "Mark as Unread")
 
         Button {
             if shouldStar {
@@ -613,16 +616,19 @@ struct InboxView: View {
             Image(systemName: shouldStar ? "star" : "star.slash")
         }
         .disabled(selectedThreadIds.isEmpty)
+        .help(shouldStar ? "Star" : "Unstar")
 
         Button { showingMoveDialog = true } label: {
             Image(systemName: "folder")
         }
         .disabled(selectedThreadIds.isEmpty)
+        .help("Move")
 
         Button { showingBulkSnooze = true } label: {
             Image(systemName: "clock")
         }
         .disabled(selectedThreadIds.isEmpty)
+        .help("Snooze")
     }
 
     @ViewBuilder
