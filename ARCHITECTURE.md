@@ -2,13 +2,13 @@
 
 ## Overview
 
-SimpleMail is a native iOS email client built with SwiftUI and SwiftData, designed for Gmail integration with 120fps scroll performance, offline support, and Apple Intelligence integration.
+SimpleMail is a native iOS email client built with SwiftUI and SwiftData, designed for Gmail integration with high‑performance scrolling, offline support, and Apple Intelligence integration.
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|------------|
-| UI Framework | SwiftUI (iOS 17+) |
+| UI Framework | SwiftUI |
 | Data Persistence | SwiftData |
 | State Management | @Observable macro (iOS 17+) |
 | Networking | URLSession + async/await |
@@ -34,7 +34,10 @@ SimpleMail/
 │   │
 │   ├── Models/
 │   │   ├── Email.swift              # Core email models (SwiftData)
-│   │   └── Briefing.swift           # Briefing/digest models
+│   │   ├── Briefing.swift           # Briefing/digest models
+│   │   ├── InboxTab.swift           # All / Primary / Pinned tab enum
+│   │   ├── PinnedTabOption.swift    # Pinned tab option (Other/Money/etc)
+│   │   └── PrimaryRule.swift        # Primary tab rule toggles
 │   │
 │   ├── ViewModels/
 │   │   └── InboxViewModel.swift     # Main inbox state management
@@ -44,6 +47,8 @@ SimpleMail/
 │   │   ├── EmailDetailView.swift    # Thread/conversation view
 │   │   ├── ComposeView.swift        # Email composition
 │   │   ├── SettingsView.swift       # Settings & Gmail sync
+│   │   ├── PrimaryInboxRulesView.swift # Primary rule toggles UI
+│   │   ├── PinnedTabSettingsView.swift # Pinned tab selection UI
 │   │   ├── SnoozePickerSheet.swift  # Snooze time picker
 │   │   ├── AttachmentViewer.swift   # QuickLook attachment preview
 │   │   ├── BatchOperations.swift    # Multi-select & batch actions
@@ -72,6 +77,7 @@ SimpleMail/
 │   │   ├── JSONCoding.swift         # Shared JSON encoders/decoders
 │   │   ├── Color+Hex.swift          # Hex string to Color utilities
 │   │   ├── EmailFilters.swift       # Email classification (human/bulk detection)
+│   │   ├── InboxPreferences.swift   # Primary/pinned preferences + notifications
 │   │   └── NetworkRetry.swift       # Exponential backoff retry utility
 │   │
 │   ├── Resources/
@@ -232,6 +238,47 @@ enum Base64URL {
 - Loads cached inbox items per account and enqueues SummaryQueue.
 - Requires network connectivity; respects the same throttling + battery guards.
 - Enabled only when **Aggressive Background Summaries** is on.
+
+**Threading / concurrency note:**
+- SummaryQueue writes stats/timestamps on the main actor to avoid background publishing warnings.
+
+### 4. Inbox Tabs + Preferences (InboxViewModel.swift / InboxPreferences.swift)
+
+**Goal:** allow a user‑customizable Primary tab and a configurable third tab, while keeping counts consistent.
+
+**Tabs:**
+- **All**: all non‑blocked emails.
+- **Primary**: rule‑based, user‑configurable inclusion.
+- **Pinned**: a single user‑selected view (Other/Money/Deadlines/Needs Reply/Unread/Newsletters/People).
+
+**Preferences storage:**
+- `InboxPreferences` persists pinned tab selection and rule toggles in UserDefaults with **global scope** (`accountEmail: nil`) so Unified Inbox is consistent.
+- Changes broadcast via `Notification.Name.inboxPreferencesDidChange`.
+
+**Primary rules:**
+- `PrimaryRule` defines the toggles and defaults (People/VIP/Security/Money/Deadlines enabled by default).
+- `InboxViewModel.isPrimary(_:)` returns true if **any enabled rule** matches.
+
+**Pinned tab:**
+- `PinnedTabOption` defines the third tab label and filter predicate.
+- `matchesPinned(_:)` maps the selected option to the appropriate predicate (e.g. money, deadlines, people).
+
+**Filtering pipeline:**
+1. Blocked senders removed.
+2. Tab context applied (All / Primary / Pinned).
+3. Drawer filter applied (Unread / Needs Reply / Deadlines / Money / Newsletters).
+
+**Counts:**
+- Filter counts are computed **after** blocked + tab context, but **before** the active drawer filter.
+
+### 5. Undoable Archive/Trash (InboxViewModel.swift / EmailDetailView.swift)
+
+**Goal:** consistent undo‑timer UX for list and detail actions.
+
+**How it works:**
+- Archive/trash from the thread view posts a notification (`archiveThreadRequested` / `trashThreadRequested`).
+- InboxViewModel receives this and executes the same undoable bulk action pipeline used by list selection.
+- Undo toast is rendered in InboxView above the bottom search bar; countdown uses the user’s undo delay setting.
 
 **NetworkRetry Utility (NetworkRetry.swift):**
 ```swift
