@@ -328,11 +328,6 @@ struct InboxView: View {
         .overlay(alignment: .top) { offlineBannerContent }
             .overlay(alignment: .bottom) { bulkToastContent }
             .overlay(alignment: .bottom) {
-                undoSendToastContent
-                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
-                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
-            }
-            .overlay(alignment: .bottom) {
                 if !isSelectionMode && !showingFilterSheet {
                     BottomCommandSurface(
                         isFilterActive: viewModel.activeFilter != nil,
@@ -367,6 +362,13 @@ struct InboxView: View {
                     )
                     .zIndex(20)
                 }
+            }
+            .overlay(alignment: .bottom) {
+                undoSendToastContent
+                    .padding(.bottom, 62)
+                    .zIndex(30)
+                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
+                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
             }
     }
 
