@@ -276,6 +276,9 @@ struct InboxView: View {
 
     private var baseContentView: some View {
         ZStack {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+
             inboxList
                 .opacity(isSearchMode ? 0.3 : 1.0)
                 .blur(radius: isSearchMode ? 4 : 0)
