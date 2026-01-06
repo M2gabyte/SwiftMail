@@ -20,6 +20,11 @@ final class InboxViewModel {
 
     var emails: [Email] = []
     var scope: InboxScope = .all
+    var currentTab: InboxTab = .all {
+        didSet {
+            updateFilterCounts()
+        }
+    }
     var activeFilter: InboxFilter? = nil
     var currentMailbox: Mailbox = .inbox
     var isLoading = false
@@ -53,6 +58,24 @@ final class InboxViewModel {
     // MARK: - Filter Counts
 
     var filterCounts: [InboxFilter: Int] = [:]
+
+    var alwaysPrimarySenders: [String] {
+        get {
+            AccountDefaults.stringArray(for: "alwaysPrimarySenders", accountEmail: AuthService.shared.currentAccount?.email)
+        }
+        set {
+            AccountDefaults.setStringArray(newValue, for: "alwaysPrimarySenders", accountEmail: AuthService.shared.currentAccount?.email)
+        }
+    }
+
+    var alwaysOtherSenders: [String] {
+        get {
+            AccountDefaults.stringArray(for: "alwaysOtherSenders", accountEmail: AuthService.shared.currentAccount?.email)
+        }
+        set {
+            AccountDefaults.setStringArray(newValue, for: "alwaysOtherSenders", accountEmail: AuthService.shared.currentAccount?.email)
+        }
+    }
 
     // MARK: - Pagination
 
@@ -216,7 +239,7 @@ final class InboxViewModel {
 
     func loadMoreIfNeeded(currentEmail: Email) async {
         // Check against the last VISIBLE email (after filtering), not the last raw email
-        // This ensures pagination triggers correctly when People filter reduces the list
+        // This ensures pagination triggers correctly when tab filtering reduces the list
         guard let lastVisibleId = lastVisibleEmailId,
               lastVisibleId == currentEmail.id,
               hasMoreEmails,
@@ -363,45 +386,48 @@ final class InboxViewModel {
     // MARK: - Filter Counts (Simplified - no actor calls)
 
     private func updateFilterCounts() {
+        recomputeFilterCounts(from: emails)
+    }
+
+    private func recomputeFilterCounts(from emails: [Email]) {
+        let base = applyBaseContext(emails)
         var counts: [InboxFilter: Int] = [:]
 
-        counts[.unread] = emails.filter { $0.isUnread }.count
+        counts[.unread] = base.filter { $0.isUnread }.count
 
-        for email in emails {
-            // Newsletter detection (sync)
-            if email.labelIds.contains("CATEGORY_PROMOTIONS") || email.listUnsubscribe != nil {
-                counts[.newsletters, default: 0] += 1
-            }
-
-            // Money/transactional detection (sync)
-            let lowerSubject = email.subject.lowercased()
-            let lowerSnippet = email.snippet.lowercased()
-            if lowerSubject.contains("receipt") || lowerSubject.contains("order") ||
-               lowerSubject.contains("payment") || lowerSubject.contains("invoice") ||
-               lowerSnippet.contains("receipt") || lowerSnippet.contains("payment") {
-                counts[.money, default: 0] += 1
-            }
-
-            // Needs reply detection (sync)
+        for email in base {
             if isNeedsReplyCandidate(email) {
                 counts[.needsReply, default: 0] += 1
             }
 
-            // Deadline detection (sync)
-            let deadlineKeywords = ["today", "tomorrow", "urgent", "asap", "deadline", "due"]
-            let emailText = "\(email.subject) \(email.snippet)".lowercased()
-            if deadlineKeywords.contains(where: { emailText.contains($0) }) {
+            if isDeadlineEmail(email) {
                 counts[.deadlines, default: 0] += 1
+            }
+
+            if isMoneyEmail(email) {
+                counts[.money, default: 0] += 1
+            }
+
+            if email.labelIds.contains("CATEGORY_PROMOTIONS") || email.listUnsubscribe != nil {
+                counts[.newsletters, default: 0] += 1
             }
         }
 
-        self.filterCounts = counts
+        filterCounts = counts
     }
 
     // MARK: - Filtering
 
     private func blockedSenders(for accountEmail: String?) -> Set<String> {
         Set(AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail))
+    }
+
+    private func alwaysPrimarySenders(for accountEmail: String?) -> [String] {
+        AccountDefaults.stringArray(for: "alwaysPrimarySenders", accountEmail: accountEmail)
+    }
+
+    private func alwaysOtherSenders(for accountEmail: String?) -> [String] {
+        AccountDefaults.stringArray(for: "alwaysOtherSenders", accountEmail: accountEmail)
     }
 
     private func accountForEmail(_ email: Email) -> AuthService.Account? {
@@ -411,21 +437,97 @@ final class InboxViewModel {
         return AuthService.shared.currentAccount
     }
 
-    private func applyFilters(_ emails: [Email]) -> [Email] {
+    private func senderOverride(for email: Email) -> InboxTab? {
+        let accountEmail = email.accountEmail ?? AuthService.shared.currentAccount?.email
+        let sender = email.senderEmail.lowercased()
+
+        let primary = alwaysPrimarySenders(for: accountEmail)
+        if primary.contains(sender) { return .primary }
+
+        let other = alwaysOtherSenders(for: accountEmail)
+        if other.contains(sender) { return .other }
+
+        return nil
+    }
+
+    private func isVIPSender(_ email: Email) -> Bool {
+        let vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: email.accountEmail)
+        return vipSenders.contains(email.senderEmail.lowercased())
+    }
+
+    private func isMoneyEmail(_ email: Email) -> Bool {
+        let text = "\(email.subject) \(email.snippet)".lowercased()
+        return text.contains("receipt") || text.contains("order") ||
+            text.contains("payment") || text.contains("invoice")
+    }
+
+    private func isDeadlineEmail(_ email: Email) -> Bool {
+        let deadlineKeywords = ["today", "tomorrow", "urgent", "asap", "deadline", "due"]
+        let emailText = "\(email.subject) \(email.snippet)".lowercased()
+        return deadlineKeywords.contains(where: { emailText.contains($0) })
+    }
+
+    private func isMoneyOrDeadline(_ email: Email) -> Bool {
+        isMoneyEmail(email) || isDeadlineEmail(email)
+    }
+
+    private func isSecurityOrAccount(_ email: Email) -> Bool {
+        let text = "\(email.subject) \(email.snippet)".lowercased()
+        let keywords = [
+            "security alert", "new sign-in", "sign-in", "password",
+            "verify", "verification", "two-factor", "2fa",
+            "suspicious", "unrecognized", "confirm", "action required"
+        ]
+        return keywords.contains { text.contains($0) }
+    }
+
+    private func classifyEmail(_ email: Email) -> InboxTab {
+        if let override = senderOverride(for: email) { return override }
+
+        if isVIPSender(email) || EmailFilters.looksLikeHumanSender(email) { return .primary }
+        if isSecurityOrAccount(email) { return .primary }
+        if isMoneyOrDeadline(email) { return .primary }
+
+        if email.labelIds.contains("CATEGORY_SOCIAL")
+            || email.labelIds.contains("CATEGORY_FORUMS")
+            || email.labelIds.contains("CATEGORY_PROMOTIONS") {
+            return .other
+        }
+
+        if EmailFilters.isBulk(email) || email.listUnsubscribe != nil {
+            return .other
+        }
+
+        if email.labelIds.contains("CATEGORY_UPDATES") {
+            return .other
+        }
+
+        return .primary
+    }
+
+    private func applyBaseContext(_ emails: [Email]) -> [Email] {
         var filtered = emails
 
-        // Filter out blocked senders first
         filtered = filtered.filter { email in
             let blocked = blockedSenders(for: email.accountEmail)
             return !blocked.contains(email.senderEmail.lowercased())
         }
 
-        // Apply scope filter (People = emails from real humans, not bulk/newsletters)
-        if scope == .people {
-            filtered = EmailFilters.filterForPeopleScope(filtered)
+        switch currentTab {
+        case .all:
+            break
+        case .primary:
+            filtered = filtered.filter { classifyEmail($0) == .primary }
+        case .other:
+            filtered = filtered.filter { classifyEmail($0) == .other }
         }
 
-        // Apply active filter
+        return filtered
+    }
+
+    private func applyFilters(_ emails: [Email]) -> [Email] {
+        var filtered = applyBaseContext(emails)
+
         if let filter = activeFilter {
             switch filter {
             case .unread:
@@ -433,17 +535,9 @@ final class InboxViewModel {
             case .needsReply:
                 filtered = filtered.filter { isNeedsReplyCandidate($0) }
             case .deadlines:
-                filtered = filtered.filter { email in
-                    let text = "\(email.subject) \(email.snippet)".lowercased()
-                    return text.contains("today") || text.contains("tomorrow") ||
-                           text.contains("urgent") || text.contains("deadline")
-                }
+                filtered = filtered.filter { isDeadlineEmail($0) }
             case .money:
-                filtered = filtered.filter { email in
-                    let text = "\(email.subject) \(email.snippet)".lowercased()
-                    return text.contains("receipt") || text.contains("order") ||
-                           text.contains("payment") || text.contains("invoice")
-                }
+                filtered = filtered.filter { isMoneyEmail($0) }
             case .newsletters:
                 filtered = filtered.filter { email in
                     email.labelIds.contains("CATEGORY_PROMOTIONS") ||
