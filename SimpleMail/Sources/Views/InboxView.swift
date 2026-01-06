@@ -389,6 +389,7 @@ struct InboxView: View {
             if !isSearchMode {
                 InboxHeaderBlock(
                     currentTab: currentTabBinding,
+                    pinnedTitle: viewModel.pinnedTabOption.title,
                     activeFilter: $viewModel.activeFilter,
                     filterCounts: viewModel.filterCounts,
                     isCollapsed: isHeaderCollapsed,
@@ -1018,8 +1019,8 @@ struct InboxView: View {
         if viewModel.currentTab == .primary {
             return "No Primary"
         }
-        if viewModel.currentTab == .other {
-            return "No Other Mail"
+        if viewModel.currentTab == .pinned {
+            return "No \(viewModel.pinnedTabOption.title)"
         }
         return "Inbox Zero"
     }
@@ -1031,8 +1032,8 @@ struct InboxView: View {
         if viewModel.currentTab == .primary {
             return "No primary emails yet."
         }
-        if viewModel.currentTab == .other {
-            return "No other emails yet."
+        if viewModel.currentTab == .pinned {
+            return "No \(viewModel.pinnedTabOption.title.lowercased()) emails yet."
         }
         return "You're all caught up."
     }
@@ -1041,7 +1042,7 @@ struct InboxView: View {
         if viewModel.activeFilter != nil {
             return "line.3.horizontal.decrease.circle"
         }
-        if viewModel.currentTab == .other {
+        if viewModel.currentTab == .pinned {
             return "tray.2"
         }
         return "tray"
@@ -1052,6 +1053,7 @@ struct InboxView: View {
 
 struct InboxHeaderBlock: View {
     @Binding var currentTab: InboxTab
+    let pinnedTitle: String
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
     let isCollapsed: Bool
@@ -1063,7 +1065,7 @@ struct InboxHeaderBlock: View {
             Picker("", selection: $currentTab) {
                 Text(InboxTab.all.rawValue).tag(InboxTab.all)
                 Text(InboxTab.primary.rawValue).tag(InboxTab.primary)
-                Text(InboxTab.other.rawValue).tag(InboxTab.other)
+                Text(pinnedTitle).tag(InboxTab.pinned)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
@@ -1120,11 +1122,6 @@ private enum MailTypography {
 }
 
 // MARK: - Scope
-
-enum InboxScope: String, CaseIterable {
-    case all = "All"
-    case people = "People"
-}
 
 // MARK: - Filter Pills
 
