@@ -250,56 +250,177 @@ final class BackgroundSyncManager {
         let accounts = await MainActor.run { AuthService.shared.accounts }
         guard !accounts.isEmpty else { return }
 
-        var allEmails: [EmailDTO] = []
         for account in accounts {
             if Task.isCancelled { break }
-            let (emails, _) = try await GmailService.shared.fetchInbox(
+            let result = try await syncAccount(account)
+
+            // Check for cancellation before cache update
+            try Task.checkCancellation()
+
+            if !result.emails.isEmpty {
+                await EmailCacheManager.shared.cacheEmails(result.emails, isFullInboxFetch: result.isFullSync)
+            }
+            if !result.deletedIds.isEmpty {
+                await EmailCacheManager.shared.deleteEmails(ids: result.deletedIds, accountEmail: account.email)
+            }
+
+            logger.info("Synced \(result.emails.count) emails (\(result.deletedIds.count) deleted) for \(account.email)")
+
+            let emailModels = result.emails.map(Email.init(dto:))
+            let summaryCandidates = emailModels.compactMap { email -> SummaryQueue.Candidate? in
+                guard let accountEmail = email.accountEmail else { return nil }
+                return SummaryQueue.Candidate(
+                    emailId: email.id,
+                    threadId: email.threadId,
+                    accountEmail: accountEmail,
+                    subject: email.subject,
+                    from: email.from,
+                    snippet: email.snippet,
+                    date: email.date,
+                    isUnread: email.isUnread,
+                    isStarred: email.isStarred,
+                    listUnsubscribe: email.listUnsubscribe
+                )
+            }
+            await SummaryQueue.shared.enqueueCandidates(summaryCandidates)
+
+            let prefetchCandidates = emailModels.compactMap { email -> BodyPrefetchQueue.Candidate? in
+                guard let accountEmail = email.accountEmail else { return nil }
+                return BodyPrefetchQueue.Candidate(
+                    emailId: email.id,
+                    threadId: email.threadId,
+                    accountEmail: accountEmail,
+                    date: email.date,
+                    isUnread: email.isUnread,
+                    isStarred: email.isStarred,
+                    listUnsubscribe: email.listUnsubscribe
+                )
+            }
+            await BodyPrefetchQueue.shared.enqueueCandidates(prefetchCandidates)
+        }
+    }
+
+    private struct SyncResult {
+        let emails: [EmailDTO]
+        let deletedIds: [String]
+        let isFullSync: Bool
+    }
+
+    private func syncAccount(_ account: AuthService.Account) async throws -> SyncResult {
+        let accountEmail = account.email.lowercased()
+        let lastHistoryId = AccountDefaults.string(for: "gmailHistoryId", accountEmail: accountEmail)
+
+        if let lastHistoryId {
+            do {
+                let delta = try await fetchHistoryDelta(for: account, startHistoryId: lastHistoryId)
+                if let newHistoryId = delta.historyId {
+                    AccountDefaults.setString(newHistoryId, for: "gmailHistoryId", accountEmail: accountEmail)
+                }
+                return SyncResult(
+                    emails: delta.changedEmails,
+                    deletedIds: delta.deletedIds,
+                    isFullSync: false
+                )
+            } catch let error as GmailError {
+                if case .notFound = error {
+                    logger.warning("HistoryId invalid for \(accountEmail). Falling back to full sync.")
+                } else {
+                    throw error
+                }
+            }
+        }
+
+        let (emails, _) = try await GmailService.shared.fetchInbox(
+            for: account,
+            maxResults: 50
+        )
+        if let profile = try? await GmailService.shared.getProfile(for: account) {
+            AccountDefaults.setString(profile.historyId, for: "gmailHistoryId", accountEmail: accountEmail)
+        }
+        return SyncResult(emails: emails, deletedIds: [], isFullSync: true)
+    }
+
+    private struct HistoryDelta {
+        let changedEmails: [EmailDTO]
+        let deletedIds: [String]
+        let historyId: String?
+    }
+
+    private func fetchHistoryDelta(
+        for account: AuthService.Account,
+        startHistoryId: String
+    ) async throws -> HistoryDelta {
+        var historyRecords: [HistoryRecord] = []
+        var pageToken: String?
+        var newestHistoryId: String?
+
+        repeat {
+            let response = try await GmailService.shared.getHistory(
                 for: account,
-                maxResults: 50
+                startHistoryId: startHistoryId,
+                pageToken: pageToken
             )
-            allEmails.append(contentsOf: emails)
+            if let history = response.history {
+                historyRecords.append(contentsOf: history)
+            }
+            if newestHistoryId == nil {
+                newestHistoryId = response.historyId
+            } else if let responseHistory = response.historyId {
+                newestHistoryId = responseHistory
+            }
+            pageToken = response.nextPageToken
+        } while pageToken != nil
+
+        let (addedIds, deletedIds, labelChangedIds) = collectHistoryMessageIds(historyRecords)
+        let changedIds = Array(addedIds.union(labelChangedIds))
+
+        let changedEmails = try await GmailService.shared.fetchEmails(
+            messageIds: changedIds,
+            for: account
+        )
+
+        return HistoryDelta(
+            changedEmails: changedEmails,
+            deletedIds: Array(deletedIds),
+            historyId: newestHistoryId
+        )
+    }
+
+    private func collectHistoryMessageIds(
+        _ records: [HistoryRecord]
+    ) -> (added: Set<String>, deleted: Set<String>, labelChanged: Set<String>) {
+        var added: Set<String> = []
+        var deleted: Set<String> = []
+        var labelChanged: Set<String> = []
+
+        for record in records {
+            if let additions = record.messagesAdded {
+                for item in additions {
+                    added.insert(item.message.id)
+                }
+            }
+            if let deletions = record.messagesDeleted {
+                for item in deletions {
+                    deleted.insert(item.message.id)
+                }
+            }
+            if let labelAdds = record.labelsAdded {
+                for item in labelAdds {
+                    labelChanged.insert(item.message.id)
+                }
+            }
+            if let labelRemovals = record.labelsRemoved {
+                for item in labelRemovals {
+                    labelChanged.insert(item.message.id)
+                }
+            }
         }
 
-        // Check for cancellation before cache update
-        try Task.checkCancellation()
+        // If deleted, don't refetch.
+        labelChanged.subtract(deleted)
+        added.subtract(deleted)
 
-        // Update local cache (SwiftData)
-        await EmailCacheManager.shared.cacheEmails(allEmails)
-
-        logger.info("Synced \(allEmails.count) emails to cache")
-
-        let emailModels = allEmails.map(Email.init(dto:))
-        let summaryCandidates = emailModels.compactMap { email -> SummaryQueue.Candidate? in
-            guard let accountEmail = email.accountEmail else { return nil }
-            return SummaryQueue.Candidate(
-                emailId: email.id,
-                threadId: email.threadId,
-                accountEmail: accountEmail,
-                subject: email.subject,
-                from: email.from,
-                snippet: email.snippet,
-                date: email.date,
-                isUnread: email.isUnread,
-                isStarred: email.isStarred,
-                listUnsubscribe: email.listUnsubscribe
-            )
-        }
-        await SummaryQueue.shared.enqueueCandidates(summaryCandidates)
-
-        // Prefetch bodies for offline reading
-        let prefetchCandidates = emailModels.compactMap { email -> BodyPrefetchQueue.Candidate? in
-            guard let accountEmail = email.accountEmail else { return nil }
-            return BodyPrefetchQueue.Candidate(
-                emailId: email.id,
-                threadId: email.threadId,
-                accountEmail: accountEmail,
-                date: email.date,
-                isUnread: email.isUnread,
-                isStarred: email.isStarred,
-                listUnsubscribe: email.listUnsubscribe
-            )
-        }
-        await BodyPrefetchQueue.shared.enqueueCandidates(prefetchCandidates)
+        return (added, deleted, labelChanged)
     }
 
     private func processSummaryQueue() async throws {

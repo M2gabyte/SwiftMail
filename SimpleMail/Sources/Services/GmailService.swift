@@ -444,6 +444,19 @@ actor GmailService: GmailAPIProvider {
         return (emails, listResponse.nextPageToken)
     }
 
+    func fetchEmails(
+        messageIds: [String],
+        for account: AuthService.Account
+    ) async throws -> [EmailDTO] {
+        guard !messageIds.isEmpty else { return [] }
+        let token = try await getAccessToken(for: account)
+        return try await fetchEmailDetails(
+            messageIds: messageIds,
+            token: token,
+            accountEmail: account.email.lowercased()
+        )
+    }
+
     // MARK: - Fetch Email Details (Batched)
     // Handles per-message errors gracefully - one failing message won't cancel the batch
 
@@ -1260,23 +1273,63 @@ actor GmailService: GmailAPIProvider {
 
     // MARK: - History
 
-    func getHistory(startHistoryId: String) async throws -> HistoryResponse {
+    func getHistory(startHistoryId: String, pageToken: String? = nil) async throws -> HistoryResponse {
         let token = try await getAccessToken()
         guard var components = URLComponents(string: "\(baseURL)/users/me/history") else {
             throw GmailError.invalidURL
         }
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "startHistoryId", value: startHistoryId),
             URLQueryItem(name: "historyTypes", value: "messageAdded"),
             URLQueryItem(name: "historyTypes", value: "messageDeleted"),
             URLQueryItem(name: "historyTypes", value: "labelAdded"),
             URLQueryItem(name: "historyTypes", value: "labelRemoved")
         ]
+        if let pageToken {
+            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+        }
+        components.queryItems = queryItems
 
         guard let url = components.url else {
             throw GmailError.invalidURL
         }
 
+        return try await request(url: url, token: token)
+    }
+
+    func getHistory(
+        for account: AuthService.Account,
+        startHistoryId: String,
+        pageToken: String? = nil
+    ) async throws -> HistoryResponse {
+        let token = try await getAccessToken(for: account)
+        guard var components = URLComponents(string: "\(baseURL)/users/me/history") else {
+            throw GmailError.invalidURL
+        }
+        var queryItems = [
+            URLQueryItem(name: "startHistoryId", value: startHistoryId),
+            URLQueryItem(name: "historyTypes", value: "messageAdded"),
+            URLQueryItem(name: "historyTypes", value: "messageDeleted"),
+            URLQueryItem(name: "historyTypes", value: "labelAdded"),
+            URLQueryItem(name: "historyTypes", value: "labelRemoved")
+        ]
+        if let pageToken {
+            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+        }
+        components.queryItems = queryItems
+
+        guard let url = components.url else {
+            throw GmailError.invalidURL
+        }
+
+        return try await request(url: url, token: token)
+    }
+
+    func getProfile(for account: AuthService.Account) async throws -> ProfileResponse {
+        let token = try await getAccessToken(for: account)
+        guard let url = URL(string: "\(baseURL)/users/me/profile") else {
+            throw GmailError.invalidURL
+        }
         return try await request(url: url, token: token)
     }
 
@@ -1801,6 +1854,13 @@ struct Draft: Codable, Identifiable {
 struct AttachmentResponse: Codable {
     let size: Int
     let data: String
+}
+
+struct ProfileResponse: Codable {
+    let emailAddress: String
+    let messagesTotal: Int?
+    let threadsTotal: Int?
+    let historyId: String
 }
 
 struct HistoryResponse: Codable {

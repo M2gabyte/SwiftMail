@@ -302,6 +302,58 @@ final class EmailCacheManager: ObservableObject {
         }
     }
 
+    func deleteEmails(ids: [String], accountEmail: String?) {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
+        guard let context = modelContext else { return }
+        guard !ids.isEmpty else { return }
+
+        let idSet = Set(ids)
+        let descriptor = FetchDescriptor<Email>(
+            predicate: #Predicate { email in
+                idSet.contains(email.id)
+            }
+        )
+
+        do {
+            let cached = try context.fetch(descriptor)
+            for email in cached {
+                if let accountEmail = accountEmail?.lowercased(),
+                   email.accountEmail?.lowercased() != accountEmail {
+                    continue
+                }
+                context.delete(email)
+            }
+            try context.save()
+            updateCacheStats()
+        } catch {
+            logger.error("Failed to delete emails: \(error.localizedDescription)")
+        }
+    }
+
+    func loadCachedEmails(by ids: [String], accountEmail: String?) -> [Email] {
+        guard let context = modelContext else { return [] }
+        guard !ids.isEmpty else { return [] }
+
+        let idSet = Set(ids)
+        let descriptor = FetchDescriptor<Email>(
+            predicate: #Predicate { email in
+                idSet.contains(email.id)
+            }
+        )
+
+        do {
+            let results = try context.fetch(descriptor)
+            let filtered = accountEmail == nil ? results : results.filter { $0.accountEmail?.lowercased() == accountEmail?.lowercased() }
+            let lookup = Dictionary(uniqueKeysWithValues: filtered.map { ($0.id, $0) })
+            return ids.compactMap { lookup[$0] }
+        } catch {
+            logger.error("Failed to load cached emails by ids: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     // MARK: - Cleanup Helpers
 
     private func removeStaleInboxEmails(fetchedIds: Set<String>, since oldestDate: Date, accountEmail: String?) {
