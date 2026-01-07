@@ -293,11 +293,14 @@ struct InboxView: View {
                 .ignoresSafeArea()
 
             inboxList
-                .opacity(isSearchMode ? 0.0 : 1.0)
+                .opacity(isSearchMode ? 0.3 : 1.0)
                 .allowsHitTesting(!isSearchMode)
 
             if isSearchMode {
                 ZStack {
+                    Color.black.opacity(0.08)
+                        .ignoresSafeArea()
+
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -310,6 +313,16 @@ struct InboxView: View {
                         }
 
                     searchModeList
+                        .padding(.horizontal, 12)
+                        .padding(.top, 12)
+                        .padding(.bottom, 80)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                .stroke(Color(.separator).opacity(0.2), lineWidth: 0.5)
+                        )
+                        .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 8)
+                        .padding(.horizontal, 12)
                         .transition(.opacity)
                         .zIndex(10)
                 }
@@ -506,7 +519,6 @@ struct InboxView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color(.systemBackground))
     }
 
     @ToolbarContentBuilder
