@@ -153,6 +153,21 @@ final class InboxViewModel {
     }
     private let cachePageSize = 120
     private var lastFallbackFetchBefore: Date?
+    private var pageTokenStallCount = 0
+    private var fallbackEmptyCount = 0
+
+    struct PagingDebugState {
+        var path: String = "idle"
+        var action: String = "-"
+        var fetched: Int = 0
+        var appended: Int = 0
+        var oldestLoadedDate: Date?
+        var nextPageTokenPresent = false
+        var cacheExhausted = false
+        var timestamp = Date()
+    }
+
+    var pagingDebug = PagingDebugState()
 
     // MARK: - Computed Properties
 
@@ -210,6 +225,25 @@ final class InboxViewModel {
         }
     }
 
+    private func updatePagingDebug(
+        path: String,
+        action: String,
+        fetched: Int = 0,
+        appended: Int = 0
+    ) {
+        pagingDebug = PagingDebugState(
+            path: path,
+            action: action,
+            fetched: fetched,
+            appended: appended,
+            oldestLoadedDate: cachePagingState.oldestLoadedDate,
+            nextPageTokenPresent: nextPageToken != nil,
+            cacheExhausted: cachePagingState.isExhausted,
+            timestamp: Date()
+        )
+        logger.info("PagingDebug path=\(path) action=\(action) fetched=\(fetched) appended=\(appended) oldest=\(self.cachePagingState.oldestLoadedDate?.description ?? "nil") nextToken=\(self.nextPageToken != nil) exhausted=\(self.cachePagingState.isExhausted)")
+    }
+
     // MARK: - Init
 
     init() {
@@ -237,7 +271,13 @@ final class InboxViewModel {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.currentAccountEmail = AuthService.shared.currentAccount?.email
+                let newAccountEmail = AuthService.shared.currentAccount?.email
+                let normalizedNew = newAccountEmail?.lowercased()
+                let normalizedCurrent = self.currentAccountEmail?.lowercased()
+                guard normalizedNew != normalizedCurrent else {
+                    return
+                }
+                self.currentAccountEmail = newAccountEmail
                 self.applySnapshotOrCachedEmails()
                 self.scheduleRecompute()
                 Task {
@@ -377,56 +417,101 @@ final class InboxViewModel {
         }
 
         if hasMoreEmails {
-            await loadMoreEmails()
-            return
-        }
-
-        if let oldestDate = cachePagingState.oldestLoadedDate {
-            if await loadMoreFromNetworkByDate(before: oldestDate) {
+            let didAppend = await loadMoreEmails()
+            if didAppend {
                 return
             }
         }
+
+        if let oldestDate = cachePagingState.oldestLoadedDate {
+            _ = await loadMoreFromNetworkByDate(before: oldestDate)
+        }
     }
 
-    func loadMoreEmails() async {
+    @discardableResult
+    func loadMoreEmails() async -> Bool {
         if currentMailbox == .allInboxes {
             await loadMoreUnifiedByDate()
-            return
+            return false
         }
 
-        guard let pageToken = nextPageToken, !isLoadingMore else { return }
+        guard var pageToken = nextPageToken, !isLoadingMore else { return false }
 
         isLoadingMore = true
         defer { isLoadingMore = false }
+        updatePagingDebug(path: "pageToken", action: "start")
 
         do {
             let labelIds = labelIdsForMailbox(currentMailbox)
             let query = mailboxQuery(for: currentMailbox)
-            let (moreEmails, newPageToken) = try await GmailService.shared.fetchInbox(
-                query: query,
-                maxResults: 50,
-                pageToken: pageToken,
-                labelIds: labelIds
-            )
-            let moreEmailModels = moreEmails.map(Email.init(dto:))
-            let uniqueNewEmails: [Email]
-            if conversationThreading {
-                let existingThreadIds = Set(emails.map { $0.threadId })
-                uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
-            } else {
-                let existingIds = Set(emails.map { $0.id })
-                uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
+            var accumulatedOldest: Date?
+            var uniqueNewEmails: [Email] = []
+            var fetched: [EmailDTO] = []
+            var attempts = 0
+
+            while attempts < 4, !pageToken.isEmpty, uniqueNewEmails.isEmpty {
+                attempts += 1
+                let (moreEmails, newPageToken) = try await GmailService.shared.fetchInbox(
+                    query: query,
+                    maxResults: 50,
+                    pageToken: pageToken,
+                    labelIds: labelIds
+                )
+                fetched = moreEmails
+                updatePagingDebug(path: "pageToken", action: "fetched", fetched: moreEmails.count)
+                if let oldest = moreEmails.map(\.date).min() {
+                    accumulatedOldest = min(accumulatedOldest ?? oldest, oldest)
+                }
+
+                let moreEmailModels = moreEmails.map(Email.init(dto:))
+                if conversationThreading {
+                    let existingThreadIds = Set(emails.map { $0.threadId })
+                    uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
+                } else {
+                    let existingIds = Set(emails.map { $0.id })
+                    uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
+                }
+
+                pageToken = newPageToken ?? ""
+                nextPageToken = newPageToken
+
+                if !moreEmails.isEmpty {
+                    EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
+                }
+
+                if moreEmails.isEmpty || newPageToken == nil {
+                    break
+                }
             }
-            emails.append(contentsOf: uniqueNewEmails)
-            nextPageToken = newPageToken
-            cachePagingState.oldestLoadedDate = emails.map(\.date).min()
-            cachePagingState.isExhausted = false
-            EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
-            updateFilterCounts()
-            logger.info("Loaded \(uniqueNewEmails.count) more emails")
+
+            if !uniqueNewEmails.isEmpty {
+                emails.append(contentsOf: uniqueNewEmails)
+                cachePagingState.oldestLoadedDate = emails.map(\.date).min()
+                cachePagingState.isExhausted = false
+                updateFilterCounts()
+                logger.info("Loaded \(uniqueNewEmails.count) more emails")
+                pageTokenStallCount = 0
+                updatePagingDebug(path: "pageToken", action: "appended", fetched: fetched.count, appended: uniqueNewEmails.count)
+                return true
+            }
+
+            if let accumulatedOldest {
+                cachePagingState.oldestLoadedDate = accumulatedOldest
+                lastFallbackFetchBefore = accumulatedOldest
+            }
+            pageTokenStallCount += 1
+            if pageTokenStallCount >= 2 {
+                nextPageToken = nil
+                updatePagingDebug(path: "pageToken", action: "stall-reset", fetched: fetched.count)
+            } else {
+                updatePagingDebug(path: "pageToken", action: "duplicates", fetched: fetched.count)
+            }
+            return false
         } catch {
             logger.error("Failed to load more emails: \(error.localizedDescription)")
             self.error = error
+            updatePagingDebug(path: "pageToken", action: "error")
+            return false
         }
     }
 
@@ -516,12 +601,16 @@ final class InboxViewModel {
         cachePagingState.oldestLoadedDate = emails.map(\.date).min()
         cachePagingState.isExhausted = false
         lastFallbackFetchBefore = nil
+        fallbackEmptyCount = 0
+        updatePagingDebug(path: "anchor", action: "reset")
     }
 
     private func loadMoreFromCacheIfAvailable() async -> Bool {
         if cachePagingState.isExhausted {
+            updatePagingDebug(path: "cache", action: "exhausted")
             return false
         }
+        updatePagingDebug(path: "cache", action: "start")
         let accountEmail = currentMailbox == .allInboxes
             ? nil
             : currentAccountEmail?.lowercased()
@@ -533,6 +622,7 @@ final class InboxViewModel {
         )
         guard !cached.isEmpty else {
             cachePagingState.isExhausted = true
+            updatePagingDebug(path: "cache", action: "empty")
             return false
         }
 
@@ -547,20 +637,25 @@ final class InboxViewModel {
 
         if uniqueNewEmails.isEmpty {
             cachePagingState.oldestLoadedDate = cached.map(\.date).min()
+            updatePagingDebug(path: "cache", action: "duplicates", fetched: cached.count)
             return false
         }
 
         emails.append(contentsOf: uniqueNewEmails)
         cachePagingState.oldestLoadedDate = emails.map(\.date).min()
         updateFilterCounts()
+        fallbackEmptyCount = 0
+        updatePagingDebug(path: "cache", action: "appended", fetched: cached.count, appended: uniqueNewEmails.count)
         return true
     }
 
     private func loadMoreFromNetworkByDate(before date: Date) async -> Bool {
         if lastFallbackFetchBefore == date {
+            updatePagingDebug(path: "date", action: "same-date-skip")
             return false
         }
         lastFallbackFetchBefore = date
+        updatePagingDebug(path: "date", action: "start")
 
         if currentMailbox == .allInboxes {
             await loadMoreUnifiedByDate()
@@ -587,6 +682,7 @@ final class InboxViewModel {
             )
             guard !moreEmails.isEmpty else {
                 cachePagingState.isExhausted = true
+                updatePagingDebug(path: "date", action: "empty")
                 return false
             }
             let moreEmailModels = moreEmails.map(Email.init(dto:))
@@ -604,19 +700,35 @@ final class InboxViewModel {
                 cachePagingState.oldestLoadedDate = emails.map(\.date).min()
                 EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
                 updateFilterCounts()
+                fallbackEmptyCount = 0
+                updatePagingDebug(path: "date", action: "appended", fetched: moreEmails.count, appended: uniqueNewEmails.count)
                 return true
             }
 
             if let fetchedOldest, fetchedOldest < date {
                 cachePagingState.oldestLoadedDate = fetchedOldest
                 lastFallbackFetchBefore = fetchedOldest
+                fallbackEmptyCount = 0
+                updatePagingDebug(path: "date", action: "duplicates-advance", fetched: moreEmails.count)
             } else {
-                cachePagingState.isExhausted = true
+                fallbackEmptyCount += 1
+                if fallbackEmptyCount <= 3 {
+                    let calendar = Calendar.current
+                    if let stepped = calendar.date(byAdding: .day, value: -1, to: date) {
+                        cachePagingState.oldestLoadedDate = calendar.startOfDay(for: stepped)
+                        lastFallbackFetchBefore = cachePagingState.oldestLoadedDate
+                        updatePagingDebug(path: "date", action: "step-back", fetched: moreEmails.count)
+                    }
+                } else {
+                    cachePagingState.isExhausted = true
+                    updatePagingDebug(path: "date", action: "exhausted", fetched: moreEmails.count)
+                }
             }
             return false
         } catch {
             logger.error("Failed to load more emails by date: \(error.localizedDescription)")
             self.error = error
+            updatePagingDebug(path: "date", action: "error")
             return false
         }
     }
@@ -626,6 +738,7 @@ final class InboxViewModel {
         guard let oldestDate = cachePagingState.oldestLoadedDate else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
+        updatePagingDebug(path: "unified-date", action: "start")
 
         let dateQuery = formatBeforeQuery(oldestDate)
         let mailboxQuery = mailboxQuery(for: currentMailbox)
@@ -662,6 +775,7 @@ final class InboxViewModel {
 
         guard !fetched.isEmpty else {
             cachePagingState.isExhausted = true
+            updatePagingDebug(path: "unified-date", action: "empty")
             return
         }
 
@@ -681,23 +795,42 @@ final class InboxViewModel {
             cachePagingState.oldestLoadedDate = emails.map(\.date).min()
             EmailCacheManager.shared.cacheEmails(fetched, isFullInboxFetch: false)
             updateFilterCounts()
+            fallbackEmptyCount = 0
+            updatePagingDebug(path: "unified-date", action: "appended", fetched: fetched.count, appended: uniqueNewEmails.count)
             return
         }
 
         if let fetchedOldest, fetchedOldest < oldestDate {
             cachePagingState.oldestLoadedDate = fetchedOldest
             lastFallbackFetchBefore = fetchedOldest
+            fallbackEmptyCount = 0
+            updatePagingDebug(path: "unified-date", action: "duplicates-advance", fetched: fetched.count)
         } else {
-            cachePagingState.isExhausted = true
+            fallbackEmptyCount += 1
+            if fallbackEmptyCount <= 3 {
+                let calendar = Calendar.current
+                if let stepped = calendar.date(byAdding: .day, value: -1, to: oldestDate) {
+                    cachePagingState.oldestLoadedDate = calendar.startOfDay(for: stepped)
+                    lastFallbackFetchBefore = cachePagingState.oldestLoadedDate
+                    updatePagingDebug(path: "unified-date", action: "step-back", fetched: fetched.count)
+                }
+            } else {
+                cachePagingState.isExhausted = true
+                updatePagingDebug(path: "unified-date", action: "exhausted", fetched: fetched.count)
+            }
         }
     }
 
     private func formatBeforeQuery(_ date: Date) -> String {
+        // Gmail interprets date-only queries in the user's local timezone.
+        // Use the local day boundary to avoid getting "stuck" on the same day.
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy/MM/dd"
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return "before:\(formatter.string(from: date))"
+        formatter.timeZone = calendar.timeZone
+        return "before:\(formatter.string(from: startOfDay))"
     }
 
     private func applySnapshotOrCachedEmails() {

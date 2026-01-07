@@ -4,6 +4,7 @@ import OSLog
 
 private let searchLogger = Logger(subsystem: "com.simplemail.app", category: "SearchIndex")
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+private let SQLITE_TRANSIENT = sqliteTransient
 
 actor SearchIndexManager {
     static let shared = SearchIndexManager()

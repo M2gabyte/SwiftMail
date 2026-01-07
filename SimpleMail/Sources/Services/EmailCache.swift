@@ -292,6 +292,11 @@ final class EmailCacheManager: ObservableObject {
             var descriptor = FetchDescriptor<Email>(
                 sortBy: [SortDescriptor(\.date, order: .reverse)]
             )
+            if let beforeDate {
+                descriptor.predicate = #Predicate<Email> { email in
+                    email.date < beforeDate
+                }
+            }
             descriptor.fetchLimit = batchSize
             descriptor.fetchOffset = offset
 
@@ -308,10 +313,6 @@ final class EmailCacheManager: ObservableObject {
             }
 
             var filtered = results
-            if let beforeDate {
-                filtered = filtered.filter { $0.date < beforeDate }
-            }
-
             // Filter by mailbox in Swift to avoid predicate crashes
             switch mailbox {
             case .archive:
