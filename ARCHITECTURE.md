@@ -41,7 +41,7 @@ SimpleMail/
 │   │
 │   ├── ViewModels/
 │   │   ├── InboxViewModel.swift     # Inbox UI orchestration + actions
-│   │   ├── InboxStore.swift         # Actor for inbox filtering + sectioning
+│   │   ├── InboxStoreWorker.swift   # Background worker for filtering + sectioning
 │   │   ├── InboxViewState.swift     # Lightweight derived state for inbox UI
 │   │   └── EmailSection.swift       # Shared section model (moved from InboxView)
 │   │
@@ -246,7 +246,7 @@ enum Base64URL {
 **Threading / concurrency note:**
 - SummaryQueue writes stats/timestamps on the main actor to avoid background publishing warnings.
 
-### 4. Inbox Tabs + Preferences (InboxStore.swift / InboxPreferences.swift)
+### 4. Inbox Tabs + Preferences (InboxStoreWorker.swift / InboxPreferences.swift)
 
 **Goal:** allow a user‑customizable Primary tab and a configurable third tab, while keeping counts consistent.
 
@@ -292,7 +292,11 @@ enum Base64URL {
 
 **Cached inbox sections**
 - **Risk:** caching `emailSections` could show stale grouping if the cache isn’t invalidated when inbox context changes.
-- **Mitigation:** `InboxStore` tracks a `sectionsDirty` flag and invalidates on all relevant state changes (`emails`, `currentTab`, `pinnedTabOption`, `activeFilter`, `filterVersion`) before recomputing.
+- **Mitigation:** `InboxStoreWorker` tracks a `sectionsDirty` flag and invalidates on all relevant state changes before recomputing.
+
+**Classification cache invalidation**
+- **Risk:** per‑email classification could become stale if the email’s subject/snippet/labels change without refreshing the cache.
+- **Mitigation:** `InboxFilterEngine` stores a signature (subject, snippet, labels, headers) and recomputes classification whenever the signature changes.
 
 **NetworkRetry Utility (NetworkRetry.swift):**
 ```swift
@@ -362,26 +366,25 @@ final class InboxViewModel {
     var error: Error?
 }
 ```
-`InboxViewModel` keeps a lightweight `InboxViewState` (sections + filter counts) in sync with `InboxStore`.
+`InboxViewModel` keeps a lightweight `InboxViewState` (sections + filter counts) in sync with `InboxStoreWorker` on a background actor and applies updates on the main thread.
 
-**InboxStore actor (derived state):**
+**InboxStoreWorker (background derived state):**
 ```swift
-@MainActor
-actor InboxStore {
-    func setEmails(_ emails: [Email])
-    func setCurrentTab(_ tab: InboxTab)
-    func setPinnedTabOption(_ option: PinnedTabOption)
-    func setActiveFilter(_ filter: InboxFilter?)
-    func bumpFilterVersion()
-
-    var sections: [EmailSection] { get }
-    var counts: [InboxFilter: Int] { get }
+actor InboxStoreWorker {
+    func computeState(
+        emails: [Email],
+        currentTab: InboxTab,
+        pinnedTabOption: PinnedTabOption,
+        activeFilter: InboxFilter?,
+        currentAccountEmail: String?
+    ) -> InboxViewState
 }
 ```
 
-**InboxFilterEngine (pure pipeline):**
+**InboxFilterEngine (pure pipeline + classification cache):**
 - Stateless helpers for classification, tab context, filters, and date sectioning.
-- Used by `InboxStore` to keep UI logic deterministic and testable.
+- Builds a per‑email classification cache (money/deadline/security/people/needs‑reply) to avoid rescanning text on each tab switch.
+- Used by `InboxStoreWorker` to keep UI logic deterministic and testable.
 
 **Usage in Views:**
 ```swift
@@ -408,7 +411,7 @@ emails
   → groupEmailsByDate(today/yesterday/thisWeek/earlier)
   → display as sections
 ```
-Implemented by `InboxFilterEngine`, invoked from `InboxStore`.
+Implemented by `InboxFilterEngine`, invoked from `InboxStoreWorker`.
 
 ### 5. Offline Caching (EmailCache.swift)
 
