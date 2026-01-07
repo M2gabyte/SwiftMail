@@ -316,7 +316,7 @@ struct InboxView: View {
         .animation(.easeInOut(duration: 0.3), value: isSearchMode)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(isSearchMode ? .hidden : .visible, for: .navigationBar)
         .toolbarBackground(.bar, for: .navigationBar)
         .toolbar { toolbarContent }
         .textInputAutocapitalization(.never)
@@ -334,7 +334,7 @@ struct InboxView: View {
                         isFilterActive: viewModel.activeFilter != nil,
                         activeFilterLabel: activeFilterLabel,
                         activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
-                        searchMode: isSearchMode ? .editing : .idle,
+                        searchMode: (isSearchMode || searchFieldFocused) ? .editing : .idle,
                         showSearchField: true,
                         searchText: $searchText,
                         searchFocused: $searchFieldFocused,

@@ -18,22 +18,23 @@ struct BottomCommandSurface: View {
 
     var body: some View {
         let isSearchActive = (searchMode == .editing) || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        HStack(spacing: 8) {
-            leftButton
-                .frame(width: searchMode == .editing ? 0 : 44, height: 44)
-                .opacity(searchMode == .editing ? 0 : 1)
-                .allowsHitTesting(searchMode != .editing)
+        let isEditing = searchMode == .editing
+        HStack(spacing: isEditing ? 6 : 8) {
+            if !isEditing {
+                leftButton
+                    .frame(width: 44, height: 44)
+            }
 
             centerSearchContent
                 .frame(maxWidth: .infinity)
                 .id("searchField")
 
-            if searchMode == .editing {
+            if isEditing {
                 Button(action: { onCancelSearch() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 30, weight: .regular))
+                        .font(.system(size: 34, weight: .regular))
                         .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 50, height: 50)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Cancel search")
@@ -41,7 +42,7 @@ struct BottomCommandSurface: View {
                 rightButton
             }
         }
-        .padding(.horizontal, searchMode == .editing ? 10 : 14)
+        .padding(.horizontal, isEditing ? 8 : 14)
         .padding(.vertical, 9)
         .padding(.bottom, 2)
         .animation(.snappy(duration: 0.22), value: isSearchActive)
