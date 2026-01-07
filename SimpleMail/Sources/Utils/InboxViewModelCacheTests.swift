@@ -12,15 +12,15 @@ enum InboxViewModelCacheTests {
         let message: String
     }
 
-    static func runAllTests() -> String {
+    static func runAllTests() async -> String {
         print("=== InboxViewModel Cache Tests ===")
 
         var results: [TestResult] = []
-        results.append(contentsOf: testRecomputesAfterFilterChange())
-        results.append(contentsOf: testRecomputesAfterEmailsChange())
-        results.append(contentsOf: testRecomputesAfterTabChange())
-        results.append(contentsOf: testRecomputesAfterPinnedChange())
-        results.append(contentsOf: testRecomputesAfterFilterVersionChange())
+        results.append(contentsOf: await testRecomputesAfterFilterChange())
+        results.append(contentsOf: await testRecomputesAfterEmailsChange())
+        results.append(contentsOf: await testRecomputesAfterTabChange())
+        results.append(contentsOf: await testRecomputesAfterPinnedChange())
+        results.append(contentsOf: await testRecomputesAfterFilterVersionChange())
 
         let passed = results.filter { $0.passed }.count
         let failed = results.filter { !$0.passed }.count
@@ -42,7 +42,7 @@ enum InboxViewModelCacheTests {
 
     // MARK: - Tests
 
-    private static func testRecomputesAfterFilterChange() -> [TestResult] {
+    private static func testRecomputesAfterFilterChange() async -> [TestResult] {
         var results: [TestResult] = []
 
         let viewModel = InboxViewModel()
@@ -52,10 +52,12 @@ enum InboxViewModelCacheTests {
         viewModel.emails = [unread, read]
 
         viewModel.activeFilter = nil
-        let allCount = totalEmailCount(viewModel.emailSections)
+        let allState = await viewModel.refreshViewStateForTests()
+        let allCount = totalEmailCount(allState.sections)
 
         viewModel.activeFilter = .unread
-        let unreadCount = totalEmailCount(viewModel.emailSections)
+        let unreadState = await viewModel.refreshViewStateForTests()
+        let unreadCount = totalEmailCount(unreadState.sections)
 
         results.append(TestResult(
             name: "Recompute after activeFilter change",
@@ -66,7 +68,7 @@ enum InboxViewModelCacheTests {
         return results
     }
 
-    private static func testRecomputesAfterEmailsChange() -> [TestResult] {
+    private static func testRecomputesAfterEmailsChange() async -> [TestResult] {
         var results: [TestResult] = []
 
         let viewModel = InboxViewModel()
@@ -75,10 +77,12 @@ enum InboxViewModelCacheTests {
         let second = Email(id: "2", threadId: "t2", date: now, isUnread: true)
 
         viewModel.emails = [first]
-        let initialCount = totalEmailCount(viewModel.emailSections)
+        let initialState = await viewModel.refreshViewStateForTests()
+        let initialCount = totalEmailCount(initialState.sections)
 
         viewModel.emails = [first, second]
-        let updatedCount = totalEmailCount(viewModel.emailSections)
+        let updatedState = await viewModel.refreshViewStateForTests()
+        let updatedCount = totalEmailCount(updatedState.sections)
 
         results.append(TestResult(
             name: "Recompute after emails change",
@@ -89,7 +93,7 @@ enum InboxViewModelCacheTests {
         return results
     }
 
-    private static func testRecomputesAfterTabChange() -> [TestResult] {
+    private static func testRecomputesAfterTabChange() async -> [TestResult] {
         var results: [TestResult] = []
 
         let viewModel = InboxViewModel()
@@ -105,10 +109,12 @@ enum InboxViewModelCacheTests {
         viewModel.emails = [nonPrimary]
 
         viewModel.currentTab = .all
-        let allCount = totalEmailCount(viewModel.emailSections)
+        let allState = await viewModel.refreshViewStateForTests()
+        let allCount = totalEmailCount(allState.sections)
 
         viewModel.currentTab = .primary
-        let primaryCount = totalEmailCount(viewModel.emailSections)
+        let primaryState = await viewModel.refreshViewStateForTests()
+        let primaryCount = totalEmailCount(primaryState.sections)
 
         results.append(TestResult(
             name: "Recompute after tab change",
@@ -119,7 +125,7 @@ enum InboxViewModelCacheTests {
         return results
     }
 
-    private static func testRecomputesAfterPinnedChange() -> [TestResult] {
+    private static func testRecomputesAfterPinnedChange() async -> [TestResult] {
         var results: [TestResult] = []
 
         let viewModel = InboxViewModel()
@@ -136,10 +142,12 @@ enum InboxViewModelCacheTests {
 
         viewModel.currentTab = .pinned
         viewModel.pinnedTabOption = .money
-        let moneyCount = totalEmailCount(viewModel.emailSections)
+        let moneyState = await viewModel.refreshViewStateForTests()
+        let moneyCount = totalEmailCount(moneyState.sections)
 
         viewModel.pinnedTabOption = .deadlines
-        let deadlineCount = totalEmailCount(viewModel.emailSections)
+        let deadlineState = await viewModel.refreshViewStateForTests()
+        let deadlineCount = totalEmailCount(deadlineState.sections)
 
         results.append(TestResult(
             name: "Recompute after pinned option change",
@@ -150,7 +158,7 @@ enum InboxViewModelCacheTests {
         return results
     }
 
-    private static func testRecomputesAfterFilterVersionChange() -> [TestResult] {
+    private static func testRecomputesAfterFilterVersionChange() async -> [TestResult] {
         var results: [TestResult] = []
 
         let viewModel = InboxViewModel()
@@ -158,14 +166,16 @@ enum InboxViewModelCacheTests {
         let blocked = Email(id: "blocked", threadId: "tblocked", from: "Blocked Sender <blocked@example.com>", date: now)
         viewModel.emails = [blocked]
 
-        let before = totalEmailCount(viewModel.emailSections)
+        let beforeState = await viewModel.refreshViewStateForTests()
+        let before = totalEmailCount(beforeState.sections)
 
         let accountEmail = AuthService.shared.currentAccount?.email
         let previousBlocked = AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail)
         AccountDefaults.setStringArray(["blocked@example.com"], for: "blockedSenders", accountEmail: accountEmail)
 
         viewModel.refreshFiltersForTest()
-        let after = totalEmailCount(viewModel.emailSections)
+        let afterState = await viewModel.refreshViewStateForTests()
+        let after = totalEmailCount(afterState.sections)
 
         AccountDefaults.setStringArray(previousBlocked, for: "blockedSenders", accountEmail: accountEmail)
 

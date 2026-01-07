@@ -423,8 +423,10 @@ struct SettingsView: View {
     private var debugSection: some View {
         Section {
             Button("Run Inbox Cache Tests") {
-                debugTestResult = InboxViewModelCacheTests.runAllTests()
-                showingDebugTestResult = true
+                Task { @MainActor in
+                    debugTestResult = await InboxViewModelCacheTests.runAllTests()
+                    showingDebugTestResult = true
+                }
             }
         } header: {
             Text("Debug")
