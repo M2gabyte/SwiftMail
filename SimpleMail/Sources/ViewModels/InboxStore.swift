@@ -1,6 +1,7 @@
 import Foundation
 
-actor InboxStore {
+@MainActor
+final class InboxStore {
     private var emails: [Email] = []
     private var currentTab: InboxTab = .all
     private var pinnedTabOption: PinnedTabOption = .other
