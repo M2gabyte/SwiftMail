@@ -15,485 +15,21 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                // Account Section
-                Section {
-                    ForEach(viewModel.accounts, id: \.id) { account in
-                        Button {
-                            viewModel.switchAccount(to: account)
-                        } label: {
-                            HStack(spacing: 12) {
-                                AsyncImage(url: URL(string: account.photoURL ?? "")) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Circle().fill(.blue)
-                                        .overlay {
-                                            Text(account.name.prefix(1))
-                                                .font(.title2)
-                                                .fontWeight(.semibold)
-                                                .foregroundStyle(.white)
-                                        }
-                                }
-                                .frame(width: 44, height: 44)
-                                .clipShape(Circle())
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(account.name)
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(account.email)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-
-                                if viewModel.currentAccount?.id == account.id {
-                                    Label("Current", systemImage: "checkmark")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.vertical, 2)
-                    }
-
-                    NavigationLink("Add Account") {
-                        AddAccountView()
-                    }
-                } header: {
-                    Text("Account")
-                }
-
-                // Swipe Actions Section
-                Section {
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "arrow.left", color: .blue)
-                        Picker("Left Swipe", selection: $viewModel.settings.leftSwipeAction) {
-                            ForEach(SwipeAction.allCases, id: \.self) { action in
-                                Label(action.title, systemImage: action.icon)
-                                    .tag(action)
-                            }
-                        }
-                    }
-                    .font(.callout)
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "arrow.right", color: .blue)
-                        Picker("Right Swipe", selection: $viewModel.settings.rightSwipeAction) {
-                            ForEach(SwipeAction.allCases, id: \.self) { action in
-                                Label(action.title, systemImage: action.icon)
-                                    .tag(action)
-                            }
-                        }
-                    }
-                    .font(.callout)
-                } header: {
-                    Text("Swipe Actions")
-                } footer: {
-                    Text("Configure what happens when you swipe on emails in the inbox.")
-                }
-
-                // Display Section
-                Section {
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "person.circle.fill", color: .cyan)
-                        Toggle("Show Avatars", isOn: $viewModel.settings.showAvatars)
-                    }
-                    .font(.callout)
-                    .onChange(of: viewModel.settings.showAvatars) { _, _ in viewModel.saveSettings() }
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "text.alignleft", color: .indigo)
-                        Picker("List Density", selection: $viewModel.settings.listDensity) {
-                            Text("Comfortable").tag(ListDensity.comfortable)
-                            Text("Compact").tag(ListDensity.compact)
-                        }
-                    }
-                    .font(.callout)
-                    .onChange(of: viewModel.settings.listDensity) { _, _ in viewModel.saveSettings() }
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "circle.lefthalf.filled", color: .purple)
-                        Picker("Theme", selection: $themeManager.currentTheme) {
-                            Text("System").tag(AppTheme.system)
-                            Text("Light").tag(AppTheme.light)
-                            Text("Dark").tag(AppTheme.dark)
-                        }
-                    }
-                    .font(.callout)
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "iphone.radiowaves.left.and.right", color: .orange)
-                        Toggle("Haptic Feedback", isOn: $viewModel.settings.hapticsEnabled)
-                    }
-                    .font(.callout)
-                    .onChange(of: viewModel.settings.hapticsEnabled) { _, _ in viewModel.saveSettings() }
-                } header: {
-                    Text("Display")
-                } footer: {
-                    Text("Compact mode hides avatars and email snippets for a denser list.")
-                }
-
-                // Notifications Section
-                Section {
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "bell.badge.fill", color: .red)
-                        Toggle("Enable Notifications", isOn: $viewModel.settings.notificationsEnabled)
-                    }
-                    .onChange(of: viewModel.settings.notificationsEnabled) { _, newValue in
-                        if newValue {
-                            Task {
-                                await viewModel.requestNotificationPermission()
-                            }
-                        }
-                        viewModel.saveSettings()
-                    }
-
-                    if viewModel.settings.notificationsEnabled {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "envelope.fill", color: .orange)
-                            Toggle("New Emails", isOn: $viewModel.settings.notifyNewEmails)
-                        }
-                        .onChange(of: viewModel.settings.notifyNewEmails) { _, _ in viewModel.saveSettings() }
-
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "arrowshape.turn.up.left.fill", color: .yellow)
-                            Toggle("Needs Reply", isOn: $viewModel.settings.notifyNeedsReply)
-                        }
-                        .onChange(of: viewModel.settings.notifyNeedsReply) { _, _ in viewModel.saveSettings() }
-
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "star.fill", color: .yellow)
-                            Toggle("VIP Senders", isOn: $viewModel.settings.notifyVIPSenders)
-                        }
-                        .onChange(of: viewModel.settings.notifyVIPSenders) { _, _ in viewModel.saveSettings() }
-                    }
-                } header: {
-                    Text("Notifications")
-                } footer: {
-                    Text("Receive notifications when new emails arrive during background sync.")
-                }
-
-                // Privacy Section
-                Section {
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "faceid", color: .blue)
-                        Toggle("Require Face ID", isOn: $viewModel.settings.biometricLock)
-                    }
-                    .onChange(of: viewModel.settings.biometricLock) { _, _ in viewModel.saveSettings() }
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "photo.on.rectangle.angled", color: .orange)
-                        Toggle("Block Remote Images", isOn: $viewModel.settings.blockRemoteImages)
-                    }
-                    .onChange(of: viewModel.settings.blockRemoteImages) { _, _ in viewModel.saveSettings() }
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "shield.lefthalf.filled", color: .green)
-                        Toggle("Block Tracking Pixels", isOn: $viewModel.settings.blockTrackingPixels)
-                    }
-                    .onChange(of: viewModel.settings.blockTrackingPixels) { _, _ in viewModel.saveSettings() }
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "link.badge.plus", color: .mint)
-                        Toggle("Strip Link Tracking Parameters", isOn: $viewModel.settings.stripTrackingParameters)
-                    }
-                    .onChange(of: viewModel.settings.stripTrackingParameters) { _, _ in viewModel.saveSettings() }
-                } header: {
-                    Text("Privacy & Security")
-                } footer: {
-                    Text("Email content stays on your device. Tracking protection removes hidden pixels and common URL trackers.")
-                }
-
-                // Signature Section
-                Section {
-                    NavigationLink {
-                        SignatureEditorView(signature: $viewModel.settings.signature)
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "signature", color: .teal)
-                            Text("Email Signature")
-                        }
-                    }
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "arrow.uturn.backward.circle.fill", color: .purple)
-                        Picker("Undo Send", selection: $viewModel.settings.undoSendDelaySeconds) {
-                            Text("5 seconds").tag(5)
-                            Text("10 seconds").tag(10)
-                            Text("20 seconds").tag(20)
-                            Text("30 seconds").tag(30)
-                        }
-                    }
-                    .onChange(of: viewModel.settings.undoSendDelaySeconds) { _, _ in viewModel.saveSettings() }
-
-                    NavigationLink {
-                        ScheduledSendsView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "calendar.badge.clock", color: .orange)
-                            Text("Scheduled Sends")
-                        }
-                    }
-                } header: {
-                    Text("Compose")
-                }
-
-                Section {
-                    NavigationLink {
-                        PrimaryInboxRulesView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "tray.full.fill", color: .indigo)
-                            Text("Primary Inbox")
-                        }
-                    }
-
-                    NavigationLink {
-                        PinnedTabSettingsView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "pin.fill", color: .orange)
-                            Text("Pinned Tab")
-                        }
-                    }
-                } header: {
-                    Text("Inbox")
-                }
-
-                // Smart Features Section
-                Section {
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "sparkles", color: .purple)
-                        Toggle("Auto-Summarize Long Emails", isOn: $viewModel.settings.autoSummarize)
-                    }
-                    .onChange(of: viewModel.settings.autoSummarize) { _, _ in viewModel.saveSettings() }
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "bolt.fill", color: .orange)
-                        Toggle("Precompute Summaries (Recommended)", isOn: $viewModel.settings.precomputeSummaries)
-                    }
-                    .onChange(of: viewModel.settings.precomputeSummaries) { _, _ in viewModel.saveSettings() }
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "clock.badge.checkmark", color: .indigo)
-                        Toggle("Aggressive Background Summaries", isOn: $viewModel.settings.backgroundSummaryProcessing)
-                    }
-                    .onChange(of: viewModel.settings.backgroundSummaryProcessing) { _, _ in viewModel.saveSettings() }
-                    .disabled(!viewModel.settings.precomputeSummaries)
-
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "reply.all.fill", color: .blue)
-                        Toggle("Smart Reply Suggestions", isOn: $viewModel.settings.smartReplies)
-                    }
-                    .onChange(of: viewModel.settings.smartReplies) { _, _ in viewModel.saveSettings() }
-
-                    NavigationLink {
-                        VIPSendersView(accountEmail: viewModel.currentAccount?.email)
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "star.fill", color: .yellow)
-                            Text("VIP Senders")
-                        }
-                    }
-
-                    NavigationLink {
-                        BlockedSendersView(accountEmail: viewModel.currentAccount?.email)
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "hand.raised.fill", color: .red)
-                            Text("Blocked Senders")
-                        }
-                    }
-                } header: {
-                    Text("Smart Features")
-                } footer: {
-                    Text("Powered by on-device Apple Intelligence. Aggressive background summaries may use more battery.")
-                }
-
-                Section {
-                    summaryStatRow("Queued", value: summaryStats.enqueued)
-                    summaryStatRow("Processed", value: summaryStats.processed)
-                    summaryStatRow("Skipped (Short)", value: summaryStats.skippedShort)
-                    summaryStatRow("Skipped (Battery)", value: summaryStats.skippedBattery)
-                    summaryStatRow("Skipped (Throttle)", value: summaryStats.skippedThrottle)
-                    summaryStatRow("Skipped (Cached)", value: summaryStats.skippedCached)
-                    summaryStatRow("Skipped (No Account)", value: summaryStats.skippedNoAccount)
-                    summaryStatRow("Failed", value: summaryStats.failed)
-
-                    if let lastRun = summaryStats.lastRun {
-                        let date = Date(timeIntervalSince1970: lastRun)
-                        HStack {
-                            Text("Last Run")
-                            Spacer()
-                            Text(date, style: .time)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    HStack {
-                        Button("Refresh") {
-                            summaryStats = SummaryQueue.statsSnapshot()
-                        }
-                        Spacer()
-                        Button("Reset") {
-                            SummaryQueue.resetStats()
-                            summaryStats = SummaryQueue.statsSnapshot()
-                        }
-                        .foregroundStyle(.red)
-                    }
-                } header: {
-                    Text("Summary Debug")
-                } footer: {
-                    Text("Counts are local to this device. Use Refresh after sync to see new activity.")
-                }
-
-#if DEBUG
-                Section {
-                    Button("Run Inbox Cache Tests") {
-                        InboxViewModelCacheTests.runAllTests()
-                    }
-                } header: {
-                    Text("Debug")
-                } footer: {
-                    Text("Runs debug-only cache invalidation checks in InboxViewModel.")
-                }
-#endif
-
-                // Gmail Settings Sync Section
-                Section {
-                    NavigationLink {
-                        VacationResponderView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "palm.tree.fill", color: .orange)
-                            Text("Vacation Responder")
-                        }
-                    }
-
-                    NavigationLink {
-                        LabelsManagementView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "tag.fill", color: .green)
-                            Text("Labels")
-                        }
-                    }
-
-                    NavigationLink {
-                        FiltersManagementView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "line.3.horizontal.decrease.circle.fill", color: .blue)
-                            Text("Filters")
-                        }
-                    }
-
-                    Button(action: {
-                        Task {
-                            await viewModel.syncGmailSettings()
-                        }
-                    }) {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "arrow.triangle.2.circlepath", color: .cyan)
-                            Text("Sync Gmail Settings")
-                            Spacer()
-                            if viewModel.isSyncingSettings {
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .disabled(viewModel.isSyncingSettings)
-                } header: {
-                    Text("Gmail Settings")
-                } footer: {
-                    if let lastSync = viewModel.lastGmailSettingsSync {
-                        Text("Last synced \(lastSync.formatted(date: .abbreviated, time: .shortened))")
-                    }
-                }
-
-                // Data Management Section
-                Section {
-                    Button(action: {
-                        Task {
-                            await viewModel.clearLocalCache()
-                        }
-                    }) {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "trash.fill", color: .red)
-                            Text("Clear Local Cache")
-                            Spacer()
-                            Text(viewModel.cacheSize)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    NavigationLink {
-                        SnoozedEmailsView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "clock.fill", color: .orange)
-                            Text("Snoozed Emails")
-                        }
-                    }
-                } header: {
-                    Text("Data")
-                } footer: {
-                    Text("Clearing cache will remove locally stored emails. They'll be re-downloaded on next sync.")
-                }
-
-                // Advanced Section
-                Section {
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "rectangle.stack.fill", color: .indigo)
-                        Toggle("Conversation Threading", isOn: $viewModel.settings.conversationThreading)
-                    }
-                    .onChange(of: viewModel.settings.conversationThreading) { _, _ in viewModel.saveSettings() }
-
-                } header: {
-                    Text("Advanced")
-                } footer: {
-                    Text("When threading is off, each message is shown individually instead of grouped by conversation.")
-                }
-
-                // About Section
-                Section {
-                    HStack(spacing: 12) {
-                        SettingsIcon(systemName: "info.circle.fill", color: .gray)
-                        Text("Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let privacyURL = URL(string: "https://simplemail.app/privacy") {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "hand.raised.fill", color: .green)
-                            Link("Privacy Policy", destination: privacyURL)
-                        }
-                    }
-                    if let termsURL = URL(string: "https://simplemail.app/terms") {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "doc.text.fill", color: .blue)
-                            Link("Terms of Service", destination: termsURL)
-                        }
-                    }
-                    if let feedbackURL = URL(string: "mailto:support@simplemail.app") {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemName: "envelope.fill", color: .orange)
-                            Link("Send Feedback", destination: feedbackURL)
-                        }
-                    }
-                } header: {
-                    Text("About")
-                }
-
-                // Sign Out
-                Section {
-                    Button("Sign Out", role: .destructive) {
-                        showingSignOutAlert = true
-                    }
-                }
+                accountSection
+                swipeActionsSection
+                displaySection
+                notificationsSection
+                privacySection
+                composeSection
+                inboxSection
+                smartFeaturesSection
+                summaryDebugSection
+                debugSection
+                gmailSettingsSection
+                dataSection
+                advancedSection
+                aboutSection
+                signOutSection
             }
             .listStyle(.insetGrouped)
             .listSectionSpacing(12)
@@ -519,6 +55,518 @@ struct SettingsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var accountSection: some View {
+        Section {
+            ForEach(viewModel.accounts, id: \.id) { account in
+                Button {
+                    viewModel.switchAccount(to: account)
+                } label: {
+                    HStack(spacing: 12) {
+                        AsyncImage(url: URL(string: account.photoURL ?? "")) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            Circle().fill(.blue)
+                                .overlay {
+                                    Text(account.name.prefix(1))
+                                        .font(.title2)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.white)
+                                }
+                        }
+                        .frame(width: 44, height: 44)
+                        .clipShape(Circle())
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.name)
+                                .font(.subheadline.weight(.semibold))
+                            Text(account.email)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        if viewModel.currentAccount?.id == account.id {
+                            Label("Current", systemImage: "checkmark")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 2)
+            }
+
+            NavigationLink("Add Account") {
+                AddAccountView()
+            }
+        } header: {
+            Text("Account")
+        }
+    }
+
+    @ViewBuilder
+    private var swipeActionsSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "arrow.left", color: .blue)
+                Picker("Left Swipe", selection: $viewModel.settings.leftSwipeAction) {
+                    ForEach(SwipeAction.allCases, id: \.self) { action in
+                        Label(action.title, systemImage: action.icon)
+                            .tag(action)
+                    }
+                }
+            }
+            .font(.callout)
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "arrow.right", color: .blue)
+                Picker("Right Swipe", selection: $viewModel.settings.rightSwipeAction) {
+                    ForEach(SwipeAction.allCases, id: \.self) { action in
+                        Label(action.title, systemImage: action.icon)
+                            .tag(action)
+                    }
+                }
+            }
+            .font(.callout)
+        } header: {
+            Text("Swipe Actions")
+        } footer: {
+            Text("Configure what happens when you swipe on emails in the inbox.")
+        }
+    }
+
+    @ViewBuilder
+    private var displaySection: some View {
+        Section {
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "person.circle.fill", color: .cyan)
+                Toggle("Show Avatars", isOn: $viewModel.settings.showAvatars)
+            }
+            .font(.callout)
+            .onChange(of: viewModel.settings.showAvatars) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "text.alignleft", color: .indigo)
+                Picker("List Density", selection: $viewModel.settings.listDensity) {
+                    Text("Comfortable").tag(ListDensity.comfortable)
+                    Text("Compact").tag(ListDensity.compact)
+                }
+            }
+            .font(.callout)
+            .onChange(of: viewModel.settings.listDensity) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "circle.lefthalf.filled", color: .purple)
+                Picker("Theme", selection: $themeManager.currentTheme) {
+                    Text("System").tag(AppTheme.system)
+                    Text("Light").tag(AppTheme.light)
+                    Text("Dark").tag(AppTheme.dark)
+                }
+            }
+            .font(.callout)
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "iphone.radiowaves.left.and.right", color: .orange)
+                Toggle("Haptic Feedback", isOn: $viewModel.settings.hapticsEnabled)
+            }
+            .font(.callout)
+            .onChange(of: viewModel.settings.hapticsEnabled) { _, _ in viewModel.saveSettings() }
+        } header: {
+            Text("Display")
+        } footer: {
+            Text("Compact mode hides avatars and email snippets for a denser list.")
+        }
+    }
+
+    @ViewBuilder
+    private var notificationsSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "bell.badge.fill", color: .red)
+                Toggle("Enable Notifications", isOn: $viewModel.settings.notificationsEnabled)
+            }
+            .onChange(of: viewModel.settings.notificationsEnabled) { _, newValue in
+                if newValue {
+                    Task {
+                        await viewModel.requestNotificationPermission()
+                    }
+                }
+                viewModel.saveSettings()
+            }
+
+            if viewModel.settings.notificationsEnabled {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "envelope.fill", color: .orange)
+                    Toggle("New Emails", isOn: $viewModel.settings.notifyNewEmails)
+                }
+                .onChange(of: viewModel.settings.notifyNewEmails) { _, _ in viewModel.saveSettings() }
+
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "arrowshape.turn.up.left.fill", color: .yellow)
+                    Toggle("Needs Reply", isOn: $viewModel.settings.notifyNeedsReply)
+                }
+                .onChange(of: viewModel.settings.notifyNeedsReply) { _, _ in viewModel.saveSettings() }
+
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "star.fill", color: .yellow)
+                    Toggle("VIP Senders", isOn: $viewModel.settings.notifyVIPSenders)
+                }
+                .onChange(of: viewModel.settings.notifyVIPSenders) { _, _ in viewModel.saveSettings() }
+            }
+        } header: {
+            Text("Notifications")
+        } footer: {
+            Text("Receive notifications when new emails arrive during background sync.")
+        }
+    }
+
+    @ViewBuilder
+    private var privacySection: some View {
+        Section {
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "faceid", color: .blue)
+                Toggle("Require Face ID", isOn: $viewModel.settings.biometricLock)
+            }
+            .onChange(of: viewModel.settings.biometricLock) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "photo.on.rectangle.angled", color: .orange)
+                Toggle("Block Remote Images", isOn: $viewModel.settings.blockRemoteImages)
+            }
+            .onChange(of: viewModel.settings.blockRemoteImages) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "shield.lefthalf.filled", color: .green)
+                Toggle("Block Tracking Pixels", isOn: $viewModel.settings.blockTrackingPixels)
+            }
+            .onChange(of: viewModel.settings.blockTrackingPixels) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "link.badge.plus", color: .mint)
+                Toggle("Strip Link Tracking Parameters", isOn: $viewModel.settings.stripTrackingParameters)
+            }
+            .onChange(of: viewModel.settings.stripTrackingParameters) { _, _ in viewModel.saveSettings() }
+        } header: {
+            Text("Privacy & Security")
+        } footer: {
+            Text("Email content stays on your device. Tracking protection removes hidden pixels and common URL trackers.")
+        }
+    }
+
+    @ViewBuilder
+    private var composeSection: some View {
+        Section {
+            NavigationLink {
+                SignatureEditorView(signature: $viewModel.settings.signature)
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "signature", color: .teal)
+                    Text("Email Signature")
+                }
+            }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "arrow.uturn.backward.circle.fill", color: .purple)
+                Picker("Undo Send", selection: $viewModel.settings.undoSendDelaySeconds) {
+                    Text("5 seconds").tag(5)
+                    Text("10 seconds").tag(10)
+                    Text("20 seconds").tag(20)
+                    Text("30 seconds").tag(30)
+                }
+            }
+            .onChange(of: viewModel.settings.undoSendDelaySeconds) { _, _ in viewModel.saveSettings() }
+
+            NavigationLink {
+                ScheduledSendsView()
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "calendar.badge.clock", color: .orange)
+                    Text("Scheduled Sends")
+                }
+            }
+        } header: {
+            Text("Compose")
+        }
+    }
+
+    @ViewBuilder
+    private var inboxSection: some View {
+        Section {
+            NavigationLink {
+                PrimaryInboxRulesView()
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "tray.full.fill", color: .indigo)
+                    Text("Primary Inbox")
+                }
+            }
+
+            NavigationLink {
+                PinnedTabSettingsView()
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "pin.fill", color: .orange)
+                    Text("Pinned Tab")
+                }
+            }
+        } header: {
+            Text("Inbox")
+        }
+    }
+
+    @ViewBuilder
+    private var smartFeaturesSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "sparkles", color: .purple)
+                Toggle("Auto-Summarize Long Emails", isOn: $viewModel.settings.autoSummarize)
+            }
+            .onChange(of: viewModel.settings.autoSummarize) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "bolt.fill", color: .orange)
+                Toggle("Precompute Summaries (Recommended)", isOn: $viewModel.settings.precomputeSummaries)
+            }
+            .onChange(of: viewModel.settings.precomputeSummaries) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "clock.badge.checkmark", color: .indigo)
+                Toggle("Aggressive Background Summaries", isOn: $viewModel.settings.backgroundSummaryProcessing)
+            }
+            .onChange(of: viewModel.settings.backgroundSummaryProcessing) { _, _ in viewModel.saveSettings() }
+            .disabled(!viewModel.settings.precomputeSummaries)
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "reply.all.fill", color: .blue)
+                Toggle("Smart Reply Suggestions", isOn: $viewModel.settings.smartReplies)
+            }
+            .onChange(of: viewModel.settings.smartReplies) { _, _ in viewModel.saveSettings() }
+
+            NavigationLink {
+                VIPSendersView(accountEmail: viewModel.currentAccount?.email)
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "star.fill", color: .yellow)
+                    Text("VIP Senders")
+                }
+            }
+
+            NavigationLink {
+                BlockedSendersView(accountEmail: viewModel.currentAccount?.email)
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "hand.raised.fill", color: .red)
+                    Text("Blocked Senders")
+                }
+            }
+        } header: {
+            Text("Smart Features")
+        } footer: {
+            Text("Powered by on-device Apple Intelligence. Aggressive background summaries may use more battery.")
+        }
+    }
+
+    @ViewBuilder
+    private var summaryDebugSection: some View {
+        Section {
+            summaryStatRow("Queued", value: summaryStats.enqueued)
+            summaryStatRow("Processed", value: summaryStats.processed)
+            summaryStatRow("Skipped (Short)", value: summaryStats.skippedShort)
+            summaryStatRow("Skipped (Battery)", value: summaryStats.skippedBattery)
+            summaryStatRow("Skipped (Throttle)", value: summaryStats.skippedThrottle)
+            summaryStatRow("Skipped (Cached)", value: summaryStats.skippedCached)
+            summaryStatRow("Skipped (No Account)", value: summaryStats.skippedNoAccount)
+            summaryStatRow("Failed", value: summaryStats.failed)
+
+            if let lastRun = summaryStats.lastRun {
+                let date = Date(timeIntervalSince1970: lastRun)
+                HStack {
+                    Text("Last Run")
+                    Spacer()
+                    Text(date, style: .time)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                Button("Refresh") {
+                    summaryStats = SummaryQueue.statsSnapshot()
+                }
+                Spacer()
+                Button("Reset") {
+                    SummaryQueue.resetStats()
+                    summaryStats = SummaryQueue.statsSnapshot()
+                }
+                .foregroundStyle(.red)
+            }
+        } header: {
+            Text("Summary Debug")
+        } footer: {
+            Text("Counts are local to this device. Use Refresh after sync to see new activity.")
+        }
+    }
+
+    @ViewBuilder
+    private var debugSection: some View {
+        #if DEBUG
+        Section {
+            Button("Run Inbox Cache Tests") {
+                InboxViewModelCacheTests.runAllTests()
+            }
+        } header: {
+            Text("Debug")
+        } footer: {
+            Text("Runs debug-only cache invalidation checks in InboxViewModel.")
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var gmailSettingsSection: some View {
+        Section {
+            NavigationLink {
+                VacationResponderView()
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "palm.tree.fill", color: .orange)
+                    Text("Vacation Responder")
+                }
+            }
+
+            NavigationLink {
+                LabelsManagementView()
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "tag.fill", color: .green)
+                    Text("Labels")
+                }
+            }
+
+            NavigationLink {
+                FiltersManagementView()
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "line.3.horizontal.decrease.circle.fill", color: .blue)
+                    Text("Filters")
+                }
+            }
+
+            Button(action: {
+                Task {
+                    await viewModel.syncGmailSettings()
+                }
+            }) {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "arrow.triangle.2.circlepath", color: .cyan)
+                    Text("Sync Gmail Settings")
+                    Spacer()
+                    if viewModel.isSyncingSettings {
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(viewModel.isSyncingSettings)
+        } header: {
+            Text("Gmail Settings")
+        } footer: {
+            if let lastSync = viewModel.lastGmailSettingsSync {
+                Text("Last synced \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dataSection: some View {
+        Section {
+            Button(action: {
+                Task {
+                    await viewModel.clearLocalCache()
+                }
+            }) {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "trash.fill", color: .red)
+                    Text("Clear Local Cache")
+                    Spacer()
+                    Text(viewModel.cacheSize)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            NavigationLink {
+                SnoozedEmailsView()
+            } label: {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "clock.fill", color: .orange)
+                    Text("Snoozed Emails")
+                }
+            }
+        } header: {
+            Text("Data")
+        } footer: {
+            Text("Clearing cache will remove locally stored emails. They'll be re-downloaded on next sync.")
+        }
+    }
+
+    @ViewBuilder
+    private var advancedSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "rectangle.stack.fill", color: .indigo)
+                Toggle("Conversation Threading", isOn: $viewModel.settings.conversationThreading)
+            }
+            .onChange(of: viewModel.settings.conversationThreading) { _, _ in viewModel.saveSettings() }
+        } header: {
+            Text("Advanced")
+        } footer: {
+            Text("When threading is off, each message is shown individually instead of grouped by conversation.")
+        }
+    }
+
+    @ViewBuilder
+    private var aboutSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "info.circle.fill", color: .gray)
+                Text("Version")
+                Spacer()
+                Text("1.0.0")
+                    .foregroundStyle(.secondary)
+            }
+
+            if let privacyURL = URL(string: "https://simplemail.app/privacy") {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "hand.raised.fill", color: .green)
+                    Link("Privacy Policy", destination: privacyURL)
+                }
+            }
+            if let termsURL = URL(string: "https://simplemail.app/terms") {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "doc.text.fill", color: .blue)
+                    Link("Terms of Service", destination: termsURL)
+                }
+            }
+            if let feedbackURL = URL(string: "mailto:support@simplemail.app") {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "envelope.fill", color: .orange)
+                    Link("Send Feedback", destination: feedbackURL)
+                }
+            }
+        } header: {
+            Text("About")
+        }
+    }
+
+    @ViewBuilder
+    private var signOutSection: some View {
+        Section {
+            Button("Sign Out", role: .destructive) {
+                showingSignOutAlert = true
             }
         }
     }
