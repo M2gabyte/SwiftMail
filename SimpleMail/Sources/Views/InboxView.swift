@@ -58,11 +58,7 @@ struct InboxView: View {
         }
 
         // Otherwise show normal inbox with local filtering
-        let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return viewModel.emailSections }
-
-        // Parse smart filters for local filtering (while typing, before submit)
-        let filter = SearchFilter.parse(query)
+        guard let filter = parsedSearchFilter else { return viewModel.emailSections }
 
         return viewModel.emailSections.compactMap { section in
             let filteredEmails = section.emails.filter { email in
@@ -98,9 +94,13 @@ struct InboxView: View {
 
     /// Terms to highlight in search results
     private var highlightTerms: [String] {
+        parsedSearchFilter?.highlightTerms ?? []
+    }
+
+    private var parsedSearchFilter: SearchFilter? {
         let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return [] }
-        return SearchFilter.parse(query).highlightTerms
+        guard !query.isEmpty else { return nil }
+        return SearchFilter.parse(query)
     }
 
     /// Email row with all actions - extracted to help compiler

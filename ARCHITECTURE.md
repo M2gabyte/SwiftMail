@@ -280,6 +280,12 @@ enum Base64URL {
 - InboxViewModel receives this and executes the same undoable bulk action pipeline used by list selection.
 - Undo toast is rendered in InboxView above the bottom search bar; countdown uses the user’s undo delay setting.
 
+## Risks & Mitigations
+
+**Search filter reuse**
+- **Risk:** caching the parsed search filter could show stale highlights if the cached value isn’t tied to the latest `debouncedSearchText`.
+- **Mitigation:** `InboxView` derives `parsedSearchFilter` directly from `debouncedSearchText` each render and reuses it for both local filtering and highlight terms, so invalidation is automatic.
+
 **NetworkRetry Utility (NetworkRetry.swift):**
 ```swift
 struct NetworkRetry {
