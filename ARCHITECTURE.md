@@ -40,7 +40,10 @@ SimpleMail/
 │   │   └── PrimaryRule.swift        # Primary tab rule toggles
 │   │
 │   ├── ViewModels/
-│   │   └── InboxViewModel.swift     # Main inbox state management
+│   │   ├── InboxViewModel.swift     # Inbox UI orchestration + actions
+│   │   ├── InboxStore.swift         # Actor for inbox filtering + sectioning
+│   │   ├── InboxViewState.swift     # Lightweight derived state for inbox UI
+│   │   └── EmailSection.swift       # Shared section model (moved from InboxView)
 │   │
 │   ├── Views/
 │   │   ├── InboxView.swift          # Main inbox UI
@@ -242,7 +245,7 @@ enum Base64URL {
 **Threading / concurrency note:**
 - SummaryQueue writes stats/timestamps on the main actor to avoid background publishing warnings.
 
-### 4. Inbox Tabs + Preferences (InboxViewModel.swift / InboxPreferences.swift)
+### 4. Inbox Tabs + Preferences (InboxStore.swift / InboxPreferences.swift)
 
 **Goal:** allow a user‑customizable Primary tab and a configurable third tab, while keeping counts consistent.
 
@@ -257,11 +260,11 @@ enum Base64URL {
 
 **Primary rules:**
 - `PrimaryRule` defines the toggles and defaults (People/VIP/Security/Money/Deadlines enabled by default).
-- `InboxViewModel.isPrimary(_:)` returns true if **any enabled rule** matches.
+- `InboxStore.isPrimary(_:)` returns true if **any enabled rule** matches.
 
 **Pinned tab:**
 - `PinnedTabOption` defines the third tab label and filter predicate.
-- `matchesPinned(_:)` maps the selected option to the appropriate predicate (e.g. money, deadlines, people).
+- `InboxStore.matchesPinned(_:)` maps the selected option to the appropriate predicate (e.g. money, deadlines, people).
 
 **Filtering pipeline:**
 1. Blocked senders removed.
@@ -288,7 +291,7 @@ enum Base64URL {
 
 **Cached inbox sections**
 - **Risk:** caching `emailSections` could show stale grouping if the cache isn’t invalidated when inbox context changes.
-- **Mitigation:** `InboxViewModel` tracks a `sectionsDirty` flag and invalidates on all relevant state changes (`emails`, `currentTab`, `pinnedTabOption`, `activeFilter`, `filterVersion`) before recomputing.
+- **Mitigation:** `InboxStore` tracks a `sectionsDirty` flag and invalidates on all relevant state changes (`emails`, `currentTab`, `pinnedTabOption`, `activeFilter`, `filterVersion`) before recomputing.
 
 **NetworkRetry Utility (NetworkRetry.swift):**
 ```swift
@@ -341,7 +344,7 @@ final class SnoozedEmail {
 }
 ```
 
-### 4. Inbox View Model (InboxViewModel.swift)
+### 4. Inbox Store + View Model (InboxStore.swift / InboxViewModel.swift)
 
 **State Management with @Observable (iOS 17+):**
 ```swift
@@ -356,6 +359,21 @@ final class InboxViewModel {
     var currentMailbox: Mailbox = .inbox
     var isLoading = false
     var error: Error?
+}
+```
+
+**InboxStore actor (derived state):**
+```swift
+@MainActor
+actor InboxStore {
+    func setEmails(_ emails: [Email])
+    func setCurrentTab(_ tab: InboxTab)
+    func setPinnedTabOption(_ option: PinnedTabOption)
+    func setActiveFilter(_ filter: InboxFilter?)
+    func bumpFilterVersion()
+
+    var sections: [EmailSection] { get }
+    var counts: [InboxFilter: Int] { get }
 }
 ```
 
