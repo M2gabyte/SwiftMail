@@ -559,17 +559,6 @@ struct InboxView: View {
                 bulkActionBar
             }
         } else if isSearchMode {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        isSearchMode = false
-                    }
-                    searchFieldFocused = false
-                    searchText = ""
-                    debouncedSearchText = ""
-                    viewModel.clearSearch()
-                }
-            }
             if !searchModeResults.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Select") {
