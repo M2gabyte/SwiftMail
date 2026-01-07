@@ -512,6 +512,14 @@ final class InboxViewModel {
             } else {
                 updatePagingDebug(path: "pageToken", action: "duplicates", fetched: fetched.count)
             }
+            if let oldestDate = cachePagingState.oldestLoadedDate {
+                // Kick off date fallback without waiting for another onAppear trigger.
+                Task { [weak self] in
+                    guard let self else { return }
+                    _ = await self.loadMoreFromNetworkByDate(before: oldestDate)
+                }
+                updatePagingDebug(path: "pageToken", action: "handoff-to-date", fetched: fetched.count)
+            }
             return false
         } catch {
             logger.error("Failed to load more emails: \(error.localizedDescription)")
