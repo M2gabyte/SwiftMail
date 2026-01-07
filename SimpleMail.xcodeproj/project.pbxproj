@@ -67,6 +67,8 @@
 		A10000A5 /* InboxStoreWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A5 /* InboxStoreWorker.swift */; };
 		A1000051 /* BottomCommandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000051 /* BottomCommandSurface.swift */; };
 		A1000052 /* SwipeActionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000052 /* SwipeActionRow.swift */; };
+		A10000A6 /* SearchIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A6 /* SearchIndexManager.swift */; };
+		A10000A7 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000A7 /* libsqlite3.tbd */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -135,6 +137,8 @@
 		B1000047 /* OutboxManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboxManager.swift; sourceTree = "<group>"; };
 		B1000048 /* BodyPrefetchQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyPrefetchQueue.swift; sourceTree = "<group>"; };
 		B1000049 /* QueuedEmail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedEmail.swift; sourceTree = "<group>"; };
+		B10000A6 /* SearchIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchIndexManager.swift; sourceTree = "<group>"; };
+		B10000A7 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		B1000050 /* EmailPreviewNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailPreviewNormalizer.swift; sourceTree = "<group>"; };
 		B10000A0 /* InboxViewModelCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxViewModelCacheTests.swift; sourceTree = "<group>"; };
 		B10000A1 /* EmailSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSection.swift; sourceTree = "<group>"; };
@@ -162,6 +166,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000A7 /* libsqlite3.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,6 +286,7 @@
 				B1000046 /* NetworkMonitor.swift */,
 				B1000047 /* OutboxManager.swift */,
 				B1000048 /* BodyPrefetchQueue.swift */,
+				B10000A6 /* SearchIndexManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -488,6 +494,7 @@
 				A1000046 /* NetworkMonitor.swift in Sources */,
 				A1000047 /* OutboxManager.swift in Sources */,
 				A1000048 /* BodyPrefetchQueue.swift in Sources */,
+				A10000A6 /* SearchIndexManager.swift in Sources */,
 				A1000049 /* QueuedEmail.swift in Sources */,
 				A1000050 /* EmailPreviewNormalizer.swift in Sources */,
 				A10000A0 /* InboxViewModelCacheTests.swift in Sources */,

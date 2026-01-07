@@ -32,6 +32,13 @@ final class EmailCacheManager: ObservableObject {
     func configure(with context: ModelContext) {
         self.modelContext = context
         updateCacheStats()
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            let cached = await MainActor.run {
+                self.loadAllCachedEmails()
+            }
+            await SearchIndexManager.shared.rebuildIndex(with: cached)
+        }
     }
 
     func configureIfNeeded() {
@@ -81,6 +88,23 @@ final class EmailCacheManager: ObservableObject {
         } catch {
             logger.warning("Failed to fetch account email count: \(error.localizedDescription)")
             return 0
+        }
+    }
+
+    func loadAllCachedEmails(accountEmail: String? = nil) -> [Email] {
+        guard let context = modelContext else { return [] }
+        let descriptor = FetchDescriptor<Email>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        do {
+            let results = try context.fetch(descriptor)
+            if let accountEmail = accountEmail?.lowercased() {
+                return results.filter { $0.accountEmail?.lowercased() == accountEmail }
+            }
+            return results
+        } catch {
+            logger.error("Failed to load all cached emails: \(error.localizedDescription)")
+            return []
         }
     }
 
@@ -170,6 +194,9 @@ final class EmailCacheManager: ObservableObject {
             AccountDefaults.setDate(Date(), for: "lastEmailSync", accountEmail: accountEmail)
             updateCacheStats()
             logger.info("Cached \(emails.count) emails")
+            Task {
+                await SearchIndexManager.shared.index(emails: emails)
+            }
         } catch {
             logger.error("Failed to cache emails: \(error.localizedDescription)")
         }
@@ -327,6 +354,9 @@ final class EmailCacheManager: ObservableObject {
             }
             try context.save()
             updateCacheStats()
+            Task {
+                await SearchIndexManager.shared.remove(ids: ids)
+            }
         } catch {
             logger.error("Failed to delete emails: \(error.localizedDescription)")
         }
@@ -398,6 +428,9 @@ final class EmailCacheManager: ObservableObject {
             try context.save()
             updateCacheStats()
             logger.info("Cache cleared")
+            Task {
+                await SearchIndexManager.shared.clearIndex(accountEmail: nil)
+            }
         } catch {
             logger.error("Failed to clear cache: \(error.localizedDescription)")
         }
@@ -437,6 +470,9 @@ final class EmailCacheManager: ObservableObject {
             try context.save()
             updateCacheStats()
             logger.info("Cache cleared for account: \(email)")
+            Task {
+                await SearchIndexManager.shared.clearIndex(accountEmail: email)
+            }
         } catch {
             logger.error("Failed to clear cache for account: \(error.localizedDescription)")
         }

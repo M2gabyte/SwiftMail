@@ -61,6 +61,7 @@ final class InboxViewModel {
     var searchResults: [Email] = []
     var isSearching = false
     var currentSearchQuery = ""
+    var localSearchResults: [Email] = []
 
     // MARK: - Bulk Actions Toast
 
@@ -871,6 +872,30 @@ final class InboxViewModel {
         searchResults = []
         currentSearchQuery = ""
         isSearching = false
+        localSearchResults = []
+    }
+
+    func performLocalSearch(query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            localSearchResults = []
+            return
+        }
+
+        let accountEmail = AuthService.shared.currentAccount?.email?.lowercased()
+        do {
+            let ids = try await SearchIndexManager.shared.search(
+                query: trimmed,
+                accountEmail: accountEmail
+            )
+            localSearchResults = EmailCacheManager.shared.loadCachedEmails(
+                by: ids,
+                accountEmail: accountEmail
+            )
+        } catch {
+            logger.error("Local search failed: \(error.localizedDescription)")
+            localSearchResults = []
+        }
     }
 
     // MARK: - Bulk Actions

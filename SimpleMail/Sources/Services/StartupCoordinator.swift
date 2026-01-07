@@ -34,6 +34,7 @@ final class StartupCoordinator {
         // Stage 3: background warmups (longer delay)
         Task.detached(priority: .background) {
             try? await Task.sleep(for: .seconds(2))
+            await SearchIndexManager.shared.prewarmIfNeeded()
             startupLogger.info("Completed deferred warmups")
         }
     }

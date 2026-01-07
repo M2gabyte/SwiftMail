@@ -71,6 +71,7 @@ SimpleMail/
 │   │   ├── BackgroundSync.swift     # Background refresh + notifications
 │   │   ├── SnoozeManager.swift      # Snooze persistence
 │   │   ├── ScheduledSendManager.swift # Scheduled send queue
+│   │   ├── SearchIndexManager.swift # Local FTS5 index for search
 │   │   └── EmailCache.swift         # Offline caching
 │   │
 │   ├── Engine/
@@ -1275,12 +1276,61 @@ actor GmailService {
 }
 ```
 
+### Startup & Initialization Phases
+
+Startup is intentionally staged to keep first render fast while deferring heavier work:
+
+1. **Stage 1 (critical path, immediate):**
+   - Configure core services that must be ready for the UI and cache:
+     `EmailCacheManager`, `SnoozeManager`, `OutboxManager`, `NetworkMonitor`.
+2. **Stage 2 (post-first-frame):**
+   - Short delay (~300ms) before preloading contacts if authenticated.
+3. **Stage 3 (background warmups):**
+   - Longer delay (~2s) for deferred warmups (e.g., search index prewarm).
+
+All staging is coordinated in `StartupCoordinator.start()` to keep the UI responsive while background work warms up.
+
+### Gmail Sync Model (History Delta)
+
+The background sync uses Gmail History API when possible and falls back safely:
+
+- `BackgroundSync.syncAccount` reads `gmailHistoryId` from `AccountDefaults`.
+- If present, it pages `GmailService.getHistory(...)` and collects:
+  - **added** message IDs
+  - **deleted** message IDs
+  - **label-changed** message IDs
+- It fetches details for changed IDs and applies cache updates.
+- The newest `historyId` from the response is persisted per account.
+- If Gmail returns `.notFound` (history too old), the sync falls back to a full inbox fetch and resets history ID using `getProfile()`.
+
+### Local Search Index (FTS5)
+
+Local search is backed by SQLite FTS5 for fast, offline queries:
+
+- `SearchIndexManager` is an actor managing `Application Support/SearchIndex/email_search.sqlite`.
+- Schema: `email_fts(id, accountEmail, subject, snippet, sender)` with `tokenize='unicode61'`.
+- Schema versioning: `searchIndexSchemaVersion` in `UserDefaults` triggers drop/recreate on changes.
+- Index updates:
+  - `EmailCacheManager.cacheEmails` → `index(emails:)`
+  - `EmailCacheManager.deleteEmails` → `remove(ids:)`
+  - `EmailCacheManager.clearCache` → `clearIndex(accountEmail:)`
+  - `EmailCacheManager.configure` → full `rebuildIndex(with:)` from cached emails
+- Search queries:
+  - Tokenized + prefix-matched (`term* AND term*`) with `bm25` ordering.
+  - Optional account filter for multi‑account searches.
+- Startup prewarm: Stage 3 in `StartupCoordinator` triggers `prewarmIfNeeded()`.
+- Build requirement: target links `libsqlite3.tbd` to enable `import SQLite3`.
+
 ---
 
 *Last updated: January 2026*
-*Architecture version: 2.4*
+*Architecture version: 2.5*
 
 **Changelog:**
+- v2.5:
+  - Added staged startup phases in `StartupCoordinator` (critical path, post-frame, background warmups).
+  - Added Gmail History API delta sync with per-account historyId storage and full sync fallback.
+  - Added FTS5 local search indexing with async cache integration and SQLite prewarm.
 - v2.4:
   - **iOS 26 Native Search & Toolbar:**
     - Search uses native `.searchable` with `@FocusState` binding

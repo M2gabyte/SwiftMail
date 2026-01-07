@@ -79,13 +79,7 @@ struct InboxView: View {
         }
         let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return [] }
-        let lower = query.lowercased()
-        return viewModel.emails.filter { email in
-            email.senderName.lowercased().contains(lower) ||
-            email.senderEmail.lowercased().contains(lower) ||
-            email.subject.lowercased().contains(lower) ||
-            email.snippet.lowercased().contains(lower)
-        }
+        return viewModel.localSearchResults
     }
 
     /// Save search to history when user commits
@@ -218,6 +212,12 @@ struct InboxView: View {
                     try? await Task.sleep(for: .milliseconds(250))
                     debouncedSearchText = newValue
                 }
+            }
+        })
+        view = AnyView(view.onChange(of: debouncedSearchText) { _, newValue in
+            guard isSearchMode else { return }
+            Task {
+                await viewModel.performLocalSearch(query: newValue)
             }
         })
         view = AnyView(view.onChange(of: viewModel.currentMailbox) { _, _ in
