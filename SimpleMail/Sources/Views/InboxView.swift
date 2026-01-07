@@ -472,7 +472,7 @@ struct InboxView: View {
 
         var body: some View {
             ZStack {
-                Color.black.opacity(0.08)
+                Color.black.opacity(0.85)
                     .ignoresSafeArea()
                     .onTapGesture { onTapBackground() }
 
@@ -485,8 +485,8 @@ struct InboxView: View {
                         onSelectRecent: onSelectRecent,
                         emailRowView: emailRowView
                     )
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
                     .padding(.bottom, 80)
                 }
             }
@@ -503,13 +503,6 @@ struct InboxView: View {
 
         var body: some View {
             List {
-                Rectangle()
-                    .fill(Color(.separator).opacity(0.3))
-                    .frame(height: 1.0 / UIScreen.main.scale)
-                    .listRowInsets(.init())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-
                 if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     if !searchHistory.recentSearches.isEmpty {
                         Section("Recent") {
@@ -540,12 +533,8 @@ struct InboxView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(Color(.separator).opacity(0.2), lineWidth: 0.5)
-            )
-            .shadow(color: Color.black.opacity(0.14), radius: 20, x: 0, y: 8)
+            .background(Color.clear)
+            .listRowSeparatorTint(Color.white.opacity(0.12))
         }
     }
 
