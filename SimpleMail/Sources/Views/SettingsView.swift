@@ -348,6 +348,18 @@ struct SettingsView: View {
                     Text("Counts are local to this device. Use Refresh after sync to see new activity.")
                 }
 
+#if DEBUG
+                Section {
+                    Button("Run Inbox Cache Tests") {
+                        InboxViewModelCacheTests.runAllTests()
+                    }
+                } header: {
+                    Text("Debug")
+                } footer: {
+                    Text("Runs debug-only cache invalidation checks in InboxViewModel.")
+                }
+#endif
+
                 // Gmail Settings Sync Section
                 Section {
                     NavigationLink {
