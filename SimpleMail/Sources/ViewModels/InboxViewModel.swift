@@ -155,6 +155,7 @@ final class InboxViewModel {
     private var lastFallbackFetchBefore: Date?
     private var pageTokenStallCount = 0
     private var fallbackEmptyCount = 0
+    private var lastFooterTrigger: Date?
 
     struct PagingDebugState {
         var path: String = "idle"
@@ -417,6 +418,30 @@ final class InboxViewModel {
             return
         }
 
+        syncPagingAnchorWithEmails()
+
+        if await loadMoreFromCacheIfAvailable() {
+            return
+        }
+
+        if hasMoreEmails {
+            let didAppend = await loadMoreEmails()
+            if didAppend {
+                return
+            }
+        }
+
+        if let oldestDate = cachePagingState.oldestLoadedDate {
+            _ = await loadMoreFromNetworkByDate(before: oldestDate)
+        }
+    }
+
+    func loadMoreFromFooter() async {
+        if let last = lastFooterTrigger, Date().timeIntervalSince(last) < 1.0 {
+            return
+        }
+        lastFooterTrigger = Date()
+        guard !isLoadingMore else { return }
         syncPagingAnchorWithEmails()
 
         if await loadMoreFromCacheIfAvailable() {

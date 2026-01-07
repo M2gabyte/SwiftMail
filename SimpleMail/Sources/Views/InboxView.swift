@@ -483,6 +483,14 @@ struct InboxView: View {
                 }
             }
 
+            if !isSearchMode {
+                Color.clear
+                    .frame(height: 1)
+                    .onAppear { Task { await viewModel.loadMoreFromFooter() } }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
             if viewModel.isLoadingMore {
                 ProgressView().frame(maxWidth: .infinity).padding()
                     .listRowBackground(Color.clear)
