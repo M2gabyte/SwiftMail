@@ -81,6 +81,7 @@ SimpleMail/
 │   │   ├── Color+Hex.swift          # Hex string to Color utilities
 │   │   ├── EmailFilters.swift       # Email classification (human/bulk detection)
 │   │   ├── InboxPreferences.swift   # Primary/pinned preferences + notifications
+│   │   ├── InboxFilterEngine.swift  # Pure inbox filtering + sectioning pipeline
 │   │   └── NetworkRetry.swift       # Exponential backoff retry utility
 │   │
 │   ├── Resources/
@@ -361,6 +362,7 @@ final class InboxViewModel {
     var error: Error?
 }
 ```
+`InboxViewModel` keeps a lightweight `InboxViewState` (sections + filter counts) in sync with `InboxStore`.
 
 **InboxStore actor (derived state):**
 ```swift
@@ -377,13 +379,17 @@ actor InboxStore {
 }
 ```
 
+**InboxFilterEngine (pure pipeline):**
+- Stateless helpers for classification, tab context, filters, and date sectioning.
+- Used by `InboxStore` to keep UI logic deterministic and testable.
+
 **Usage in Views:**
 ```swift
 struct InboxView: View {
     @State private var viewModel = InboxViewModel()  // Not @StateObject
 
     var body: some View {
-        List(viewModel.emails) { email in ... }
+        List(viewModel.emailSections) { section in ... }
     }
 }
 ```
@@ -402,6 +408,7 @@ emails
   → groupEmailsByDate(today/yesterday/thisWeek/earlier)
   → display as sections
 ```
+Implemented by `InboxFilterEngine`, invoked from `InboxStore`.
 
 ### 5. Offline Caching (EmailCache.swift)
 
