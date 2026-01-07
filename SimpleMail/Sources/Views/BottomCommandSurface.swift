@@ -19,14 +19,28 @@ struct BottomCommandSurface: View {
     var body: some View {
         let isSearchActive = (searchMode == .editing) || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         HStack(spacing: 8) {
-            leftButton
+            if searchMode == .editing {
+                centerSearchContent
+                    .frame(maxWidth: .infinity)
 
-            centerSearchContent
-                .frame(maxWidth: .infinity)
+                Button(action: { searchText = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search text")
+            } else {
+                leftButton
 
-            rightButton
+                centerSearchContent
+                    .frame(maxWidth: .infinity)
+
+                rightButton
+            }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, searchMode == .editing ? 10 : 14)
         .padding(.vertical, 9)
         .padding(.bottom, 2)
         .animation(.snappy(duration: 0.22), value: isSearchActive)
