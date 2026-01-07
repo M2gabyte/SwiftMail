@@ -1396,4 +1396,11 @@ final class InboxViewModel {
         }
     }
 
+#if DEBUG
+    func refreshFiltersForTest() {
+        filterVersion += 1
+        updateFilterCounts()
+    }
+#endif
+
 }
