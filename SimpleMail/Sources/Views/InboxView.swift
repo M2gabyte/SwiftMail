@@ -265,10 +265,6 @@ struct InboxView: View {
                 withAnimation(.snappy(duration: 0.22)) {
                     isSearchMode = true
                 }
-            } else if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                withAnimation(.snappy(duration: 0.22)) {
-                    isSearchMode = false
-                }
             }
         })
         view = AnyView(view.onAppear { handleAppear() })
@@ -297,35 +293,23 @@ struct InboxView: View {
                 .allowsHitTesting(!isSearchMode)
 
             if isSearchMode {
-                ZStack {
-                    Color.black.opacity(0.08)
-                        .ignoresSafeArea()
-
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            searchFieldFocused = false
-                            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                withAnimation(.snappy(duration: 0.22)) {
-                                    isSearchMode = false
-                                }
-                            }
-                        }
-
-                    searchModeList
-                        .padding(.horizontal, 12)
-                        .padding(.top, 12)
-                        .padding(.bottom, 80)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                                .stroke(Color(.separator).opacity(0.2), lineWidth: 0.5)
-                        )
-                        .shadow(color: Color.black.opacity(0.14), radius: 20, x: 0, y: 8)
-                        .padding(.horizontal, 12)
-                        .transition(.opacity)
-                        .zIndex(10)
-                }
+                SearchOverlayView(
+                    searchText: $searchText,
+                    debouncedSearchText: $debouncedSearchText,
+                    searchHistory: searchHistory,
+                    isSelectionMode: isSelectionMode,
+                    results: searchModeResults,
+                    onSelectRecent: { query in
+                        searchText = query
+                        debouncedSearchText = query
+                    },
+                    onTapBackground: {
+                        searchFieldFocused = false
+                    },
+                    emailRowView: { email in
+                        emailRowView(for: email, isSelectionMode: isSelectionMode)
+                    }
+                )
             }
         }
         .animation(.easeInOut(duration: 0.3), value: isSearchMode)
@@ -476,51 +460,93 @@ struct InboxView: View {
         }
     }
 
-    @ViewBuilder
-    private var searchModeContent: some View {
-        Rectangle()
-            .fill(Color(.separator).opacity(0.3))
-            .frame(height: 1.0 / displayScale)
-            .listRowInsets(.init())
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+    private struct SearchOverlayView<Row: View>: View {
+        @Binding var searchText: String
+        @Binding var debouncedSearchText: String
+        let searchHistory: SearchHistoryManager
+        let isSelectionMode: Bool
+        let results: [Email]
+        let onSelectRecent: (String) -> Void
+        let onTapBackground: () -> Void
+        let emailRowView: (Email) -> Row
 
-        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            if !searchHistory.recentSearches.isEmpty {
-                Section("Recent") {
-                    ForEach(searchHistory.recentSearches.prefix(8), id: \.self) { query in
-                        Button {
-                            searchText = query
-                            debouncedSearchText = query
-                        } label: {
-                            Label(query, systemImage: "clock.arrow.circlepath")
-                        }
-                        .foregroundStyle(.primary)
-                    }
+        var body: some View {
+            ZStack {
+                Color.black.opacity(0.08)
+                    .ignoresSafeArea()
+                    .onTapGesture { onTapBackground() }
+
+                VStack(spacing: 0) {
+                    SearchResultsCard(
+                        searchText: $searchText,
+                        debouncedSearchText: $debouncedSearchText,
+                        searchHistory: searchHistory,
+                        results: results,
+                        onSelectRecent: onSelectRecent,
+                        emailRowView: emailRowView
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, 80)
                 }
-            } else {
-                ContentUnavailableView.search(text: "")
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-        } else {
-            ForEach(searchModeResults.prefix(50)) { email in
-                emailRowView(for: email, isSelectionMode: isSelectionMode)
-            }
-            if searchModeResults.isEmpty {
-                ContentUnavailableView.search(text: searchText)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
             }
         }
     }
 
-    private var searchModeList: some View {
-        List {
-            searchModeContent
+    private struct SearchResultsCard<Row: View>: View {
+        @Binding var searchText: String
+        @Binding var debouncedSearchText: String
+        let searchHistory: SearchHistoryManager
+        let results: [Email]
+        let onSelectRecent: (String) -> Void
+        let emailRowView: (Email) -> Row
+
+        var body: some View {
+            List {
+                Rectangle()
+                    .fill(Color(.separator).opacity(0.3))
+                    .frame(height: 1.0 / UIScreen.main.scale)
+                    .listRowInsets(.init())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if !searchHistory.recentSearches.isEmpty {
+                        Section("Recent") {
+                            ForEach(searchHistory.recentSearches.prefix(8), id: \.self) { query in
+                                Button {
+                                    onSelectRecent(query)
+                                } label: {
+                                    Label(query, systemImage: "clock.arrow.circlepath")
+                                }
+                                .foregroundStyle(.primary)
+                            }
+                        }
+                    } else {
+                        ContentUnavailableView.search(text: "")
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                } else {
+                    ForEach(results.prefix(50)) { email in
+                        emailRowView(email)
+                    }
+                    if results.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(Color(.separator).opacity(0.2), lineWidth: 0.5)
+            )
+            .shadow(color: Color.black.opacity(0.14), radius: 20, x: 0, y: 8)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
     }
 
     @ToolbarContentBuilder
