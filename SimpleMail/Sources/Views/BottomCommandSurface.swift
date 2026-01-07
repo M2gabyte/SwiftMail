@@ -22,7 +22,7 @@ struct BottomCommandSurface: View {
         HStack(spacing: isEditing ? 6 : 8) {
             if !isEditing {
                 leftButton
-                    .frame(width: 44, height: 44)
+                    .frame(width: 50, height: 50)
             }
 
             centerSearchContent
@@ -42,7 +42,7 @@ struct BottomCommandSurface: View {
                 rightButton
             }
         }
-        .padding(.horizontal, isEditing ? 8 : 14)
+        .padding(.horizontal, isEditing ? 8 : 12)
         .padding(.vertical, 9)
         .padding(.bottom, 2)
         .animation(.snappy(duration: 0.22), value: isSearchActive)
@@ -51,9 +51,9 @@ struct BottomCommandSurface: View {
     private var leftButton: some View {
         Button(action: onTapFilter) {
             Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal")
-                .font(.system(size: 18, weight: .regular))
+                .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(isFilterActive ? Color.accentColor : .secondary)
-                .frame(width: 34, height: 34)
+                .frame(width: 38, height: 38)
                 .background(Circle().fill(.ultraThinMaterial))
                 .overlay(
                     Circle()
@@ -69,7 +69,7 @@ struct BottomCommandSurface: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFilterActive)
         }
         .buttonStyle(.plain)
-        .frame(width: 44, height: 44)
+        .frame(width: 50, height: 50)
         .contentShape(Rectangle())
         .accessibilityLabel(filterAccessibilityLabel)
         .accessibilityHint(isFilterActive ? "Double tap to change or clear filter" : "Double tap to add a filter")
@@ -79,9 +79,9 @@ struct BottomCommandSurface: View {
         ZStack {
             Button(action: onTapCompose) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 18, weight: .regular))
+                    .font(.system(size: 22, weight: .regular))
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 38, height: 38)
                     .background(Circle().fill(.ultraThinMaterial))
                     .overlay(
                         Circle()
@@ -89,7 +89,7 @@ struct BottomCommandSurface: View {
                     )
             }
             .buttonStyle(.plain)
-            .frame(width: 44, height: 44)
+            .frame(width: 50, height: 50)
             .contentShape(Rectangle())
             .accessibilityLabel("Compose new email")
             .accessibilityHint("Double tap to write a new message")
