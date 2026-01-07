@@ -545,7 +545,7 @@ final class InboxViewModel {
             uniqueNewEmails = cached.filter { !existingIds.contains($0.id) }
         }
 
-        guard !uniqueNewEmails.isEmpty else {
+        if uniqueNewEmails.isEmpty {
             cachePagingState.oldestLoadedDate = cached.map(\.date).min()
             return false
         }
@@ -598,13 +598,22 @@ final class InboxViewModel {
                 let existingIds = Set(emails.map { $0.id })
                 uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
             }
+            let fetchedOldest = moreEmails.map(\.date).min()
             if !uniqueNewEmails.isEmpty {
                 emails.append(contentsOf: uniqueNewEmails)
                 cachePagingState.oldestLoadedDate = emails.map(\.date).min()
                 EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
                 updateFilterCounts()
+                return true
             }
-            return !uniqueNewEmails.isEmpty
+
+            if let fetchedOldest, fetchedOldest < date {
+                cachePagingState.oldestLoadedDate = fetchedOldest
+                lastFallbackFetchBefore = fetchedOldest
+            } else {
+                cachePagingState.isExhausted = true
+            }
+            return false
         } catch {
             logger.error("Failed to load more emails by date: \(error.localizedDescription)")
             self.error = error
@@ -666,11 +675,20 @@ final class InboxViewModel {
             uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
         }
 
+        let fetchedOldest = fetched.map(\.date).min()
         if !uniqueNewEmails.isEmpty {
             emails.append(contentsOf: uniqueNewEmails)
             cachePagingState.oldestLoadedDate = emails.map(\.date).min()
             EmailCacheManager.shared.cacheEmails(fetched, isFullInboxFetch: false)
             updateFilterCounts()
+            return
+        }
+
+        if let fetchedOldest, fetchedOldest < oldestDate {
+            cachePagingState.oldestLoadedDate = fetchedOldest
+            lastFallbackFetchBefore = fetchedOldest
+        } else {
+            cachePagingState.isExhausted = true
         }
     }
 
