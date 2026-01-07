@@ -152,6 +152,7 @@ final class InboxViewModel {
         var isExhausted = false
     }
     private let cachePageSize = 120
+    private var lastFallbackFetchBefore: Date?
 
     // MARK: - Computed Properties
 
@@ -377,11 +378,19 @@ final class InboxViewModel {
 
         if hasMoreEmails {
             await loadMoreEmails()
+            return
+        }
+
+        if let oldestDate = cachePagingState.oldestLoadedDate {
+            if await loadMoreFromNetworkByDate(before: oldestDate) {
+                return
+            }
         }
     }
 
     func loadMoreEmails() async {
         if currentMailbox == .allInboxes {
+            await loadMoreUnifiedByDate()
             return
         }
 
@@ -506,6 +515,7 @@ final class InboxViewModel {
     private func updateCachePagingAnchor() {
         cachePagingState.oldestLoadedDate = emails.map(\.date).min()
         cachePagingState.isExhausted = false
+        lastFallbackFetchBefore = nil
     }
 
     private func loadMoreFromCacheIfAvailable() async -> Bool {
@@ -544,6 +554,132 @@ final class InboxViewModel {
         cachePagingState.oldestLoadedDate = emails.map(\.date).min()
         updateFilterCounts()
         return true
+    }
+
+    private func loadMoreFromNetworkByDate(before date: Date) async -> Bool {
+        if lastFallbackFetchBefore == date {
+            return false
+        }
+        lastFallbackFetchBefore = date
+
+        if currentMailbox == .allInboxes {
+            await loadMoreUnifiedByDate()
+            return true
+        }
+
+        let dateQuery = formatBeforeQuery(date)
+        let mailboxQuery = mailboxQuery(for: currentMailbox)
+        let combinedQuery: String? = {
+            guard let mailboxQuery, !mailboxQuery.isEmpty else { return dateQuery }
+            return "\(mailboxQuery) \(dateQuery)"
+        }()
+
+        guard !isLoadingMore else { return false }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+
+        do {
+            let labelIds = labelIdsForMailbox(currentMailbox)
+            let (moreEmails, _) = try await GmailService.shared.fetchInbox(
+                query: combinedQuery,
+                maxResults: 50,
+                labelIds: labelIds
+            )
+            guard !moreEmails.isEmpty else {
+                cachePagingState.isExhausted = true
+                return false
+            }
+            let moreEmailModels = moreEmails.map(Email.init(dto:))
+            let uniqueNewEmails: [Email]
+            if conversationThreading {
+                let existingThreadIds = Set(emails.map { $0.threadId })
+                uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
+            } else {
+                let existingIds = Set(emails.map { $0.id })
+                uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
+            }
+            if !uniqueNewEmails.isEmpty {
+                emails.append(contentsOf: uniqueNewEmails)
+                cachePagingState.oldestLoadedDate = emails.map(\.date).min()
+                EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
+                updateFilterCounts()
+            }
+            return !uniqueNewEmails.isEmpty
+        } catch {
+            logger.error("Failed to load more emails by date: \(error.localizedDescription)")
+            self.error = error
+            return false
+        }
+    }
+
+    private func loadMoreUnifiedByDate() async {
+        guard !isLoadingMore else { return }
+        guard let oldestDate = cachePagingState.oldestLoadedDate else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+
+        let dateQuery = formatBeforeQuery(oldestDate)
+        let mailboxQuery = mailboxQuery(for: currentMailbox)
+        let combinedQuery: String? = {
+            guard let mailboxQuery, !mailboxQuery.isEmpty else { return dateQuery }
+            return "\(mailboxQuery) \(dateQuery)"
+        }()
+
+        let accounts = AuthService.shared.accounts
+        guard !accounts.isEmpty else { return }
+
+        var fetched: [EmailDTO] = []
+        await withTaskGroup(of: [EmailDTO].self) { group in
+            for account in accounts {
+                group.addTask {
+                    do {
+                        let (emails, _) = try await GmailService.shared.fetchInbox(
+                            for: account,
+                            query: combinedQuery,
+                            maxResults: 50,
+                            labelIds: ["INBOX"]
+                        )
+                        return emails
+                    } catch {
+                        logger.error("Unified inbox backfill failed for \(account.email): \(error.localizedDescription)")
+                        return []
+                    }
+                }
+            }
+            for await emails in group {
+                fetched.append(contentsOf: emails)
+            }
+        }
+
+        guard !fetched.isEmpty else {
+            cachePagingState.isExhausted = true
+            return
+        }
+
+        let moreEmailModels = fetched.map(Email.init(dto:))
+        let uniqueNewEmails: [Email]
+        if conversationThreading {
+            let existingThreadIds = Set(emails.map { $0.threadId })
+            uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
+        } else {
+            let existingIds = Set(emails.map { $0.id })
+            uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
+        }
+
+        if !uniqueNewEmails.isEmpty {
+            emails.append(contentsOf: uniqueNewEmails)
+            cachePagingState.oldestLoadedDate = emails.map(\.date).min()
+            EmailCacheManager.shared.cacheEmails(fetched, isFullInboxFetch: false)
+            updateFilterCounts()
+        }
+    }
+
+    private func formatBeforeQuery(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy/MM/dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return "before:\(formatter.string(from: date))"
     }
 
     private func applySnapshotOrCachedEmails() {
