@@ -10,6 +10,8 @@ struct SettingsView: View {
     @StateObject private var themeManager = ThemeManager.shared
     @State private var showingSignOutAlert = false
     @State private var summaryStats = SummaryQueue.statsSnapshot()
+    @State private var debugTestResult: String?
+    @State private var showingDebugTestResult = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -45,6 +47,11 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("You'll need to sign in again to access your email.")
+            }
+            .alert("Inbox Cache Tests", isPresented: $showingDebugTestResult, presenting: debugTestResult) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { result in
+                Text(result)
             }
             .onAppear {
                 summaryStats = SummaryQueue.statsSnapshot()
@@ -416,7 +423,8 @@ struct SettingsView: View {
     private var debugSection: some View {
         Section {
             Button("Run Inbox Cache Tests") {
-                InboxViewModelCacheTests.runAllTests()
+                debugTestResult = InboxViewModelCacheTests.runAllTests()
+                showingDebugTestResult = true
             }
         } header: {
             Text("Debug")

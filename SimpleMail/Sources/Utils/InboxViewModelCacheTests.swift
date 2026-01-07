@@ -12,7 +12,7 @@ enum InboxViewModelCacheTests {
         let message: String
     }
 
-    static func runAllTests() {
+    static func runAllTests() -> String {
         print("=== InboxViewModel Cache Tests ===")
 
         var results: [TestResult] = []
@@ -33,6 +33,8 @@ enum InboxViewModelCacheTests {
         if failed > 0 {
             assertionFailure("InboxViewModel cache tests failed")
         }
+
+        return "Passed: \(passed)  Failed: \(failed)"
     }
 
     // MARK: - Tests
