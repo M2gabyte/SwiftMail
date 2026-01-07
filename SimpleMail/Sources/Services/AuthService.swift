@@ -335,6 +335,8 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
                 await AvatarService.shared.clearCache()
                 // PeopleService contacts are account-scoped, but clear for fresh data
                 await PeopleService.shared.clearCache()
+                // Prewarm the next likely account when idle
+                await AccountWarmupCoordinator.shared.schedulePrewarmNext()
             }
         }
 
@@ -349,6 +351,9 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
 
         // Clear all app caches to prevent data bleed between accounts
         clearAllCaches()
+        Task { @MainActor in
+            AccountSnapshotStore.shared.clear(accountEmail: nil)
+        }
         NotificationCenter.default.post(name: .accountDidChange, object: nil)
     }
 

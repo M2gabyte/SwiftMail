@@ -18,7 +18,7 @@ final class StartupCoordinator {
         didStart = true
 
         // Stage 1: critical path (immediate, non-blocking)
-        EmailCacheManager.shared.configure(with: modelContext)
+        EmailCacheManager.shared.configure(with: modelContext, deferIndexRebuild: true)
         SnoozeManager.shared.configure(with: modelContext)
         OutboxManager.shared.configure(with: modelContext)
         NetworkMonitor.shared.start()
@@ -34,7 +34,9 @@ final class StartupCoordinator {
         // Stage 3: background warmups (longer delay)
         Task.detached(priority: .background) {
             try? await Task.sleep(for: .seconds(2))
-            await SearchIndexManager.shared.prewarmIfNeeded()
+            let accountEmail = await MainActor.run { AuthService.shared.currentAccount?.email.lowercased() }
+            await SearchIndexManager.shared.prewarmIfNeeded(accountEmail: accountEmail)
+            await AccountWarmupCoordinator.shared.schedulePrewarmNext()
             startupLogger.info("Completed deferred warmups")
         }
     }

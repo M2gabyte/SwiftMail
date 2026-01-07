@@ -174,6 +174,8 @@ final class InboxViewModel {
         let pinnedSnapshot = pinnedTabOption
         let activeFilterSnapshot = activeFilter
         let accountSnapshot = currentAccountEmail
+        let mailboxSnapshot = currentMailbox
+        let nextTokenSnapshot = nextPageToken
         recomputeTask?.cancel()
         recomputeTask = Task { [weak self] in
             guard let self else { return }
@@ -185,7 +187,17 @@ final class InboxViewModel {
                 currentAccountEmail: accountSnapshot
             )
             await MainActor.run { [weak self] in
-                self?.viewState = state
+                guard let self else { return }
+                viewState = state
+                saveSnapshotIfNeeded(
+                    emails: emailsSnapshot,
+                    viewState: state,
+                    currentTab: currentTabSnapshot,
+                    pinnedTabOption: pinnedSnapshot,
+                    activeFilter: activeFilterSnapshot,
+                    mailbox: mailboxSnapshot,
+                    nextPageToken: nextTokenSnapshot
+                )
             }
         }
     }
@@ -216,9 +228,13 @@ final class InboxViewModel {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.currentAccountEmail = AuthService.shared.currentAccount?.email
-                self?.scheduleRecompute()
-                await self?.loadEmails()
+                guard let self else { return }
+                self.currentAccountEmail = AuthService.shared.currentAccount?.email
+                self.applySnapshotOrCachedEmails()
+                self.scheduleRecompute()
+                Task {
+                    await self.loadEmails(showLoading: false, deferHeavyWork: true)
+                }
             }
         }
 
@@ -284,11 +300,15 @@ final class InboxViewModel {
 
     // MARK: - Load Real Emails
 
-    func loadEmails() async {
-        isLoading = true
+    func loadEmails(showLoading: Bool = true, deferHeavyWork: Bool = false) async {
+        if showLoading {
+            isLoading = true
+        }
         nextPageToken = nil
         defer {
-            isLoading = false
+            if showLoading {
+                isLoading = false
+            }
             updateFilterCounts()
         }
 
@@ -305,25 +325,7 @@ final class InboxViewModel {
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
                 self.nextPageToken = nil
-                Task {
-                    try? await Task.sleep(for: .seconds(1))
-                    let candidates = self.emails.compactMap { email -> SummaryQueue.Candidate? in
-                        guard let accountEmail = email.accountEmail else { return nil }
-                        return SummaryQueue.Candidate(
-                            emailId: email.id,
-                            threadId: email.threadId,
-                            accountEmail: accountEmail,
-                            subject: email.subject,
-                            from: email.from,
-                            snippet: email.snippet,
-                            date: email.date,
-                            isUnread: email.isUnread,
-                            isStarred: email.isStarred,
-                            listUnsubscribe: email.listUnsubscribe
-                        )
-                    }
-                    await SummaryQueue.shared.enqueueCandidates(candidates)
-                }
+                scheduleSummaryCandidates(for: emails, deferHeavyWork: deferHeavyWork)
             } else {
                 let labelIds = labelIdsForMailbox(currentMailbox)
                 let query = mailboxQuery(for: currentMailbox)
@@ -335,25 +337,7 @@ final class InboxViewModel {
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
                 self.nextPageToken = pageToken
-                Task {
-                    try? await Task.sleep(for: .seconds(1))
-                    let candidates = self.emails.compactMap { email -> SummaryQueue.Candidate? in
-                        guard let accountEmail = email.accountEmail else { return nil }
-                        return SummaryQueue.Candidate(
-                            emailId: email.id,
-                            threadId: email.threadId,
-                            accountEmail: accountEmail,
-                            subject: email.subject,
-                            from: email.from,
-                            snippet: email.snippet,
-                            date: email.date,
-                            isUnread: email.isUnread,
-                            isStarred: email.isStarred,
-                            listUnsubscribe: email.listUnsubscribe
-                        )
-                    }
-                    await SummaryQueue.shared.enqueueCandidates(candidates)
-                }
+                scheduleSummaryCandidates(for: emails, deferHeavyWork: deferHeavyWork)
             }
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")
@@ -494,6 +478,84 @@ final class InboxViewModel {
         guard !cached.isEmpty else { return }
         emails = dedupeByThread(cached)
         updateFilterCounts()
+    }
+
+    private func applySnapshotOrCachedEmails() {
+        let accountEmail = currentMailbox == .allInboxes
+            ? nil
+            : currentAccountEmail?.lowercased()
+        if let snapshot = AccountSnapshotStore.shared.snapshot(
+            accountEmail: accountEmail,
+            mailbox: currentMailbox
+        ) {
+            if snapshot.matches(
+                currentTab: currentTab,
+                pinnedTabOption: pinnedTabOption,
+                activeFilter: activeFilter
+            ) {
+                emails = snapshot.emails
+                viewState = snapshot.viewState
+                nextPageToken = snapshot.nextPageToken
+                return
+            }
+        }
+
+        let cached = EmailCacheManager.shared.loadCachedEmails(
+            mailbox: currentMailbox,
+            limit: 100,
+            accountEmail: currentMailbox == .allInboxes ? nil : accountEmail
+        )
+        if !cached.isEmpty {
+            emails = dedupeByThread(cached)
+            nextPageToken = nil
+        }
+    }
+
+    private func saveSnapshotIfNeeded(
+        emails: [Email],
+        viewState: InboxViewState,
+        currentTab: InboxTab,
+        pinnedTabOption: PinnedTabOption,
+        activeFilter: InboxFilter?,
+        mailbox: Mailbox,
+        nextPageToken: String?
+    ) {
+        let accountEmail = mailbox == .allInboxes
+            ? nil
+            : currentAccountEmail?.lowercased()
+        AccountSnapshotStore.shared.saveSnapshot(
+            accountEmail: accountEmail,
+            mailbox: mailbox,
+            currentTab: currentTab,
+            pinnedTabOption: pinnedTabOption,
+            activeFilter: activeFilter,
+            emails: emails,
+            viewState: viewState,
+            nextPageToken: nextPageToken
+        )
+    }
+
+    private func scheduleSummaryCandidates(for emails: [Email], deferHeavyWork: Bool) {
+        Task.detached(priority: .utility) {
+            let delay: Duration = deferHeavyWork ? .seconds(1) : .milliseconds(350)
+            try? await Task.sleep(for: delay)
+            let candidates = emails.compactMap { email -> SummaryQueue.Candidate? in
+                guard let accountEmail = email.accountEmail else { return nil }
+                return SummaryQueue.Candidate(
+                    emailId: email.id,
+                    threadId: email.threadId,
+                    accountEmail: accountEmail,
+                    subject: email.subject,
+                    from: email.from,
+                    snippet: email.snippet,
+                    date: email.date,
+                    isUnread: email.isUnread,
+                    isStarred: email.isStarred,
+                    listUnsubscribe: email.listUnsubscribe
+                )
+            }
+            await SummaryQueue.shared.enqueueCandidates(candidates)
+        }
     }
 
     func archiveEmail(_ email: Email) {
@@ -882,7 +944,9 @@ final class InboxViewModel {
             return
         }
 
-        let accountEmail = AuthService.shared.currentAccount?.email.lowercased()
+        let accountEmail = currentMailbox == .allInboxes
+            ? nil
+            : AuthService.shared.currentAccount?.email.lowercased()
         do {
             let ids = try await SearchIndexManager.shared.search(
                 query: trimmed,

@@ -70,6 +70,8 @@
 		A10000A6 /* SearchIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A6 /* SearchIndexManager.swift */; };
 		A10000A7 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000A7 /* libsqlite3.tbd */; };
 		A10000A8 /* StartupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A8 /* StartupCoordinator.swift */; };
+		A10000A9 /* AccountSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A9 /* AccountSnapshotStore.swift */; };
+		A10000AA /* AccountWarmupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AA /* AccountWarmupCoordinator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -141,6 +143,8 @@
 		B10000A6 /* SearchIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchIndexManager.swift; sourceTree = "<group>"; };
 		B10000A7 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		B10000A8 /* StartupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupCoordinator.swift; sourceTree = "<group>"; };
+		B10000A9 /* AccountSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSnapshotStore.swift; sourceTree = "<group>"; };
+		B10000AA /* AccountWarmupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWarmupCoordinator.swift; sourceTree = "<group>"; };
 		B1000050 /* EmailPreviewNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailPreviewNormalizer.swift; sourceTree = "<group>"; };
 		B10000A0 /* InboxViewModelCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxViewModelCacheTests.swift; sourceTree = "<group>"; };
 		B10000A1 /* EmailSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSection.swift; sourceTree = "<group>"; };
@@ -290,6 +294,8 @@
 				B1000048 /* BodyPrefetchQueue.swift */,
 				B10000A6 /* SearchIndexManager.swift */,
 				B10000A8 /* StartupCoordinator.swift */,
+				B10000A9 /* AccountSnapshotStore.swift */,
+				B10000AA /* AccountWarmupCoordinator.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -499,6 +505,8 @@
 				A1000048 /* BodyPrefetchQueue.swift in Sources */,
 				A10000A6 /* SearchIndexManager.swift in Sources */,
 				A10000A8 /* StartupCoordinator.swift in Sources */,
+				A10000A9 /* AccountSnapshotStore.swift in Sources */,
+				A10000AA /* AccountWarmupCoordinator.swift in Sources */,
 				A1000049 /* QueuedEmail.swift in Sources */,
 				A1000050 /* EmailPreviewNormalizer.swift in Sources */,
 				A10000A0 /* InboxViewModelCacheTests.swift in Sources */,

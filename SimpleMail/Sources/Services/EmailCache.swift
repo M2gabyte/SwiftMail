@@ -29,11 +29,23 @@ final class EmailCacheManager: ObservableObject {
 
     // MARK: - Configuration
 
-    func configure(with context: ModelContext) {
+    func configure(with context: ModelContext, deferIndexRebuild: Bool = true) {
         self.modelContext = context
         updateCacheStats()
+        guard deferIndexRebuild else {
+            Task.detached(priority: .utility) { [weak self] in
+                guard let self else { return }
+                let cached = await MainActor.run {
+                    self.loadAllCachedEmails()
+                }
+                await SearchIndexManager.shared.rebuildIndex(with: cached)
+            }
+            return
+        }
+
         Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
+            try? await Task.sleep(for: .milliseconds(300))
             let cached = await MainActor.run {
                 self.loadAllCachedEmails()
             }
@@ -355,7 +367,7 @@ final class EmailCacheManager: ObservableObject {
             try context.save()
             updateCacheStats()
             Task {
-                await SearchIndexManager.shared.remove(ids: ids)
+                await SearchIndexManager.shared.remove(ids: ids, accountEmail: accountEmail)
             }
         } catch {
             logger.error("Failed to delete emails: \(error.localizedDescription)")
@@ -431,6 +443,7 @@ final class EmailCacheManager: ObservableObject {
             Task {
                 await SearchIndexManager.shared.clearIndex(accountEmail: nil)
             }
+            AccountSnapshotStore.shared.clear(accountEmail: nil)
         } catch {
             logger.error("Failed to clear cache: \(error.localizedDescription)")
         }
@@ -473,6 +486,7 @@ final class EmailCacheManager: ObservableObject {
             Task {
                 await SearchIndexManager.shared.clearIndex(accountEmail: email)
             }
+            AccountSnapshotStore.shared.clear(accountEmail: email)
         } catch {
             logger.error("Failed to clear cache for account: \(error.localizedDescription)")
         }
