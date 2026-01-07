@@ -344,11 +344,11 @@ struct InboxView: View {
                             Task { await viewModel.performSearch(query: searchText) }
                         },
                         onTapSearch: {
-                            withAnimation(.easeOut(duration: 0.15)) {
-                                isSearchMode = true
-                            }
+                            searchFieldFocused = true
                             DispatchQueue.main.async {
-                                searchFieldFocused = true
+                                withAnimation(.easeOut(duration: 0.15)) {
+                                    isSearchMode = true
+                                }
                             }
                         },
                         onCancelSearch: {
