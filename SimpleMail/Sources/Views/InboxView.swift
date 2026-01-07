@@ -362,7 +362,9 @@ struct InboxView: View {
                             withAnimation(.easeOut(duration: 0.15)) {
                                 isSearchMode = true
                             }
-                            searchFieldFocused = true
+                            DispatchQueue.main.async {
+                                searchFieldFocused = true
+                            }
                         },
                         onCancelSearch: {
                             withAnimation(.easeOut(duration: 0.15)) {

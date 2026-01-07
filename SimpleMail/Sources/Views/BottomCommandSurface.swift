@@ -19,9 +19,19 @@ struct BottomCommandSurface: View {
     var body: some View {
         let isSearchActive = (searchMode == .editing) || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         HStack(spacing: 8) {
-            if searchMode == .editing {
-                centerSearchContent
-                    .frame(maxWidth: .infinity)
+            leftButton
+                .frame(width: searchMode == .editing ? 0 : 44, height: 44)
+                .opacity(searchMode == .editing ? 0 : 1)
+                .allowsHitTesting(searchMode != .editing)
+
+            centerSearchContent
+                .frame(maxWidth: .infinity)
+                .id("searchField")
+
+            ZStack {
+                rightButton
+                    .opacity(searchMode == .editing ? 0 : 1)
+                    .allowsHitTesting(searchMode != .editing)
 
                 Button(action: { searchText = "" }) {
                     Image(systemName: "xmark.circle.fill")
@@ -31,14 +41,10 @@ struct BottomCommandSurface: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search text")
-            } else {
-                leftButton
-
-                centerSearchContent
-                    .frame(maxWidth: .infinity)
-
-                rightButton
+                .opacity(searchMode == .editing ? 1 : 0)
+                .allowsHitTesting(searchMode == .editing)
             }
+            .frame(width: searchMode == .editing ? 34 : 44, height: 44)
         }
         .padding(.horizontal, searchMode == .editing ? 10 : 14)
         .padding(.vertical, 9)
@@ -69,8 +75,6 @@ struct BottomCommandSurface: View {
         .buttonStyle(.plain)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
-        .opacity(searchMode == .editing ? 0 : 1)
-        .allowsHitTesting(searchMode != .editing)
         .accessibilityLabel(filterAccessibilityLabel)
         .accessibilityHint(isFilterActive ? "Double tap to change or clear filter" : "Double tap to add a filter")
     }
@@ -93,8 +97,6 @@ struct BottomCommandSurface: View {
             .contentShape(Rectangle())
             .accessibilityLabel("Compose new email")
             .accessibilityHint("Double tap to write a new message")
-            .opacity(searchMode == .editing ? 0 : 1)
-            .allowsHitTesting(searchMode != .editing)
 
         }
     }
