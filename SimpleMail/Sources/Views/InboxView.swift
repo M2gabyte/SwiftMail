@@ -70,6 +70,9 @@ struct InboxView: View {
     }
 
     private var searchModeResults: [Email] {
+        if viewModel.isSearchActive {
+            return viewModel.searchResults
+        }
         let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return [] }
         let lower = query.lowercased()
@@ -299,6 +302,7 @@ struct InboxView: View {
                     debouncedSearchText: $debouncedSearchText,
                     searchHistory: searchHistory,
                     isSelectionMode: isSelectionMode,
+                    isSearching: viewModel.isSearching,
                     results: searchModeResults,
                     onSelectRecent: { query in
                         searchText = query
@@ -466,6 +470,7 @@ struct InboxView: View {
         @Binding var debouncedSearchText: String
         let searchHistory: SearchHistoryManager
         let isSelectionMode: Bool
+        let isSearching: Bool
         let results: [Email]
         let onSelectRecent: (String) -> Void
         let onTapBackground: () -> Void
@@ -482,6 +487,7 @@ struct InboxView: View {
                         searchText: $searchText,
                         debouncedSearchText: $debouncedSearchText,
                         searchHistory: searchHistory,
+                        isSearching: isSearching,
                         results: results,
                         onSelectRecent: onSelectRecent,
                         emailRowView: emailRowView
@@ -498,38 +504,50 @@ struct InboxView: View {
         @Binding var searchText: String
         @Binding var debouncedSearchText: String
         let searchHistory: SearchHistoryManager
+        let isSearching: Bool
         let results: [Email]
         let onSelectRecent: (String) -> Void
         let emailRowView: (Email) -> Row
 
         var body: some View {
-            List {
-                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    if !searchHistory.recentSearches.isEmpty {
-                        Section("Recent") {
-                            ForEach(searchHistory.recentSearches.prefix(8), id: \.self) { query in
-                                Button {
-                                    onSelectRecent(query)
-                                } label: {
-                                    Label(query, systemImage: "clock.arrow.circlepath")
+            ZStack {
+                List {
+                    if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if !searchHistory.recentSearches.isEmpty {
+                            Section("Recent") {
+                                ForEach(searchHistory.recentSearches.prefix(8), id: \.self) { query in
+                                    Button {
+                                        onSelectRecent(query)
+                                    } label: {
+                                        Label(query, systemImage: "clock.arrow.circlepath")
+                                    }
+                                    .foregroundStyle(.primary)
                                 }
-                                .foregroundStyle(.primary)
                             }
+                        } else {
+                            ContentUnavailableView.search(text: "")
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
                         }
                     } else {
-                        ContentUnavailableView.search(text: "")
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                        ForEach(results.prefix(50)) { email in
+                            emailRowView(email)
+                        }
+                        if results.isEmpty && !isSearching {
+                            ContentUnavailableView.search(text: searchText)
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                        }
                     }
-                } else {
-                    ForEach(results.prefix(50)) { email in
-                        emailRowView(email)
+                }
+                if isSearching {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Searching...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                    if results.isEmpty {
-                        ContentUnavailableView.search(text: searchText)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .listStyle(.plain)
