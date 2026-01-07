@@ -286,6 +286,10 @@ enum Base64URL {
 - **Risk:** caching the parsed search filter could show stale highlights if the cached value isn’t tied to the latest `debouncedSearchText`.
 - **Mitigation:** `InboxView` derives `parsedSearchFilter` directly from `debouncedSearchText` each render and reuses it for both local filtering and highlight terms, so invalidation is automatic.
 
+**Cached inbox sections**
+- **Risk:** caching `emailSections` could show stale grouping if the cache isn’t invalidated when inbox context changes.
+- **Mitigation:** `InboxViewModel` tracks a `sectionsDirty` flag and invalidates on all relevant state changes (`emails`, `currentTab`, `pinnedTabOption`, `activeFilter`, `filterVersion`) before recomputing.
+
 **NetworkRetry Utility (NetworkRetry.swift):**
 ```swift
 struct NetworkRetry {
@@ -346,7 +350,8 @@ final class SnoozedEmail {
 final class InboxViewModel {
     // No @Published needed - automatic observation
     var emails: [Email] = []
-    var scope: InboxScope = .all
+    var currentTab: InboxTab = .all
+    var pinnedTabOption: PinnedTabOption = .other
     var activeFilter: InboxFilter? = nil
     var currentMailbox: Mailbox = .inbox
     var isLoading = false
@@ -373,7 +378,8 @@ struct InboxView: View {
 **Filtering Pipeline:**
 ```
 emails
-  → applyFilters(scope: all/people)    # People uses EmailFilters.filterForPeopleScope()
+  → remove blocked senders
+  → applyTabContext(All/Primary/Pinned)
   → applyFilters(filter: unread/needsReply/etc)
   → groupEmailsByDate(today/yesterday/thisWeek/earlier)
   → display as sections
@@ -531,9 +537,9 @@ When expired: Unarchive + notify
 ```
 ContentView
 ├── SignInView (unauthenticated)
-└── NavigationStack (authenticated)
+    └── NavigationStack (authenticated)
     └── InboxView
-        ├── Scrollable header block (greeting → scope segmented control → triage pills)
+        ├── Scrollable header block (greeting → tab segmented control → triage pills)
         └── → EmailDetailView (push)
             ├── EmailMessageCard (expandable)
             ├── AttachmentsListView
@@ -548,7 +554,7 @@ ContentView
 ### Key UI Components
 
 **InboxView:**
-- Single List with scrollable header block (greeting → scope segmented control → triage pills)
+- Single List with scrollable header block (greeting → tab segmented control → triage pills)
 - Full-screen SearchSheet activated by bottom toolbar search button (hidden until tapped)
 - Mailbox switching via navigation title menu (.toolbarTitleMenu)
 - Top trailing gear opens Settings (sheet)
@@ -719,18 +725,17 @@ enum EmailFilters {
 | Marketing domains | Email | mailchimp.com, sendgrid.net |
 | Brand sender patterns | Name | "The X Team", "X.com" |
 
-**filterForPeopleScope() Logic:**
+**People Heuristics (`isPeople`):**
 ```
-Keep email if:
-  (looksLikeHumanSender(email) AND !isBulk(email))
-  OR email.labelIds.contains("SENT")  // Conversation evidence
+true if:
+  looksLikeHumanSender(email) AND !isBulk(email)
+  (optionally boosted by conversation evidence like SENT labels where needed)
 ```
 
 **Usage in InboxViewModel:**
 ```swift
-if scope == .people {
-    filtered = EmailFilters.filterForPeopleScope(filtered)
-}
+// Used by Primary rules and the Pinned "People" tab option
+if isPeople(email) { ... }
 ```
 
 ### 11. App Initialization (SimpleMailApp.swift)
