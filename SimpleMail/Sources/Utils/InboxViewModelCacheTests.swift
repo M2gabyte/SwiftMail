@@ -97,8 +97,8 @@ enum InboxViewModelCacheTests {
         let nonPrimary = Email(
             id: "nonprimary",
             threadId: "tnonprimary",
-            subject: "System Update",
             snippet: "FYI",
+            subject: "System Update",
             from: "Acme Updates <no-reply@acme.example>",
             date: now
         )
@@ -127,8 +127,8 @@ enum InboxViewModelCacheTests {
         let invoice = Email(
             id: "money",
             threadId: "tmoney",
-            subject: "Invoice due",
             snippet: "Payment due",
+            subject: "Invoice due",
             from: "Billing <billing@example.com>",
             date: now
         )
