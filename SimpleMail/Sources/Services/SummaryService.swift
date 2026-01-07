@@ -4,11 +4,13 @@ import FoundationModels
 #endif
 
 enum SummaryService {
+    static let minLength = 350
+
     static func summarizeIfNeeded(
         messageId: String,
         body: String,
         accountEmail: String?,
-        minLength: Int = 350
+        minLength: Int = SummaryService.minLength
     ) async -> String? {
         if let cached = SummaryCache.shared.summary(for: messageId, accountEmail: accountEmail) {
             return cached
@@ -26,8 +28,9 @@ enum SummaryService {
             summary = extractKeySentences(from: plain, maxSentences: 3)
         }
 
-        SummaryCache.shared.save(summary: summary, for: messageId, accountEmail: accountEmail)
-        return summary
+        let cleaned = sanitizeSummary(summary)
+        SummaryCache.shared.save(summary: cleaned, for: messageId, accountEmail: accountEmail)
+        return cleaned
     }
 
     static func plainText(_ html: String) -> String {
@@ -73,6 +76,29 @@ enum SummaryService {
         }
         #endif
         throw SummaryError.unavailable
+    }
+
+    private static func sanitizeSummary(_ summary: String) -> String {
+        var cleaned = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return summary }
+
+        let patterns = [
+            #"(?i)\bnote:\s.*?(?:\.|$)"#,
+            #"(?i)\bthis email (seems|appears) to be.*?(?:\.|$)"#
+        ]
+        for pattern in patterns {
+            cleaned = cleaned.replacingOccurrences(
+                of: pattern,
+                with: "",
+                options: .regularExpression
+            )
+        }
+
+        cleaned = cleaned
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return cleaned.isEmpty ? summary : cleaned
     }
 
     private enum SummaryError: Error {

@@ -4,7 +4,7 @@ import UIKit
 // MARK: - Swipe Action Configuration
 
 /// Configuration for a swipe action
-struct SwipeAction {
+struct SwipeActionConfig {
     let icon: String
     let label: String
     let color: Color
@@ -25,29 +25,33 @@ struct SwipeAction {
 /// Prevents accidental over-swipes from triggering multiple states.
 struct SwipeActionRow<Content: View>: View {
     let content: Content
-    let leadingAction: SwipeAction?
-    let trailingAction: SwipeAction?
+    let leadingAction: SwipeActionConfig?
+    let trailingAction: SwipeActionConfig?
 
     /// Fixed threshold distance for action commit (in points)
-    private let commitThreshold: CGFloat = 80
+    private let commitThreshold: CGFloat = 110
+
+    /// Persistent reveal threshold
+    private let revealThreshold: CGFloat = 60
+
+    /// Persistent reveal width
+    private let revealWidth: CGFloat = 88
 
     /// Maximum swipe distance (prevents over-swiping)
-    private let maxSwipeDistance: CGFloat = 100
-
-    /// Action icon reveal threshold
-    private let revealThreshold: CGFloat = 40
+    private let maxSwipeDistance: CGFloat = 140
 
     @State private var offset: CGFloat = 0
     @State private var hasCommittedLeading = false
     @State private var hasCommittedTrailing = false
     @State private var isDragging = false
     @State private var hasTriggeredHaptic = false
+    @State private var revealState: RevealState = .closed
 
     @GestureState private var dragState: CGFloat = 0
 
     init(
-        leadingAction: SwipeAction? = nil,
-        trailingAction: SwipeAction? = nil,
+        leadingAction: SwipeActionConfig? = nil,
+        trailingAction: SwipeActionConfig? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.content = content()
@@ -94,7 +98,7 @@ struct SwipeActionRow<Content: View>: View {
             // Main content
             content
                 .offset(x: effectiveOffset)
-                .gesture(swipeGesture)
+                .simultaneousGesture(swipeGesture)
         }
         .clipped()
         .onChange(of: effectiveOffset) { _, newValue in
@@ -103,7 +107,7 @@ struct SwipeActionRow<Content: View>: View {
     }
 
     @ViewBuilder
-    private func leadingActionBackground(_ action: SwipeAction) -> some View {
+    private func leadingActionBackground(_ action: SwipeActionConfig) -> some View {
         HStack(spacing: 8) {
             Image(systemName: action.icon)
                 .font(.title3)
@@ -123,7 +127,7 @@ struct SwipeActionRow<Content: View>: View {
     }
 
     @ViewBuilder
-    private func trailingActionBackground(_ action: SwipeAction) -> some View {
+    private func trailingActionBackground(_ action: SwipeActionConfig) -> some View {
         HStack(spacing: 8) {
             if isAtTrailingThreshold {
                 Text(action.label)
@@ -147,15 +151,28 @@ struct SwipeActionRow<Content: View>: View {
             .updating($dragState) { value, state, _ in
                 // Only allow horizontal swipes
                 if abs(value.translation.width) > abs(value.translation.height) {
-                    state = value.translation.width
+                    let direction = value.translation.width
+                    if revealState == .leadingOpen && direction < 0 {
+                        state = direction
+                    } else if revealState == .trailingOpen && direction > 0 {
+                        state = direction
+                    } else if revealState == .closed {
+                        state = direction
+                    }
                 }
             }
             .onChanged { value in
-                isDragging = true
+                if abs(value.translation.width) > abs(value.translation.height) {
+                    isDragging = true
+                }
             }
             .onEnded { value in
-                isDragging = false
-                handleSwipeEnd(translation: value.translation.width)
+                if abs(value.translation.width) > abs(value.translation.height) {
+                    isDragging = false
+                    handleSwipeEnd(translation: value.translation.width)
+                } else {
+                    isDragging = false
+                }
             }
     }
 
@@ -227,11 +244,25 @@ struct SwipeActionRow<Content: View>: View {
                 resetState()
             }
         }
+        else if currentOffset >= revealThreshold, leadingAction != nil {
+            withAnimation(.smoothSpring) {
+                offset = revealWidth
+            }
+            revealState = .leadingOpen
+            hasTriggeredHaptic = false
+        }
+        else if currentOffset <= -revealThreshold, trailingAction != nil {
+            withAnimation(.smoothSpring) {
+                offset = -revealWidth
+            }
+            revealState = .trailingOpen
+            hasTriggeredHaptic = false
+        }
         else {
-            // Snap back to origin
             withAnimation(.smoothSpring) {
                 offset = 0
             }
+            revealState = .closed
             hasTriggeredHaptic = false
         }
     }
@@ -243,7 +274,14 @@ struct SwipeActionRow<Content: View>: View {
         hasCommittedLeading = false
         hasCommittedTrailing = false
         hasTriggeredHaptic = false
+        revealState = .closed
     }
+}
+
+private enum RevealState {
+    case closed
+    case leadingOpen
+    case trailingOpen
 }
 
 // MARK: - Preview
@@ -251,13 +289,13 @@ struct SwipeActionRow<Content: View>: View {
 #Preview {
     List {
         SwipeActionRow(
-            leadingAction: SwipeAction(
+            leadingAction: SwipeActionConfig(
                 icon: "envelope.open",
                 label: "Read",
                 color: .blue,
                 action: { print("Mark as read") }
             ),
-            trailingAction: SwipeAction(
+            trailingAction: SwipeActionConfig(
                 icon: "archivebox",
                 label: "Archive",
                 color: .green,

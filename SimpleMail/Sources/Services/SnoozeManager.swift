@@ -257,7 +257,7 @@ struct SnoozedEmailsView: View {
             } else {
                 ForEach(snoozeManager.snoozedEmails) { snoozed in
                     SwipeActionRow(
-                        leadingAction: SwipeAction(
+                        leadingAction: SwipeActionConfig(
                             icon: "arrow.uturn.backward",
                             label: "Unsnooze",
                             color: .blue,
@@ -267,7 +267,7 @@ struct SnoozedEmailsView: View {
                                 }
                             }
                         ),
-                        trailingAction: SwipeAction(
+                        trailingAction: SwipeActionConfig(
                             icon: "xmark.circle",
                             label: "Cancel",
                             color: .red,

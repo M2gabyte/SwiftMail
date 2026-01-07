@@ -9,10 +9,24 @@ private let logger = Logger(subsystem: "com.simplemail.app", category: "BodyPref
 actor BodyPrefetchQueue {
     static let shared = BodyPrefetchQueue()
 
+    struct Candidate: Sendable {
+        let emailId: String
+        let threadId: String
+        let accountEmail: String
+        let date: Date
+        let isUnread: Bool
+        let isStarred: Bool
+        let listUnsubscribe: String?
+    }
+
     private struct Job: Sendable {
         let emailId: String
         let threadId: String
         let accountEmail: String
+        let date: Date
+        let isUnread: Bool
+        let isStarred: Bool
+        let listUnsubscribe: String?
     }
 
     private var queue: [Job] = []
@@ -29,33 +43,35 @@ actor BodyPrefetchQueue {
 
     /// Enqueue emails for body prefetching
     /// Prioritizes unread and starred emails
-    func enqueueCandidates(_ emails: [Email]) async {
-        guard !emails.isEmpty else { return }
+    func enqueueCandidates(_ candidates: [Candidate]) async {
+        guard !candidates.isEmpty else { return }
 
         // Filter out already queued and prioritize
-        let prioritized = prioritize(emails)
+        let prioritized = prioritize(candidates)
 
         for email in prioritized.prefix(maxPrefetchPerSession) {
-            guard let accountEmail = email.accountEmail else { continue }
-
-            if queuedIds.contains(email.id) {
+            if queuedIds.contains(email.emailId) {
                 continue
             }
 
             // Check if body is already cached
             let isCached = await MainActor.run {
-                EmailCacheManager.shared.hasDetailCached(emailId: email.id)
+                EmailCacheManager.shared.hasDetailCached(emailId: email.emailId)
             }
 
             if isCached {
                 continue
             }
 
-            queuedIds.insert(email.id)
+            queuedIds.insert(email.emailId)
             queue.append(Job(
-                emailId: email.id,
+                emailId: email.emailId,
                 threadId: email.threadId,
-                accountEmail: accountEmail
+                accountEmail: email.accountEmail,
+                date: email.date,
+                isUnread: email.isUnread,
+                isStarred: email.isStarred,
+                listUnsubscribe: email.listUnsubscribe
             ))
         }
 
@@ -123,7 +139,7 @@ actor BodyPrefetchQueue {
     }
 
     /// Prioritize emails for prefetching
-    private func prioritize(_ emails: [Email]) -> [Email] {
+    private func prioritize(_ emails: [Candidate]) -> [Candidate] {
         // Extract priority data before sorting to avoid Sendable issues
         struct PriorityInfo {
             let index: Int
