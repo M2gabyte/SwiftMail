@@ -36,6 +36,7 @@ struct InboxView: View {
     @State private var showAvatars = true
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
+    @State private var hasPrewarmedSearch = false
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
 
@@ -273,6 +274,13 @@ struct InboxView: View {
             }
         })
         view = AnyView(view.onAppear { handleAppear() })
+        view = AnyView(view.onAppear {
+            if !hasPrewarmedSearch {
+                DispatchQueue.main.async {
+                    hasPrewarmedSearch = true
+                }
+            }
+        })
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() })
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() })
         view = AnyView(view.onChange(of: viewModel.bulkToastMessage) { _, newValue in
@@ -298,14 +306,14 @@ struct InboxView: View {
                     .allowsHitTesting(true)
             }
 
-            if isSearchMode {
+            if isSearchMode || hasPrewarmedSearch {
                 SearchOverlayView(
                     searchText: $searchText,
                     debouncedSearchText: $debouncedSearchText,
                     searchHistory: searchHistory,
                     isSelectionMode: isSelectionMode,
-                    isSearching: viewModel.isSearching,
-                    results: searchModeResults,
+                    isSearching: isSearchMode ? viewModel.isSearching : false,
+                    results: isSearchMode ? searchModeResults : [],
                     onSelectRecent: { query in
                         searchText = query
                         debouncedSearchText = query
@@ -317,6 +325,8 @@ struct InboxView: View {
                         emailRowView(for: email, isSelectionMode: isSelectionMode)
                     }
                 )
+                .opacity(isSearchMode ? 1 : 0)
+                .allowsHitTesting(isSearchMode)
             }
         }
         .animation(.easeInOut(duration: 0.3), value: isSearchMode)
