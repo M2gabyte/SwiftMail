@@ -911,92 +911,92 @@ struct InboxView: View {
     private var overlayContent: some View {
         if isSearchMode {
             EmptyView()
-            return
-        }
-        let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if viewModel.isSearching {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Searching...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(.systemBackground).opacity(0.8))
-        } else if !isSearchMode && viewModel.isSearchActive && viewModel.searchResults.isEmpty {
-            ContentUnavailableView {
-                Label("No Results", systemImage: "magnifyingglass")
-            } description: {
-                Text("No emails found for \"\(viewModel.currentSearchQuery)\"")
-            } actions: {
-                Button("Clear Search") {
-                    searchText = ""
-                    debouncedSearchText = ""
-                    viewModel.clearSearch()
+        } else {
+            let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if viewModel.isSearching {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Searching...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.bordered)
-            }
-        } else if !isSearchMode && !query.isEmpty && !viewModel.isSearchActive && displaySections.isEmpty {
-            ContentUnavailableView {
-                Label("No Results", systemImage: "magnifyingglass")
-            } description: {
-                Text("No emails found for \"\(query)\"")
-            } actions: {
-                Button("Clear Search") {
-                    searchText = ""
-                    debouncedSearchText = ""
-                    viewModel.clearSearch()
-                }
-                .buttonStyle(.bordered)
-            }
-        } else if let error = viewModel.error, viewModel.emailSections.isEmpty {
-            VStack(spacing: 16) {
-                Image(systemName: "wifi.exclamationmark")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.secondary)
-                Text("Unable to Load")
-                    .font(.title2.bold())
-                Text(error.localizedDescription)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("Try Again") {
-                    Task {
-                        await viewModel.refresh()
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            .padding()
-        } else if displaySections.isEmpty && !viewModel.isLoading {
-            if viewModel.activeFilter != nil {
-                // Filter-specific empty state with clear button
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemBackground).opacity(0.8))
+            } else if viewModel.isSearchActive && viewModel.searchResults.isEmpty {
                 ContentUnavailableView {
-                    Label(emptyStateTitle, systemImage: emptyStateIcon)
+                    Label("No Results", systemImage: "magnifyingglass")
                 } description: {
-                    Text(emptyStateDescription)
+                    Text("No emails found for \"\(viewModel.currentSearchQuery)\"")
                 } actions: {
-                    Button("Clear Filter") {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            viewModel.activeFilter = nil
+                    Button("Clear Search") {
+                        searchText = ""
+                        debouncedSearchText = ""
+                        viewModel.clearSearch()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else if !query.isEmpty && !viewModel.isSearchActive && displaySections.isEmpty {
+                ContentUnavailableView {
+                    Label("No Results", systemImage: "magnifyingglass")
+                } description: {
+                    Text("No emails found for \"\(query)\"")
+                } actions: {
+                    Button("Clear Search") {
+                        searchText = ""
+                        debouncedSearchText = ""
+                        viewModel.clearSearch()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else if let error = viewModel.error, viewModel.emailSections.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.secondary)
+                    Text("Unable to Load")
+                        .font(.title2.bold())
+                    Text(error.localizedDescription)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Try Again") {
+                        Task {
+                            await viewModel.refresh()
                         }
                     }
                     .buttonStyle(.borderedProminent)
                 }
-            } else {
-                ContentUnavailableView {
-                    Label(emptyStateTitle, systemImage: emptyStateIcon)
-                } description: {
-                    Text(emptyStateDescription)
-                } actions: {
-                    Button("Check for New Mail") {
-                        Task { await viewModel.refresh() }
+                .padding()
+            } else if displaySections.isEmpty && !viewModel.isLoading {
+                if viewModel.activeFilter != nil {
+                    // Filter-specific empty state with clear button
+                    ContentUnavailableView {
+                        Label(emptyStateTitle, systemImage: emptyStateIcon)
+                    } description: {
+                        Text(emptyStateDescription)
+                    } actions: {
+                        Button("Clear Filter") {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                viewModel.activeFilter = nil
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
+                } else {
+                    ContentUnavailableView {
+                        Label(emptyStateTitle, systemImage: emptyStateIcon)
+                    } description: {
+                        Text(emptyStateDescription)
+                    } actions: {
+                        Button("Check for New Mail") {
+                            Task { await viewModel.refresh() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 }
+            } else if viewModel.isLoading && viewModel.emailSections.isEmpty {
+                InboxSkeletonView()
             }
-        } else if viewModel.isLoading && viewModel.emailSections.isEmpty {
-            InboxSkeletonView()
         }
     }
 
