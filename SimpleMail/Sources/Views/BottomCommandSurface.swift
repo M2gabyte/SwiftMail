@@ -28,23 +28,18 @@ struct BottomCommandSurface: View {
                 .frame(maxWidth: .infinity)
                 .id("searchField")
 
-            ZStack {
-                rightButton
-                    .opacity(searchMode == .editing ? 0 : 1)
-                    .allowsHitTesting(searchMode != .editing)
-
-                Button(action: { searchText = "" }) {
+            if searchMode == .editing {
+                Button(action: { onCancelSearch() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18, weight: .regular))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(.secondary)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear search text")
-                .opacity(searchMode == .editing ? 1 : 0)
-                .allowsHitTesting(searchMode == .editing)
+                .accessibilityLabel("Cancel search")
+            } else {
+                rightButton
             }
-            .frame(width: searchMode == .editing ? 34 : 44, height: 44)
         }
         .padding(.horizontal, searchMode == .editing ? 10 : 14)
         .padding(.vertical, 9)
@@ -109,7 +104,7 @@ struct BottomCommandSurface: View {
             onSubmit: onSubmitSearch,
             onBeginEditing: onTapSearch
         )
-        .frame(height: 50)
+        .frame(height: 46)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -218,13 +213,13 @@ private struct MailSearchField: View {
                 .submitLabel(.search)
                 .onSubmit { onSubmit() }
 
-            if !focused && text.isEmpty {
+            if text.isEmpty {
                 Image(systemName: "mic.fill")
                     .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .contentShape(Rectangle())
         .onTapGesture {
             if !focused {
