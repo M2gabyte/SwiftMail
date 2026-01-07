@@ -3,6 +3,7 @@ import SQLite3
 import OSLog
 
 private let searchLogger = Logger(subsystem: "com.simplemail.app", category: "SearchIndex")
+private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor SearchIndexManager {
     static let shared = SearchIndexManager()
@@ -13,7 +14,6 @@ actor SearchIndexManager {
     private let schemaVersionKey = "searchIndexSchemaVersion"
 
     private init() {
-        openDatabase()
     }
 
     func prewarmIfNeeded() async {
@@ -188,7 +188,7 @@ actor SearchIndexManager {
     }
 
     private func bindText(_ statement: OpaquePointer?, _ index: Int32, _ value: String) {
-        value.withCString { sqlite3_bind_text(statement, index, $0, -1, SQLITE_TRANSIENT) }
+        _ = value.withCString { sqlite3_bind_text(statement, index, $0, -1, sqliteTransient) }
     }
 }
 

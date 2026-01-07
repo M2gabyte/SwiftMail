@@ -882,7 +882,7 @@ final class InboxViewModel {
             return
         }
 
-        let accountEmail = AuthService.shared.currentAccount?.email?.lowercased()
+        let accountEmail = AuthService.shared.currentAccount?.email.lowercased()
         do {
             let ids = try await SearchIndexManager.shared.search(
                 query: trimmed,
