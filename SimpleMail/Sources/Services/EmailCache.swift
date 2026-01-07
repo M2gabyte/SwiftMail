@@ -268,6 +268,78 @@ final class EmailCacheManager: ObservableObject {
         }
     }
 
+    func loadCachedEmailsPage(
+        mailbox: Mailbox = .inbox,
+        limit: Int = 100,
+        accountEmail: String? = nil,
+        beforeDate: Date? = nil
+    ) -> [Email] {
+        if modelContext == nil {
+            configureIfNeeded()
+        }
+        guard let context = modelContext else {
+            logger.warning("ModelContext not available for loadCachedEmailsPage")
+            return []
+        }
+
+        let labelIds = labelIdsForMailbox(mailbox)
+        let batchSize = max(limit * 3, 150)
+
+        var collected: [Email] = []
+        var offset = 0
+
+        while collected.count < limit {
+            var descriptor = FetchDescriptor<Email>(
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+            descriptor.fetchLimit = batchSize
+            descriptor.fetchOffset = offset
+
+            let results: [Email]
+            do {
+                results = try context.fetch(descriptor)
+            } catch {
+                logger.error("Failed to fetch cached emails page: \(error.localizedDescription)")
+                return []
+            }
+
+            if results.isEmpty {
+                break
+            }
+
+            var filtered = results
+            if let beforeDate {
+                filtered = filtered.filter { $0.date < beforeDate }
+            }
+
+            // Filter by mailbox in Swift to avoid predicate crashes
+            switch mailbox {
+            case .archive:
+                filtered = filtered.filter { email in
+                    !email.labelIds.contains("INBOX") &&
+                    !email.labelIds.contains("TRASH") &&
+                    !email.labelIds.contains("SPAM")
+                }
+            default:
+                if let labelId = labelIds.first {
+                    filtered = filtered.filter { $0.labelIds.contains(labelId) }
+                }
+            }
+
+            if let accountEmail = accountEmail?.lowercased() {
+                filtered = filtered.filter { $0.accountEmail?.lowercased() == accountEmail }
+            }
+
+            collected.append(contentsOf: filtered)
+            if results.count < batchSize {
+                break
+            }
+            offset += batchSize
+        }
+
+        return Array(collected.prefix(limit))
+    }
+
     // MARK: - Search Cached Emails
 
     func searchCachedEmails(query: String, accountEmail: String? = nil) -> [Email] {

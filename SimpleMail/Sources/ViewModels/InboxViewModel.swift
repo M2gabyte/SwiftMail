@@ -145,6 +145,13 @@ final class InboxViewModel {
     @ObservationIgnored private let inboxWorker = InboxStoreWorker()
     @ObservationIgnored private var recomputeTask: Task<Void, Never>?
     @ObservationIgnored private var currentAccountEmail: String?
+    @ObservationIgnored private var cachePagingState = CachePagingState()
+
+    private struct CachePagingState {
+        var oldestLoadedDate: Date?
+        var isExhausted = false
+    }
+    private let cachePageSize = 120
 
     // MARK: - Computed Properties
 
@@ -325,6 +332,8 @@ final class InboxViewModel {
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
                 self.nextPageToken = nil
+                updateCachePagingAnchor()
+                EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: false)
                 scheduleSummaryCandidates(for: emails, deferHeavyWork: deferHeavyWork)
             } else {
                 let labelIds = labelIdsForMailbox(currentMailbox)
@@ -337,6 +346,11 @@ final class InboxViewModel {
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
                 self.nextPageToken = pageToken
+                updateCachePagingAnchor()
+                EmailCacheManager.shared.cacheEmails(
+                    fetchedEmails,
+                    isFullInboxFetch: currentMailbox == .inbox && pageToken == nil
+                )
                 scheduleSummaryCandidates(for: emails, deferHeavyWork: deferHeavyWork)
             }
         } catch {
@@ -353,12 +367,17 @@ final class InboxViewModel {
         // This ensures pagination triggers correctly when tab filtering reduces the list
         guard let lastVisibleId = lastVisibleEmailId,
               lastVisibleId == currentEmail.id,
-              hasMoreEmails,
               !isLoadingMore else {
             return
         }
 
-        await loadMoreEmails()
+        if await loadMoreFromCacheIfAvailable() {
+            return
+        }
+
+        if hasMoreEmails {
+            await loadMoreEmails()
+        }
     }
 
     func loadMoreEmails() async {
@@ -391,6 +410,9 @@ final class InboxViewModel {
             }
             emails.append(contentsOf: uniqueNewEmails)
             nextPageToken = newPageToken
+            cachePagingState.oldestLoadedDate = emails.map(\.date).min()
+            cachePagingState.isExhausted = false
+            EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
             updateFilterCounts()
             logger.info("Loaded \(uniqueNewEmails.count) more emails")
         } catch {
@@ -477,7 +499,51 @@ final class InboxViewModel {
         )
         guard !cached.isEmpty else { return }
         emails = dedupeByThread(cached)
+        updateCachePagingAnchor()
         updateFilterCounts()
+    }
+
+    private func updateCachePagingAnchor() {
+        cachePagingState.oldestLoadedDate = emails.map(\.date).min()
+        cachePagingState.isExhausted = false
+    }
+
+    private func loadMoreFromCacheIfAvailable() async -> Bool {
+        if cachePagingState.isExhausted {
+            return false
+        }
+        let accountEmail = currentMailbox == .allInboxes
+            ? nil
+            : currentAccountEmail?.lowercased()
+        let cached = EmailCacheManager.shared.loadCachedEmailsPage(
+            mailbox: currentMailbox,
+            limit: cachePageSize,
+            accountEmail: accountEmail,
+            beforeDate: cachePagingState.oldestLoadedDate
+        )
+        guard !cached.isEmpty else {
+            cachePagingState.isExhausted = true
+            return false
+        }
+
+        let uniqueNewEmails: [Email]
+        if conversationThreading {
+            let existingThreadIds = Set(emails.map { $0.threadId })
+            uniqueNewEmails = cached.filter { !existingThreadIds.contains($0.threadId) }
+        } else {
+            let existingIds = Set(emails.map { $0.id })
+            uniqueNewEmails = cached.filter { !existingIds.contains($0.id) }
+        }
+
+        guard !uniqueNewEmails.isEmpty else {
+            cachePagingState.oldestLoadedDate = cached.map(\.date).min()
+            return false
+        }
+
+        emails.append(contentsOf: uniqueNewEmails)
+        cachePagingState.oldestLoadedDate = emails.map(\.date).min()
+        updateFilterCounts()
+        return true
     }
 
     private func applySnapshotOrCachedEmails() {
@@ -496,6 +562,7 @@ final class InboxViewModel {
                 emails = snapshot.emails
                 viewState = snapshot.viewState
                 nextPageToken = snapshot.nextPageToken
+                updateCachePagingAnchor()
                 return
             }
         }
@@ -508,6 +575,7 @@ final class InboxViewModel {
         if !cached.isEmpty {
             emails = dedupeByThread(cached)
             nextPageToken = nil
+            updateCachePagingAnchor()
         }
     }
 
