@@ -417,6 +417,8 @@ final class InboxViewModel {
             return
         }
 
+        syncPagingAnchorWithEmails()
+
         if await loadMoreFromCacheIfAvailable() {
             return
         }
@@ -617,6 +619,19 @@ final class InboxViewModel {
         lastFallbackFetchBefore = nil
         fallbackEmptyCount = 0
         updatePagingDebug(path: "anchor", action: "reset")
+    }
+
+    private func syncPagingAnchorWithEmails() {
+        guard let actualOldest = emails.map(\.date).min() else { return }
+        if cachePagingState.oldestLoadedDate != actualOldest {
+            cachePagingState.oldestLoadedDate = actualOldest
+            lastFallbackFetchBefore = nil
+            cachePagingState.isExhausted = false
+            updatePagingDebug(path: "anchor", action: "sync")
+        } else if hasMoreEmails && cachePagingState.isExhausted {
+            cachePagingState.isExhausted = false
+            updatePagingDebug(path: "anchor", action: "unexhaust")
+        }
     }
 
     private func loadMoreFromCacheIfAvailable() async -> Bool {
