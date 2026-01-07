@@ -288,9 +288,10 @@ struct InboxView: View {
             Color(.systemGroupedBackground)
                 .ignoresSafeArea()
 
-            inboxList
-                .opacity(isSearchMode ? 0.3 : 1.0)
-                .allowsHitTesting(!isSearchMode)
+            if !isSearchMode {
+                inboxList
+                    .allowsHitTesting(true)
+            }
 
             if isSearchMode {
                 SearchOverlayView(
