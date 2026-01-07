@@ -20,18 +20,28 @@ extension Notification.Name {
 final class InboxViewModel {
     // MARK: - State
 
-    var emails: [Email] = []
+    var emails: [Email] = [] {
+        didSet {
+            markSectionsDirty()
+        }
+    }
     var currentTab: InboxTab = .all {
         didSet {
+            markSectionsDirty()
             updateFilterCounts()
         }
     }
     var pinnedTabOption: PinnedTabOption = .other {
         didSet {
+            markSectionsDirty()
             updateFilterCounts()
         }
     }
-    var activeFilter: InboxFilter? = nil
+    var activeFilter: InboxFilter? = nil {
+        didSet {
+            markSectionsDirty()
+        }
+    }
     var currentMailbox: Mailbox = .inbox
     var isLoading = false
     var isLoadingMore = false
@@ -41,7 +51,13 @@ final class InboxViewModel {
     var conversationThreading: Bool = true
 
     // Increment to force re-filter (e.g., when blocked senders change)
-    private var filterVersion = 0
+    private var filterVersion = 0 {
+        didSet {
+            markSectionsDirty()
+        }
+    }
+    private var sectionsDirty = true
+    private var cachedSections: [EmailSection] = []
 
     // MARK: - Search State
 
@@ -129,10 +145,11 @@ final class InboxViewModel {
     // MARK: - Computed Properties
 
     var emailSections: [EmailSection] {
-        // Touch filterVersion to trigger re-computation when it changes
-        _ = filterVersion
-        let filteredEmails = applyFilters(emails)
-        return groupEmailsByDate(filteredEmails)
+        if sectionsDirty {
+            cachedSections = recomputeSections()
+            sectionsDirty = false
+        }
+        return cachedSections
     }
 
     /// Last visible email after filtering (for pagination trigger)
@@ -142,6 +159,15 @@ final class InboxViewModel {
 
     private func animate(_ animation: Animation? = .default, _ body: () -> Void) {
         withAnimation(animation, body)
+    }
+
+    private func markSectionsDirty() {
+        sectionsDirty = true
+    }
+
+    private func recomputeSections() -> [EmailSection] {
+        let filteredEmails = applyFilters(emails)
+        return groupEmailsByDate(filteredEmails)
     }
 
     // MARK: - Init
