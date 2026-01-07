@@ -101,7 +101,7 @@ struct BottomCommandSurface: View {
 
     @ViewBuilder
     private var centerSearchContent: some View {
-        MailSearchBar(
+        MailSearchField(
             text: $searchText,
             isFocused: $searchFocused,
             onSubmit: onSubmitSearch,
@@ -118,17 +118,6 @@ struct BottomCommandSurface: View {
         )
         .opacity(showSearchField ? 1 : 0)
         .allowsHitTesting(showSearchField)
-        .overlay {
-            if !searchFocused {
-                Button(action: {
-                    onTapSearch()
-                    searchFocused = true
-                }) {
-                    Color.clear
-                }
-                .buttonStyle(.plain)
-            }
-        }
         .accessibilityHidden(!showSearchField)
         .accessibilityLabel("Search emails")
     }
@@ -202,100 +191,56 @@ enum SearchMode: Equatable {
     return BottomBarPreview()
 }
 
-// MARK: - UIKit Search Bar
+// MARK: - SwiftUI Search Field
 
-struct MailSearchBar: UIViewRepresentable {
+private struct MailSearchField: View {
     @Binding var text: String
     @Binding var isFocused: Bool
     let onSubmit: () -> Void
     let onBeginEditing: () -> Void
 
-    func makeUIView(context: Context) -> UISearchBar {
-        let searchBar = UISearchBar(frame: .zero)
-        searchBar.searchBarStyle = .minimal
-        searchBar.placeholder = "Search"
-        searchBar.autocapitalizationType = .none
-        searchBar.autocorrectionType = .no
-        searchBar.returnKeyType = .search
-        searchBar.enablesReturnKeyAutomatically = true
-        searchBar.isTranslucent = true
-        searchBar.backgroundColor = .clear
-        searchBar.barTintColor = .clear
-        searchBar.backgroundImage = UIImage()
-        searchBar.setBackgroundImage(UIImage(), for: .any, barMetrics: .default)
-        searchBar.delegate = context.coordinator
+    @FocusState private var focused: Bool
 
-        let textField = searchBar.searchTextField
-        textField.font = UIFont.systemFont(ofSize: 17)
-        textField.textColor = .label
-        textField.tintColor = .systemBlue
-        textField.clearButtonMode = .whileEditing
-        textField.backgroundColor = .clear
-        textField.borderStyle = .none
-        textField.attributedPlaceholder = NSAttributedString(
-            string: "Search",
-            attributes: [.foregroundColor: UIColor.secondaryLabel]
-        )
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(.secondary)
 
-        let mic = UIImageView(image: UIImage(systemName: "mic.fill"))
-        mic.tintColor = .secondaryLabel
-        mic.contentMode = .scaleAspectFit
-        mic.frame = CGRect(x: 0, y: 0, width: 20, height: 20)
-        textField.rightView = mic
-        textField.rightViewMode = .always
+            TextField("Search", text: $text)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .font(.system(size: 17))
+                .foregroundStyle(.primary)
+                .focused($focused)
+                .submitLabel(.search)
+                .onSubmit { onSubmit() }
 
-        return searchBar
-    }
-
-    func updateUIView(_ uiView: UISearchBar, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
+            if !focused && text.isEmpty {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(.secondary)
+            }
         }
-        let textField = uiView.searchTextField
-        textField.rightView?.isHidden = isFocused
-        if isFocused && !textField.isFirstResponder {
-            textField.becomeFirstResponder()
-        } else if !isFocused && textField.isFirstResponder {
-            textField.resignFirstResponder()
-        }
-        if let rightView = textField.rightView as? UIImageView {
-            rightView.alpha = isFocused ? 0.25 : 1.0
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, isFocused: $isFocused, onSubmit: onSubmit, onBeginEditing: onBeginEditing)
-    }
-
-    final class Coordinator: NSObject, UISearchBarDelegate {
-        @Binding var text: String
-        @Binding var isFocused: Bool
-        let onSubmit: () -> Void
-        let onBeginEditing: () -> Void
-
-        init(text: Binding<String>, isFocused: Binding<Bool>, onSubmit: @escaping () -> Void, onBeginEditing: @escaping () -> Void) {
-            _text = text
-            _isFocused = isFocused
-            self.onSubmit = onSubmit
-            self.onBeginEditing = onBeginEditing
-        }
-
-        func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
-            text = searchText
-        }
-
-        func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
+        .padding(.horizontal, 14)
+        .contentShape(Rectangle())
+        .onTapGesture {
             isFocused = true
+            focused = true
             onBeginEditing()
         }
-
-        func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
-            isFocused = false
+        .onChange(of: focused) { _, newValue in
+            if isFocused != newValue {
+                isFocused = newValue
+            }
+            if newValue {
+                onBeginEditing()
+            }
         }
-
-        func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
-            onSubmit()
-            searchBar.searchTextField.resignFirstResponder()
+        .onChange(of: isFocused) { _, newValue in
+            if focused != newValue {
+                focused = newValue
+            }
         }
     }
 }
