@@ -23,21 +23,25 @@ final class InboxViewModel {
     var emails: [Email] = [] {
         didSet {
             inboxStore.setEmails(emails)
+            syncViewState()
         }
     }
     var currentTab: InboxTab = .all {
         didSet {
             inboxStore.setCurrentTab(currentTab)
+            syncViewState()
         }
     }
     var pinnedTabOption: PinnedTabOption = .other {
         didSet {
             inboxStore.setPinnedTabOption(pinnedTabOption)
+            syncViewState()
         }
     }
     var activeFilter: InboxFilter? = nil {
         didSet {
             inboxStore.setActiveFilter(activeFilter)
+            syncViewState()
         }
     }
     var currentMailbox: Mailbox = .inbox
@@ -52,6 +56,7 @@ final class InboxViewModel {
     private var filterVersion = 0 {
         didSet {
             inboxStore.bumpFilterVersion()
+            syncViewState()
         }
     }
 
@@ -73,9 +78,13 @@ final class InboxViewModel {
     var selectedEmail: Email?
     var showingEmailDetail = false
 
+    // MARK: - View State
+
+    var viewState = InboxViewState()
+
     // MARK: - Filter Counts
 
-    var filterCounts: [InboxFilter: Int] { inboxStore.counts }
+    var filterCounts: [InboxFilter: Int] { viewState.filterCounts }
 
     var alwaysPrimarySenders: [String] {
         get {
@@ -142,7 +151,7 @@ final class InboxViewModel {
     // MARK: - Computed Properties
 
     var emailSections: [EmailSection] {
-        inboxStore.sections
+        viewState.sections
     }
 
     /// Last visible email after filtering (for pagination trigger)
@@ -161,6 +170,13 @@ final class InboxViewModel {
         withAnimation(animation, body)
     }
 
+    private func syncViewState() {
+        viewState = InboxViewState(
+            sections: inboxStore.sections,
+            filterCounts: inboxStore.counts
+        )
+    }
+
     // MARK: - Init
 
     init() {
@@ -170,6 +186,7 @@ final class InboxViewModel {
         inboxStore.setCurrentTab(currentTab)
         inboxStore.setPinnedTabOption(pinnedTabOption)
         inboxStore.setActiveFilter(activeFilter)
+        syncViewState()
 
         // Listen for blocked senders changes from EmailDetailView
         blockedSendersObserver = NotificationCenter.default.addObserver(
@@ -433,6 +450,7 @@ final class InboxViewModel {
 
     private func updateFilterCounts() {
         inboxStore.recomputeFilterCounts()
+        syncViewState()
     }
 
     // MARK: - Actions
