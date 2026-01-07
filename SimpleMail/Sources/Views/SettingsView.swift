@@ -414,7 +414,6 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var debugSection: some View {
-        #if DEBUG
         Section {
             Button("Run Inbox Cache Tests") {
                 InboxViewModelCacheTests.runAllTests()
@@ -422,9 +421,8 @@ struct SettingsView: View {
         } header: {
             Text("Debug")
         } footer: {
-            Text("Runs debug-only cache invalidation checks in InboxViewModel.")
+            Text("Runs cache invalidation checks in InboxViewModel.")
         }
-        #endif
     }
 
     @ViewBuilder
