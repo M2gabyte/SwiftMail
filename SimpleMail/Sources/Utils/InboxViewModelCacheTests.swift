@@ -3,6 +3,7 @@ import Foundation
 #if DEBUG
 /// Debug-only test harness for InboxViewModel section caching.
 /// Run via InboxViewModelCacheTests.runAllTests() in debug builds.
+@MainActor
 enum InboxViewModelCacheTests {
 
     struct TestResult {
