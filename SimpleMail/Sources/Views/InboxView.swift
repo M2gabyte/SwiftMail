@@ -294,7 +294,6 @@ struct InboxView: View {
 
             inboxList
                 .opacity(isSearchMode ? 0.3 : 1.0)
-                .blur(radius: isSearchMode ? 4 : 0)
                 .allowsHitTesting(!isSearchMode)
 
             if isSearchMode {
