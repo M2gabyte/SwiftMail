@@ -229,17 +229,12 @@ private struct MailSearchField: View {
             focused = true
             onBeginEditing()
         }
-        .onChange(of: focused) { _, newValue in
-            if isFocused != newValue {
-                isFocused = newValue
-            }
-            if newValue {
-                onBeginEditing()
-            }
-        }
         .onChange(of: isFocused) { _, newValue in
             if focused != newValue {
                 focused = newValue
+            }
+            if newValue {
+                onBeginEditing()
             }
         }
     }

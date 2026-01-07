@@ -293,7 +293,7 @@ struct InboxView: View {
                 .ignoresSafeArea()
 
             inboxList
-                .opacity(isSearchMode ? 0.3 : 1.0)
+                .opacity(isSearchMode ? 0.0 : 1.0)
                 .allowsHitTesting(!isSearchMode)
 
             if isSearchMode {
@@ -506,6 +506,7 @@ struct InboxView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .background(Color(.systemBackground))
     }
 
     @ToolbarContentBuilder
