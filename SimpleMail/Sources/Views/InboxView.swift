@@ -206,6 +206,8 @@ struct InboxView: View {
         view = AnyView(view.onChange(of: searchText) { _, newValue in
             if newValue.isEmpty && viewModel.isSearchActive {
                 viewModel.clearSearch()
+            } else if viewModel.isSearchActive && newValue != viewModel.currentSearchQuery {
+                viewModel.clearSearch()
             }
             if isSearchMode {
                 Task {
