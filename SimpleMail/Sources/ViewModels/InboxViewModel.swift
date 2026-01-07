@@ -22,26 +22,22 @@ final class InboxViewModel {
 
     var emails: [Email] = [] {
         didSet {
-            inboxStore.setEmails(emails)
-            syncViewState()
+            scheduleRecompute()
         }
     }
     var currentTab: InboxTab = .all {
         didSet {
-            inboxStore.setCurrentTab(currentTab)
-            syncViewState()
+            scheduleRecompute()
         }
     }
     var pinnedTabOption: PinnedTabOption = .other {
         didSet {
-            inboxStore.setPinnedTabOption(pinnedTabOption)
-            syncViewState()
+            scheduleRecompute()
         }
     }
     var activeFilter: InboxFilter? = nil {
         didSet {
-            inboxStore.setActiveFilter(activeFilter)
-            syncViewState()
+            scheduleRecompute()
         }
     }
     var currentMailbox: Mailbox = .inbox
@@ -55,8 +51,7 @@ final class InboxViewModel {
     // Increment to force re-filter (e.g., when blocked senders change)
     private var filterVersion = 0 {
         didSet {
-            inboxStore.bumpFilterVersion()
-            syncViewState()
+            scheduleRecompute()
         }
     }
 
@@ -146,7 +141,9 @@ final class InboxViewModel {
     @ObservationIgnored private var archiveThreadObserver: NSObjectProtocol?
     @ObservationIgnored private var trashThreadObserver: NSObjectProtocol?
     @ObservationIgnored private var inboxPreferencesObserver: NSObjectProtocol?
-    @ObservationIgnored private let inboxStore = InboxStore()
+    @ObservationIgnored private let inboxWorker = InboxStoreWorker()
+    @ObservationIgnored private var recomputeTask: Task<Void, Never>?
+    @ObservationIgnored private var currentAccountEmail: String?
 
     // MARK: - Computed Properties
 
@@ -170,11 +167,26 @@ final class InboxViewModel {
         withAnimation(animation, body)
     }
 
-    private func syncViewState() {
-        viewState = InboxViewState(
-            sections: inboxStore.sections,
-            filterCounts: inboxStore.counts
-        )
+    private func scheduleRecompute() {
+        let emailsSnapshot = emails
+        let currentTabSnapshot = currentTab
+        let pinnedSnapshot = pinnedTabOption
+        let activeFilterSnapshot = activeFilter
+        let accountSnapshot = currentAccountEmail
+        recomputeTask?.cancel()
+        recomputeTask = Task { [weak self] in
+            guard let self else { return }
+            let state = await inboxWorker.computeState(
+                emails: emailsSnapshot,
+                currentTab: currentTabSnapshot,
+                pinnedTabOption: pinnedSnapshot,
+                activeFilter: activeFilterSnapshot,
+                currentAccountEmail: accountSnapshot
+            )
+            await MainActor.run { [weak self] in
+                self?.viewState = state
+            }
+        }
     }
 
     // MARK: - Init
@@ -182,12 +194,8 @@ final class InboxViewModel {
     init() {
         InboxPreferences.ensureDefaultsInitialized()
         pinnedTabOption = InboxPreferences.getPinnedTabOption()
-        inboxStore.setEmails(emails)
-        inboxStore.setCurrentTab(currentTab)
-        inboxStore.setPinnedTabOption(pinnedTabOption)
-        inboxStore.setActiveFilter(activeFilter)
-        inboxStore.setCurrentAccountEmail(AuthService.shared.currentAccount?.email)
-        syncViewState()
+        currentAccountEmail = AuthService.shared.currentAccount?.email
+        scheduleRecompute()
 
         // Listen for blocked senders changes from EmailDetailView
         blockedSendersObserver = NotificationCenter.default.addObserver(
@@ -207,7 +215,8 @@ final class InboxViewModel {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.inboxStore.setCurrentAccountEmail(AuthService.shared.currentAccount?.email)
+                self?.currentAccountEmail = AuthService.shared.currentAccount?.email
+                self?.scheduleRecompute()
                 await self?.loadEmails()
             }
         }
@@ -451,9 +460,22 @@ final class InboxViewModel {
     // MARK: - Filter Counts
 
     private func updateFilterCounts() {
-        inboxStore.recomputeFilterCounts()
-        syncViewState()
+        scheduleRecompute()
     }
+
+#if DEBUG
+    func refreshViewStateForTests() async -> InboxViewState {
+        let state = await inboxWorker.computeState(
+            emails: emails,
+            currentTab: currentTab,
+            pinnedTabOption: pinnedTabOption,
+            activeFilter: activeFilter,
+            currentAccountEmail: currentAccountEmail
+        )
+        viewState = state
+        return state
+    }
+#endif
 
     // MARK: - Actions
 

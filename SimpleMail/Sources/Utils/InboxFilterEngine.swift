@@ -1,6 +1,39 @@
 import Foundation
 
 struct InboxFilterEngine {
+    struct ClassificationSignature: Hashable {
+        let subject: String
+        let snippet: String
+        let from: String
+        let labelKey: String
+        let listUnsubscribe: String?
+        let listId: String?
+        let precedence: String?
+        let autoSubmitted: String?
+        let messagesCount: Int
+        let accountEmail: String?
+    }
+
+    struct Classification {
+        let isMoney: Bool
+        let isDeadline: Bool
+        let isSecurity: Bool
+        let isNewsletter: Bool
+        let isPeople: Bool
+        let isBulk: Bool
+        let isNeedsReply: Bool
+    }
+
+    struct CacheEntry {
+        let signature: ClassificationSignature
+        let classification: Classification
+    }
+
+    struct CacheResult {
+        let cache: [String: CacheEntry]
+        let classifications: [String: Classification]
+    }
+
     private static let needsReplyPatterns: [NSRegularExpression] = {
         let patterns = [
             "can\\s+you", "could\\s+you", "would\\s+you", "are\\s+you\\s+able",
@@ -10,11 +43,39 @@ struct InboxFilterEngine {
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
     }()
 
+    static func buildClassificationCache(
+        emails: [Email],
+        existingCache: [String: CacheEntry],
+        currentAccountEmail: String?
+    ) -> CacheResult {
+        var newCache: [String: CacheEntry] = [:]
+        newCache.reserveCapacity(emails.count)
+
+        for email in emails {
+            let signature = classificationSignature(for: email, currentAccountEmail: currentAccountEmail)
+            if let cached = existingCache[email.id], cached.signature == signature {
+                newCache[email.id] = cached
+                continue
+            }
+            let classification = classify(email, currentAccountEmail: currentAccountEmail)
+            newCache[email.id] = CacheEntry(signature: signature, classification: classification)
+        }
+
+        var classifications: [String: Classification] = [:]
+        classifications.reserveCapacity(newCache.count)
+        for (id, entry) in newCache {
+            classifications[id] = entry.classification
+        }
+
+        return CacheResult(cache: newCache, classifications: classifications)
+    }
+
     static func recomputeFilterCounts(
         from emails: [Email],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
-        currentAccountEmail: String?
+        currentAccountEmail: String?,
+        classifications: [String: Classification]
     ) -> [InboxFilter: Int] {
         let base = applyTabContext(
             emails.filter { email in
@@ -23,26 +84,27 @@ struct InboxFilterEngine {
             },
             currentTab: currentTab,
             pinnedTabOption: pinnedTabOption,
-            currentAccountEmail: currentAccountEmail
+            currentAccountEmail: currentAccountEmail,
+            classifications: classifications
         )
 
         var counts: [InboxFilter: Int] = [:]
         counts[.unread] = base.filter { $0.isUnread }.count
 
         for email in base {
-            if isNeedsReplyCandidate(email) {
+            if classifications[email.id]?.isNeedsReply == true {
                 counts[.needsReply, default: 0] += 1
             }
 
-            if isDeadline(email) {
+            if classifications[email.id]?.isDeadline == true {
                 counts[.deadlines, default: 0] += 1
             }
 
-            if isMoney(email) {
+            if classifications[email.id]?.isMoney == true {
                 counts[.money, default: 0] += 1
             }
 
-            if isNewsletter(email) {
+            if classifications[email.id]?.isNewsletter == true {
                 counts[.newsletters, default: 0] += 1
             }
         }
@@ -55,7 +117,8 @@ struct InboxFilterEngine {
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
         activeFilter: InboxFilter?,
-        currentAccountEmail: String?
+        currentAccountEmail: String?,
+        classifications: [String: Classification]
     ) -> [Email] {
         var filtered = emails.filter { email in
             let blocked = blockedSenders(for: accountEmail(for: email, fallback: currentAccountEmail))
@@ -66,7 +129,8 @@ struct InboxFilterEngine {
             filtered,
             currentTab: currentTab,
             pinnedTabOption: pinnedTabOption,
-            currentAccountEmail: currentAccountEmail
+            currentAccountEmail: currentAccountEmail,
+            classifications: classifications
         )
 
         if let filter = activeFilter {
@@ -74,13 +138,13 @@ struct InboxFilterEngine {
             case .unread:
                 filtered = filtered.filter { $0.isUnread }
             case .needsReply:
-                filtered = filtered.filter { isNeedsReplyCandidate($0) }
+                filtered = filtered.filter { classifications[$0.id]?.isNeedsReply == true }
             case .deadlines:
-                filtered = filtered.filter { isDeadline($0) }
+                filtered = filtered.filter { classifications[$0.id]?.isDeadline == true }
             case .money:
-                filtered = filtered.filter { isMoney($0) }
+                filtered = filtered.filter { classifications[$0.id]?.isMoney == true }
             case .newsletters:
-                filtered = filtered.filter { isNewsletter($0) }
+                filtered = filtered.filter { classifications[$0.id]?.isNewsletter == true }
             }
         }
 
@@ -283,7 +347,11 @@ struct InboxFilterEngine {
         EmailFilters.looksLikeHumanSender(email) && !EmailFilters.isBulk(email)
     }
 
-    private static func isPrimary(_ email: Email, currentAccountEmail: String?) -> Bool {
+    private static func isPrimary(
+        _ email: Email,
+        classification: Classification,
+        currentAccountEmail: String?
+    ) -> Bool {
         if let override = senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
             return override == .primary
         }
@@ -291,17 +359,17 @@ struct InboxFilterEngine {
         for rule in PrimaryRule.allCases where InboxPreferences.isPrimaryRuleEnabled(rule) {
             switch rule {
             case .people:
-                if isPeople(email) { return true }
+                if classification.isPeople { return true }
             case .vip:
                 if isVIPSender(email) { return true }
             case .security:
-                if isSecurity(email) { return true }
+                if classification.isSecurity { return true }
             case .money:
-                if isMoney(email) { return true }
+                if classification.isMoney { return true }
             case .deadlines:
-                if isDeadline(email) { return true }
+                if classification.isDeadline { return true }
             case .newsletters:
-                if isNewsletter(email) { return true }
+                if classification.isNewsletter { return true }
             case .promotions:
                 if email.labelIds.contains("CATEGORY_PROMOTIONS") { return true }
             case .social:
@@ -319,23 +387,25 @@ struct InboxFilterEngine {
     private static func matchesPinned(
         _ email: Email,
         pinnedTabOption: PinnedTabOption,
-        currentAccountEmail: String?
+        currentAccountEmail: String?,
+        classifications: [String: Classification]
     ) -> Bool {
+        guard let classification = classifications[email.id] else { return false }
         switch pinnedTabOption {
         case .other:
-            return !isPrimary(email, currentAccountEmail: currentAccountEmail)
+            return !isPrimary(email, classification: classification, currentAccountEmail: currentAccountEmail)
         case .money:
-            return isMoney(email)
+            return classification.isMoney
         case .deadlines:
-            return isDeadline(email)
+            return classification.isDeadline
         case .needsReply:
-            return isNeedsReplyCandidate(email)
+            return classification.isNeedsReply
         case .unread:
             return email.isUnread
         case .newsletters:
-            return isNewsletter(email)
+            return classification.isNewsletter
         case .people:
-            return isPeople(email)
+            return classification.isPeople
         }
     }
 
@@ -343,18 +413,71 @@ struct InboxFilterEngine {
         _ emails: [Email],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
-        currentAccountEmail: String?
+        currentAccountEmail: String?,
+        classifications: [String: Classification]
     ) -> [Email] {
         var filtered = emails
         switch currentTab {
         case .all:
             break
         case .primary:
-            filtered = filtered.filter { isPrimary($0, currentAccountEmail: currentAccountEmail) }
+            filtered = filtered.filter { email in
+                guard let classification = classifications[email.id] else { return false }
+                return isPrimary(email, classification: classification, currentAccountEmail: currentAccountEmail)
+            }
         case .pinned:
-            filtered = filtered.filter { matchesPinned($0, pinnedTabOption: pinnedTabOption, currentAccountEmail: currentAccountEmail) }
+            filtered = filtered.filter { email in
+                matchesPinned(
+                    email,
+                    pinnedTabOption: pinnedTabOption,
+                    currentAccountEmail: currentAccountEmail,
+                    classifications: classifications
+                )
+            }
         }
 
         return filtered
+    }
+
+    private static func classificationSignature(
+        for email: Email,
+        currentAccountEmail: String?
+    ) -> ClassificationSignature {
+        let labelKey = email.labelIds.sorted().joined(separator: "|")
+        return ClassificationSignature(
+            subject: email.subject,
+            snippet: email.snippet,
+            from: email.from,
+            labelKey: labelKey,
+            listUnsubscribe: email.listUnsubscribe,
+            listId: email.listId,
+            precedence: email.precedence,
+            autoSubmitted: email.autoSubmitted,
+            messagesCount: email.messagesCount,
+            accountEmail: accountEmail(for: email, fallback: currentAccountEmail)
+        )
+    }
+
+    private static func classify(
+        _ email: Email,
+        currentAccountEmail: String?
+    ) -> Classification {
+        let isBulk = EmailFilters.isBulk(email)
+        let isPeople = EmailFilters.looksLikeHumanSender(email) && !isBulk
+        let isMoney = isMoney(email)
+        let isDeadline = isDeadline(email)
+        let isSecurity = isSecurity(email)
+        let isNewsletter = isNewsletter(email)
+        let isNeedsReply = isNeedsReplyCandidate(email)
+
+        return Classification(
+            isMoney: isMoney,
+            isDeadline: isDeadline,
+            isSecurity: isSecurity,
+            isNewsletter: isNewsletter,
+            isPeople: isPeople,
+            isBulk: isBulk,
+            isNeedsReply: isNeedsReply
+        )
     }
 }
