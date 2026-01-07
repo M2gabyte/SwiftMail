@@ -145,15 +145,13 @@ struct ContentView: View {
                 }
             }
             .onAppear {
-                EmailCacheManager.shared.configure(with: modelContext)
-                SnoozeManager.shared.configure(with: modelContext)
-                OutboxManager.shared.configure(with: modelContext)
-                NetworkMonitor.shared.start()
+                StartupCoordinator.shared.start(
+                    modelContext: modelContext,
+                    isAuthenticated: authService.isAuthenticated
+                )
             }
-            .task {
-                if authService.isAuthenticated {
-                    await PeopleService.shared.preloadContacts()
-                }
+            .onChange(of: authService.isAuthenticated) { _, newValue in
+                StartupCoordinator.shared.handleAuthChanged(isAuthenticated: newValue)
             }
         }
     }
