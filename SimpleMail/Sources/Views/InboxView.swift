@@ -882,7 +882,7 @@ struct InboxView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(.systemBackground).opacity(0.8))
-        } else if viewModel.isSearchActive && viewModel.searchResults.isEmpty {
+        } else if !isSearchMode && viewModel.isSearchActive && viewModel.searchResults.isEmpty {
             ContentUnavailableView {
                 Label("No Results", systemImage: "magnifyingglass")
             } description: {
@@ -895,7 +895,7 @@ struct InboxView: View {
                 }
                 .buttonStyle(.bordered)
             }
-        } else if !query.isEmpty && !viewModel.isSearchActive && displaySections.isEmpty {
+        } else if !isSearchMode && !query.isEmpty && !viewModel.isSearchActive && displaySections.isEmpty {
             ContentUnavailableView {
                 Label("No Results", systemImage: "magnifyingglass")
             } description: {
