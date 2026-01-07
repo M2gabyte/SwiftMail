@@ -103,7 +103,7 @@ final class InboxViewModel {
     // MARK: - Pagination
 
     private var nextPageToken: String?
-    var hasMoreEmails: Bool { nextPageToken != nil }
+    var hasMoreEmails: Bool { nextPageToken?.isEmpty == false }
 
     // MARK: - Undo Toast State
 
@@ -237,11 +237,16 @@ final class InboxViewModel {
             fetched: fetched,
             appended: appended,
             oldestLoadedDate: cachePagingState.oldestLoadedDate,
-            nextPageTokenPresent: nextPageToken != nil,
+            nextPageTokenPresent: nextPageToken?.isEmpty == false,
             cacheExhausted: cachePagingState.isExhausted,
             timestamp: Date()
         )
-        logger.info("PagingDebug path=\(path) action=\(action) fetched=\(fetched) appended=\(appended) oldest=\(self.cachePagingState.oldestLoadedDate?.description ?? "nil") nextToken=\(self.nextPageToken != nil) exhausted=\(self.cachePagingState.isExhausted)")
+        logger.info("PagingDebug path=\(path) action=\(action) fetched=\(fetched) appended=\(appended) oldest=\(self.cachePagingState.oldestLoadedDate?.description ?? "nil") nextToken=\(self.nextPageToken?.isEmpty == false) exhausted=\(self.cachePagingState.isExhausted)")
+    }
+
+    private func normalizePageToken(_ token: String?) -> String? {
+        guard let token, !token.isEmpty else { return nil }
+        return token
     }
 
     // MARK: - Init
@@ -386,7 +391,7 @@ final class InboxViewModel {
                 )
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
-                self.nextPageToken = pageToken
+                self.nextPageToken = normalizePageToken(pageToken)
                 updateCachePagingAnchor()
                 EmailCacheManager.shared.cacheEmails(
                     fetchedEmails,
@@ -435,7 +440,8 @@ final class InboxViewModel {
             return false
         }
 
-        guard var pageToken = nextPageToken, !isLoadingMore else { return false }
+        guard let token = normalizePageToken(nextPageToken), !isLoadingMore else { return false }
+        var pageToken = token
 
         isLoadingMore = true
         defer { isLoadingMore = false }
@@ -472,8 +478,8 @@ final class InboxViewModel {
                     uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
                 }
 
-                pageToken = newPageToken ?? ""
-                nextPageToken = newPageToken
+                nextPageToken = normalizePageToken(newPageToken)
+                pageToken = nextPageToken ?? ""
 
                 if !moreEmails.isEmpty {
                     EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
@@ -848,7 +854,7 @@ final class InboxViewModel {
             ) {
                 emails = snapshot.emails
                 viewState = snapshot.viewState
-                nextPageToken = snapshot.nextPageToken
+                nextPageToken = normalizePageToken(snapshot.nextPageToken)
                 updateCachePagingAnchor()
                 return
             }
@@ -886,7 +892,7 @@ final class InboxViewModel {
             activeFilter: activeFilter,
             emails: emails,
             viewState: viewState,
-            nextPageToken: nextPageToken
+            nextPageToken: normalizePageToken(nextPageToken)
         )
     }
 
