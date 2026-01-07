@@ -321,7 +321,7 @@ struct InboxView: View {
                             RoundedRectangle(cornerRadius: 26, style: .continuous)
                                 .stroke(Color(.separator).opacity(0.2), lineWidth: 0.5)
                         )
-                        .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 8)
+                        .shadow(color: Color.black.opacity(0.14), radius: 20, x: 0, y: 8)
                         .padding(.horizontal, 12)
                         .transition(.opacity)
                         .zIndex(10)

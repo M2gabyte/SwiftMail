@@ -225,16 +225,25 @@ private struct MailSearchField: View {
         .padding(.horizontal, 14)
         .contentShape(Rectangle())
         .onTapGesture {
-            isFocused = true
-            focused = true
+            if !focused {
+                focused = true
+            }
+            if !isFocused {
+                isFocused = true
+            }
             onBeginEditing()
+        }
+        .onChange(of: focused) { _, newValue in
+            if isFocused != newValue {
+                isFocused = newValue
+            }
+            if newValue {
+                onBeginEditing()
+            }
         }
         .onChange(of: isFocused) { _, newValue in
             if focused != newValue {
                 focused = newValue
-            }
-            if newValue {
-                onBeginEditing()
             }
         }
     }
