@@ -27,7 +27,7 @@ struct BottomCommandSurface: View {
             rightButton
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 6)
+        .padding(.vertical, 9)
         .padding(.bottom, 2)
         .animation(.snappy(duration: 0.22), value: isSearchActive)
     }
@@ -35,9 +35,9 @@ struct BottomCommandSurface: View {
     private var leftButton: some View {
         Button(action: onTapFilter) {
             Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal")
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: 18, weight: .regular))
                 .foregroundStyle(isFilterActive ? Color.accentColor : .secondary)
-                .frame(width: 30, height: 30)
+                .frame(width: 34, height: 34)
                 .background(Circle().fill(.ultraThinMaterial))
                 .overlay(
                     Circle()
@@ -65,9 +65,9 @@ struct BottomCommandSurface: View {
         ZStack {
             Button(action: onTapCompose) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 34, height: 34)
                     .background(Circle().fill(.ultraThinMaterial))
                     .overlay(
                         Circle()
@@ -93,7 +93,7 @@ struct BottomCommandSurface: View {
             onSubmit: onSubmitSearch,
             onBeginEditing: onTapSearch
         )
-        .frame(height: 38)
+        .frame(height: 50)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -201,7 +201,7 @@ struct MailSearchBar: UIViewRepresentable {
         searchBar.delegate = context.coordinator
 
         let textField = searchBar.searchTextField
-        textField.font = UIFont.systemFont(ofSize: 16)
+        textField.font = UIFont.systemFont(ofSize: 17)
         textField.textColor = .label
         textField.tintColor = .systemBlue
         textField.clearButtonMode = .whileEditing
@@ -215,7 +215,7 @@ struct MailSearchBar: UIViewRepresentable {
         let mic = UIImageView(image: UIImage(systemName: "mic.fill"))
         mic.tintColor = .secondaryLabel
         mic.contentMode = .scaleAspectFit
-        mic.frame = CGRect(x: 0, y: 0, width: 18, height: 18)
+        mic.frame = CGRect(x: 0, y: 0, width: 20, height: 20)
         textField.rightView = mic
         textField.rightViewMode = .always
 
