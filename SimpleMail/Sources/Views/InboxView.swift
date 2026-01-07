@@ -37,6 +37,9 @@ struct InboxView: View {
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
+    @State private var didPrewarmKeyboard = false
+    @State private var prewarmText = ""
+    @FocusState private var prewarmKeyboardFocused: Bool
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
 
@@ -281,6 +284,17 @@ struct InboxView: View {
                 }
             }
         })
+        view = AnyView(view.onAppear {
+            if !didPrewarmKeyboard {
+                didPrewarmKeyboard = true
+                DispatchQueue.main.async {
+                    prewarmKeyboardFocused = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        prewarmKeyboardFocused = false
+                    }
+                }
+            }
+        })
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() })
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() })
         view = AnyView(view.onChange(of: viewModel.bulkToastMessage) { _, newValue in
@@ -328,6 +342,12 @@ struct InboxView: View {
                 .opacity(isSearchMode ? 1 : 0)
                 .allowsHitTesting(isSearchMode)
             }
+
+            TextField("", text: $prewarmText)
+                .focused($prewarmKeyboardFocused)
+                .frame(width: 0, height: 0)
+                .opacity(0.001)
+                .allowsHitTesting(false)
         }
         .animation(.easeInOut(duration: 0.3), value: isSearchMode)
         .navigationTitle("")
