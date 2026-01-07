@@ -891,6 +891,10 @@ struct InboxView: View {
 
     @ViewBuilder
     private var overlayContent: some View {
+        if isSearchMode {
+            EmptyView()
+            return
+        }
         let query = debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if viewModel.isSearching {
             VStack(spacing: 12) {
