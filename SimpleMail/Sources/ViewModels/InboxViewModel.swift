@@ -22,24 +22,22 @@ final class InboxViewModel {
 
     var emails: [Email] = [] {
         didSet {
-            markSectionsDirty()
+            inboxStore.setEmails(emails)
         }
     }
     var currentTab: InboxTab = .all {
         didSet {
-            markSectionsDirty()
-            updateFilterCounts()
+            inboxStore.setCurrentTab(currentTab)
         }
     }
     var pinnedTabOption: PinnedTabOption = .other {
         didSet {
-            markSectionsDirty()
-            updateFilterCounts()
+            inboxStore.setPinnedTabOption(pinnedTabOption)
         }
     }
     var activeFilter: InboxFilter? = nil {
         didSet {
-            markSectionsDirty()
+            inboxStore.setActiveFilter(activeFilter)
         }
     }
     var currentMailbox: Mailbox = .inbox
@@ -53,11 +51,9 @@ final class InboxViewModel {
     // Increment to force re-filter (e.g., when blocked senders change)
     private var filterVersion = 0 {
         didSet {
-            markSectionsDirty()
+            inboxStore.bumpFilterVersion()
         }
     }
-    private var sectionsDirty = true
-    private var cachedSections: [EmailSection] = []
 
     // MARK: - Search State
 
@@ -79,7 +75,7 @@ final class InboxViewModel {
 
     // MARK: - Filter Counts
 
-    var filterCounts: [InboxFilter: Int] = [:]
+    var filterCounts: [InboxFilter: Int] { inboxStore.counts }
 
     var alwaysPrimarySenders: [String] {
         get {
@@ -141,15 +137,12 @@ final class InboxViewModel {
     @ObservationIgnored private var archiveThreadObserver: NSObjectProtocol?
     @ObservationIgnored private var trashThreadObserver: NSObjectProtocol?
     @ObservationIgnored private var inboxPreferencesObserver: NSObjectProtocol?
+    @ObservationIgnored private let inboxStore = InboxStore()
 
     // MARK: - Computed Properties
 
     var emailSections: [EmailSection] {
-        if sectionsDirty {
-            cachedSections = recomputeSections()
-            sectionsDirty = false
-        }
-        return cachedSections
+        inboxStore.sections
     }
 
     /// Last visible email after filtering (for pagination trigger)
@@ -157,17 +150,15 @@ final class InboxViewModel {
         emailSections.last?.emails.last?.id
     }
 
+    private func accountForEmail(_ email: Email) -> AuthService.Account? {
+        if let accountEmail = email.accountEmail?.lowercased() {
+            return AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
+        }
+        return AuthService.shared.currentAccount
+    }
+
     private func animate(_ animation: Animation? = .default, _ body: () -> Void) {
         withAnimation(animation, body)
-    }
-
-    private func markSectionsDirty() {
-        sectionsDirty = true
-    }
-
-    private func recomputeSections() -> [EmailSection] {
-        let filteredEmails = applyFilters(emails)
-        return groupEmailsByDate(filteredEmails)
     }
 
     // MARK: - Init
@@ -175,6 +166,10 @@ final class InboxViewModel {
     init() {
         InboxPreferences.ensureDefaultsInitialized()
         pinnedTabOption = InboxPreferences.getPinnedTabOption()
+        inboxStore.setEmails(emails)
+        inboxStore.setCurrentTab(currentTab)
+        inboxStore.setPinnedTabOption(pinnedTabOption)
+        inboxStore.setActiveFilter(activeFilter)
 
         // Listen for blocked senders changes from EmailDetailView
         blockedSendersObserver = NotificationCenter.default.addObserver(
@@ -434,351 +429,10 @@ final class InboxViewModel {
         return deduped
     }
 
-    // MARK: - Needs Reply Heuristics
-
-    private static let needsReplyPatterns: [NSRegularExpression] = {
-        let patterns = [
-            "can\\s+you", "could\\s+you", "would\\s+you", "are\\s+you\\s+able",
-            "let\\s+me\\s+know", "please\\s+confirm", "quick\\s+question",
-            "thoughts\\?", "what\\s+do\\s+you\\s+think"
-        ]
-        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
-    }()
-
-    private func isNeedsReplyCandidate(_ email: Email) -> Bool {
-        // Skip emails the user sent
-        if email.labelIds.contains("SENT") {
-            return false
-        }
-
-        // Skip if this is a reply FROM the user (subject starts with Re: and has SENT in thread)
-        // This is a heuristic - if the email is a "Re:" and the user has SENT emails, likely replied
-        if email.subject.lowercased().hasPrefix("re:") {
-            // Check if there's any indication user participated in thread
-            // messagesCount > 1 often means back-and-forth (user may have replied)
-            if email.messagesCount > 1 {
-                return false
-            }
-        }
-
-        // Skip emails from the user's own account
-        if let accountEmail = email.accountEmail {
-            let senderEmail = email.senderEmail.lowercased()
-            if senderEmail == accountEmail.lowercased() {
-                return false
-            }
-        }
-
-        // Gate out commercial/automated senders to avoid false positives.
-        if EmailFilters.isBulk(email) {
-            return false
-        }
-        if !EmailFilters.looksLikeHumanSender(email) {
-            return false
-        }
-
-        let text = "\(email.subject) \(email.snippet)"
-        if text.contains("?") {
-            return true
-        }
-
-        let range = NSRange(text.startIndex..., in: text)
-        return Self.needsReplyPatterns.contains { $0.firstMatch(in: text, range: range) != nil }
-    }
-
-    // MARK: - Filter Counts (Simplified - no actor calls)
+    // MARK: - Filter Counts
 
     private func updateFilterCounts() {
-        recomputeFilterCounts(from: emails)
-    }
-
-    private func recomputeFilterCounts(from emails: [Email]) {
-        let base = applyTabContext(emails.filter { email in
-            let blocked = blockedSenders(for: email.accountEmail)
-            return !blocked.contains(email.senderEmail.lowercased())
-        })
-        var counts: [InboxFilter: Int] = [:]
-
-        counts[.unread] = base.filter { $0.isUnread }.count
-
-        for email in base {
-            if isNeedsReplyCandidate(email) {
-                counts[.needsReply, default: 0] += 1
-            }
-
-            if isDeadline(email) {
-                counts[.deadlines, default: 0] += 1
-            }
-
-            if isMoney(email) {
-                counts[.money, default: 0] += 1
-            }
-
-            if isNewsletter(email) {
-                counts[.newsletters, default: 0] += 1
-            }
-        }
-
-        filterCounts = counts
-    }
-
-    // MARK: - Filtering
-
-    private func blockedSenders(for accountEmail: String?) -> Set<String> {
-        Set(AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail))
-    }
-
-    private func alwaysPrimarySenders(for accountEmail: String?) -> [String] {
-        AccountDefaults.stringArray(for: "alwaysPrimarySenders", accountEmail: accountEmail)
-    }
-
-    private func alwaysOtherSenders(for accountEmail: String?) -> [String] {
-        AccountDefaults.stringArray(for: "alwaysOtherSenders", accountEmail: accountEmail)
-    }
-
-    private func accountForEmail(_ email: Email) -> AuthService.Account? {
-        if let accountEmail = email.accountEmail?.lowercased() {
-            return AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
-        }
-        return AuthService.shared.currentAccount
-    }
-
-    private func senderOverride(for email: Email) -> InboxTab? {
-        let accountEmail = email.accountEmail ?? AuthService.shared.currentAccount?.email
-        let sender = email.senderEmail.lowercased()
-
-        let primary = alwaysPrimarySenders(for: accountEmail)
-        if primary.contains(sender) { return .primary }
-
-        let other = alwaysOtherSenders(for: accountEmail)
-        if other.contains(sender) { return .pinned }
-
-        return nil
-    }
-
-    private func isVIPSender(_ email: Email) -> Bool {
-        let vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: email.accountEmail)
-        return vipSenders.contains(email.senderEmail.lowercased())
-    }
-
-    private func isNewsletter(_ email: Email) -> Bool {
-        email.labelIds.contains("CATEGORY_PROMOTIONS") || email.listUnsubscribe != nil
-    }
-
-    private func isMoney(_ email: Email) -> Bool {
-        let text = "\(email.subject) \(email.snippet)".lowercased()
-        return text.contains("receipt") || text.contains("order") ||
-            text.contains("payment") || text.contains("invoice")
-    }
-
-    private func isDeadline(_ email: Email) -> Bool {
-        let text = "\(email.subject) \(email.snippet)".lowercased()
-        return text.contains("today") || text.contains("tomorrow") ||
-            text.contains("urgent") || text.contains("deadline")
-    }
-
-    private func isSecurity(_ email: Email) -> Bool {
-        let text = "\(email.subject) \(email.snippet)".lowercased()
-        let keywords = [
-            "security alert", "new sign-in", "sign-in", "password",
-            "verify", "verification", "two-factor", "2fa",
-            "suspicious", "unrecognized", "confirm", "action required"
-        ]
-        return keywords.contains { text.contains($0) }
-    }
-
-    private func isPeople(_ email: Email) -> Bool {
-        EmailFilters.looksLikeHumanSender(email) && !EmailFilters.isBulk(email)
-    }
-
-    private func isPrimary(_ email: Email) -> Bool {
-        if let override = senderOverride(for: email) {
-            return override == .primary
-        }
-
-        for rule in PrimaryRule.allCases where InboxPreferences.isPrimaryRuleEnabled(rule) {
-            switch rule {
-            case .people:
-                if isPeople(email) { return true }
-            case .vip:
-                if isVIPSender(email) { return true }
-            case .security:
-                if isSecurity(email) { return true }
-            case .money:
-                if isMoney(email) { return true }
-            case .deadlines:
-                if isDeadline(email) { return true }
-            case .newsletters:
-                if isNewsletter(email) { return true }
-            case .promotions:
-                if email.labelIds.contains("CATEGORY_PROMOTIONS") { return true }
-            case .social:
-                if email.labelIds.contains("CATEGORY_SOCIAL") { return true }
-            case .forums:
-                if email.labelIds.contains("CATEGORY_FORUMS") { return true }
-            case .updates:
-                if email.labelIds.contains("CATEGORY_UPDATES") { return true }
-            }
-        }
-
-        return false
-    }
-
-    private func matchesPinned(_ email: Email) -> Bool {
-        switch pinnedTabOption {
-        case .other:
-            return !isPrimary(email)
-        case .money:
-            return isMoney(email)
-        case .deadlines:
-            return isDeadline(email)
-        case .needsReply:
-            return isNeedsReplyCandidate(email)
-        case .unread:
-            return email.isUnread
-        case .newsletters:
-            return isNewsletter(email)
-        case .people:
-            return isPeople(email)
-        }
-    }
-
-    private func applyTabContext(_ emails: [Email]) -> [Email] {
-        var filtered = emails
-        switch currentTab {
-        case .all:
-            break
-        case .primary:
-            filtered = filtered.filter { isPrimary($0) }
-        case .pinned:
-            filtered = filtered.filter { matchesPinned($0) }
-        }
-
-        return filtered
-    }
-
-    private func applyFilters(_ emails: [Email]) -> [Email] {
-        var filtered = emails.filter { email in
-            let blocked = blockedSenders(for: email.accountEmail)
-            return !blocked.contains(email.senderEmail.lowercased())
-        }
-
-        filtered = applyTabContext(filtered)
-
-        if let filter = activeFilter {
-            switch filter {
-            case .unread:
-                filtered = filtered.filter { $0.isUnread }
-            case .needsReply:
-                filtered = filtered.filter { isNeedsReplyCandidate($0) }
-            case .deadlines:
-                filtered = filtered.filter { isDeadline($0) }
-            case .money:
-                filtered = filtered.filter { isMoney($0) }
-            case .newsletters:
-                filtered = filtered.filter { isNewsletter($0) }
-            }
-        }
-
-        return filtered
-    }
-
-    private func groupEmailsByDate(_ emails: [Email]) -> [EmailSection] {
-        let calendar = Calendar.current
-        let now = Date()
-        let weekInterval = calendar.dateInterval(of: .weekOfYear, for: now)
-        let lastWeekInterval = weekInterval.flatMap { interval in
-            calendar.dateInterval(of: .weekOfYear, for: interval.start.addingTimeInterval(-1))
-        }
-
-        var today: [Email] = []
-        var yesterday: [Email] = []
-        var weekdayBuckets: [Int: [Email]] = [:]
-        var orderedWeekdays: [Int] = []
-        var lastWeek: [Email] = []
-        var monthBuckets: [String: [Email]] = [:]
-        var orderedMonths: [String] = []
-        var yearBuckets: [String: [Email]] = [:]
-        var orderedYears: [String] = []
-        let oneYearAgo = calendar.date(byAdding: .year, value: -1, to: now)
-
-        for email in emails.sorted(by: { $0.date > $1.date }) {
-            if calendar.isDateInToday(email.date) {
-                today.append(email)
-            } else if calendar.isDateInYesterday(email.date) {
-                yesterday.append(email)
-            } else if let weekInterval, weekInterval.contains(email.date) {
-                let weekday = calendar.component(.weekday, from: email.date)
-                if weekdayBuckets[weekday] == nil {
-                    orderedWeekdays.append(weekday)
-                    weekdayBuckets[weekday] = []
-                }
-                weekdayBuckets[weekday]?.append(email)
-            } else if let lastWeekInterval, lastWeekInterval.contains(email.date) {
-                lastWeek.append(email)
-            } else {
-                if let oneYearAgo, email.date >= oneYearAgo {
-                    let year = calendar.component(.year, from: email.date)
-                    let month = calendar.component(.month, from: email.date)
-                    let monthKey = String(format: "%04d-%02d", year, month)
-                    if monthBuckets[monthKey] == nil {
-                        orderedMonths.append(monthKey)
-                        monthBuckets[monthKey] = []
-                    }
-                    monthBuckets[monthKey]?.append(email)
-                } else {
-                    let year = calendar.component(.year, from: email.date)
-                    let yearKey = String(year)
-                    if yearBuckets[yearKey] == nil {
-                        orderedYears.append(yearKey)
-                        yearBuckets[yearKey] = []
-                    }
-                    yearBuckets[yearKey]?.append(email)
-                }
-            }
-        }
-
-        var sections: [EmailSection] = []
-        let weekdayFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.locale = .current
-            formatter.calendar = calendar
-            formatter.dateFormat = "EEEE"
-            return formatter
-        }()
-        let monthFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.locale = .current
-            formatter.calendar = calendar
-            formatter.dateFormat = "MMMM yyyy"
-            return formatter
-        }()
-
-        if !today.isEmpty {
-            sections.append(EmailSection(id: "today", title: "Today", emails: today))
-        }
-        if !yesterday.isEmpty {
-            sections.append(EmailSection(id: "yesterday", title: "Yesterday", emails: yesterday))
-        }
-        for weekday in orderedWeekdays {
-            guard let emailsForDay = weekdayBuckets[weekday], let first = emailsForDay.first else { continue }
-            let title = weekdayFormatter.string(from: first.date)
-            sections.append(EmailSection(id: "weekday-\(weekday)", title: title, emails: emailsForDay))
-        }
-        if !lastWeek.isEmpty {
-            sections.append(EmailSection(id: "lastWeek", title: "Last Week", emails: lastWeek))
-        }
-        for monthKey in orderedMonths {
-            guard let emailsForMonth = monthBuckets[monthKey], let first = emailsForMonth.first else { continue }
-            let title = monthFormatter.string(from: first.date)
-            sections.append(EmailSection(id: "month-\(monthKey)", title: title, emails: emailsForMonth))
-        }
-        for yearKey in orderedYears {
-            guard let emailsForYear = yearBuckets[yearKey] else { continue }
-            sections.append(EmailSection(id: "year-\(yearKey)", title: yearKey, emails: emailsForYear))
-        }
-
-        return sections
+        inboxStore.recomputeFilterCounts()
     }
 
     // MARK: - Actions

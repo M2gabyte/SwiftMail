@@ -1650,14 +1650,6 @@ struct TimeOfDayGradient: View {
     }
 }
 
-// MARK: - Email Section
-
-struct EmailSection: Identifiable {
-    let id: String
-    let title: String
-    let emails: [Email]
-}
-
 // MARK: - Filter Sheet
 
 struct FilterSheet: View {
