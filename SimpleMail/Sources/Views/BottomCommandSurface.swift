@@ -31,9 +31,9 @@ struct BottomCommandSurface: View {
             if searchMode == .editing {
                 Button(action: { onCancelSearch() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 26, weight: .regular))
+                        .font(.system(size: 30, weight: .regular))
                         .foregroundStyle(.secondary)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Cancel search")
