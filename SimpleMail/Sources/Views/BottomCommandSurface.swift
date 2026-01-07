@@ -118,10 +118,16 @@ struct BottomCommandSurface: View {
         )
         .opacity(showSearchField ? 1 : 0)
         .allowsHitTesting(showSearchField)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTapSearch()
-            searchFocused = true
+        .overlay {
+            if !searchFocused {
+                Button(action: {
+                    onTapSearch()
+                    searchFocused = true
+                }) {
+                    Color.clear
+                }
+                .buttonStyle(.plain)
+            }
         }
         .accessibilityHidden(!showSearchField)
         .accessibilityLabel("Search emails")
