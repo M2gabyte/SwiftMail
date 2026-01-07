@@ -20,7 +20,7 @@ struct BottomCommandSurface: View {
         let isSearchActive = (searchMode == .editing) || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         HStack(spacing: 8) {
             leftButton
-                .frame(width: 44, height: 44)
+                .frame(width: searchMode == .editing ? 0 : 44, height: 44)
                 .opacity(searchMode == .editing ? 0 : 1)
                 .allowsHitTesting(searchMode != .editing)
 
