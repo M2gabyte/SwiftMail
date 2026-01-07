@@ -186,6 +186,7 @@ final class InboxViewModel {
         inboxStore.setCurrentTab(currentTab)
         inboxStore.setPinnedTabOption(pinnedTabOption)
         inboxStore.setActiveFilter(activeFilter)
+        inboxStore.setCurrentAccountEmail(AuthService.shared.currentAccount?.email)
         syncViewState()
 
         // Listen for blocked senders changes from EmailDetailView
@@ -206,6 +207,7 @@ final class InboxViewModel {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                self?.inboxStore.setCurrentAccountEmail(AuthService.shared.currentAccount?.email)
                 await self?.loadEmails()
             }
         }

@@ -13,15 +13,17 @@ struct InboxFilterEngine {
     static func recomputeFilterCounts(
         from emails: [Email],
         currentTab: InboxTab,
-        pinnedTabOption: PinnedTabOption
+        pinnedTabOption: PinnedTabOption,
+        currentAccountEmail: String?
     ) -> [InboxFilter: Int] {
         let base = applyTabContext(
             emails.filter { email in
-                let blocked = blockedSenders(for: email.accountEmail)
+                let blocked = blockedSenders(for: accountEmail(for: email, fallback: currentAccountEmail))
                 return !blocked.contains(email.senderEmail.lowercased())
             },
             currentTab: currentTab,
-            pinnedTabOption: pinnedTabOption
+            pinnedTabOption: pinnedTabOption,
+            currentAccountEmail: currentAccountEmail
         )
 
         var counts: [InboxFilter: Int] = [:]
@@ -52,14 +54,20 @@ struct InboxFilterEngine {
         _ emails: [Email],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
-        activeFilter: InboxFilter?
+        activeFilter: InboxFilter?,
+        currentAccountEmail: String?
     ) -> [Email] {
         var filtered = emails.filter { email in
-            let blocked = blockedSenders(for: email.accountEmail)
+            let blocked = blockedSenders(for: accountEmail(for: email, fallback: currentAccountEmail))
             return !blocked.contains(email.senderEmail.lowercased())
         }
 
-        filtered = applyTabContext(filtered, currentTab: currentTab, pinnedTabOption: pinnedTabOption)
+        filtered = applyTabContext(
+            filtered,
+            currentTab: currentTab,
+            pinnedTabOption: pinnedTabOption,
+            currentAccountEmail: currentAccountEmail
+        )
 
         if let filter = activeFilter {
             switch filter {
@@ -223,8 +231,12 @@ struct InboxFilterEngine {
         AccountDefaults.stringArray(for: "alwaysOtherSenders", accountEmail: accountEmail)
     }
 
-    private static func senderOverride(for email: Email) -> InboxTab? {
-        let accountEmail = email.accountEmail ?? AuthService.shared.currentAccount?.email
+    private static func accountEmail(for email: Email, fallback: String?) -> String? {
+        email.accountEmail ?? fallback
+    }
+
+    private static func senderOverride(for email: Email, currentAccountEmail: String?) -> InboxTab? {
+        let accountEmail = accountEmail(for: email, fallback: currentAccountEmail)
         let sender = email.senderEmail.lowercased()
 
         let primary = alwaysPrimarySenders(for: accountEmail)
@@ -271,8 +283,8 @@ struct InboxFilterEngine {
         EmailFilters.looksLikeHumanSender(email) && !EmailFilters.isBulk(email)
     }
 
-    private static func isPrimary(_ email: Email) -> Bool {
-        if let override = senderOverride(for: email) {
+    private static func isPrimary(_ email: Email, currentAccountEmail: String?) -> Bool {
+        if let override = senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
             return override == .primary
         }
 
@@ -304,10 +316,14 @@ struct InboxFilterEngine {
         return false
     }
 
-    private static func matchesPinned(_ email: Email, pinnedTabOption: PinnedTabOption) -> Bool {
+    private static func matchesPinned(
+        _ email: Email,
+        pinnedTabOption: PinnedTabOption,
+        currentAccountEmail: String?
+    ) -> Bool {
         switch pinnedTabOption {
         case .other:
-            return !isPrimary(email)
+            return !isPrimary(email, currentAccountEmail: currentAccountEmail)
         case .money:
             return isMoney(email)
         case .deadlines:
@@ -326,16 +342,17 @@ struct InboxFilterEngine {
     private static func applyTabContext(
         _ emails: [Email],
         currentTab: InboxTab,
-        pinnedTabOption: PinnedTabOption
+        pinnedTabOption: PinnedTabOption,
+        currentAccountEmail: String?
     ) -> [Email] {
         var filtered = emails
         switch currentTab {
         case .all:
             break
         case .primary:
-            filtered = filtered.filter { isPrimary($0) }
+            filtered = filtered.filter { isPrimary($0, currentAccountEmail: currentAccountEmail) }
         case .pinned:
-            filtered = filtered.filter { matchesPinned($0, pinnedTabOption: pinnedTabOption) }
+            filtered = filtered.filter { matchesPinned($0, pinnedTabOption: pinnedTabOption, currentAccountEmail: currentAccountEmail) }
         }
 
         return filtered

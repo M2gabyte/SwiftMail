@@ -1,12 +1,12 @@
 import Foundation
 
-@MainActor
 actor InboxStore {
     private var emails: [Email] = []
     private var currentTab: InboxTab = .all
     private var pinnedTabOption: PinnedTabOption = .other
     private var activeFilter: InboxFilter?
     private var filterVersion = 0
+    private var currentAccountEmail: String?
 
     private var sectionsDirty = true
     private var cachedSections: [EmailSection] = []
@@ -34,6 +34,12 @@ actor InboxStore {
         sectionsDirty = true
     }
 
+    func setCurrentAccountEmail(_ email: String?) {
+        currentAccountEmail = email
+        sectionsDirty = true
+        recomputeFilterCounts()
+    }
+
     func bumpFilterVersion() {
         filterVersion += 1
         sectionsDirty = true
@@ -56,7 +62,8 @@ actor InboxStore {
         filterCounts = InboxFilterEngine.recomputeFilterCounts(
             from: emails,
             currentTab: currentTab,
-            pinnedTabOption: pinnedTabOption
+            pinnedTabOption: pinnedTabOption,
+            currentAccountEmail: currentAccountEmail
         )
     }
 
@@ -65,7 +72,8 @@ actor InboxStore {
             emails,
             currentTab: currentTab,
             pinnedTabOption: pinnedTabOption,
-            activeFilter: activeFilter
+            activeFilter: activeFilter,
+            currentAccountEmail: currentAccountEmail
         )
         return InboxFilterEngine.groupEmailsByDate(filteredEmails)
     }
