@@ -147,7 +147,10 @@ struct InboxView: View {
                     isSearchMode = false
                     searchFieldFocused = false
                 }
-                withAnimation(.easeInOut(duration: 0.2)) {
+                // Disable navigation animation
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
                     viewModel.openEmail(email)
                 }
             }
@@ -307,9 +310,6 @@ struct InboxView: View {
                 }
             }
         })
-#if DEBUG
-        view = AnyView(view.overlay(alignment: .topLeading) { debugPagingOverlay })
-#endif
         return view
     }
 
@@ -353,11 +353,16 @@ struct InboxView: View {
                 .allowsHitTesting(false)
         }
         .animation(.easeInOut(duration: 0.3), value: isSearchMode)
-        .navigationTitle("")
+        .navigationTitle(viewModel.currentMailbox.rawValue)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(isSearchMode ? .hidden : .visible, for: .navigationBar)
         .toolbarBackground(.bar, for: .navigationBar)
         .toolbar { toolbarContent }
+        .toolbarTitleMenu {
+            Button("Change Mailbox") {
+                showingLocationSheet = true
+            }
+        }
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled(true)
         .overlay { overlayContent }
@@ -483,9 +488,10 @@ struct InboxView: View {
                 }
             }
 
-            if !isSearchMode {
+            // Pagination trigger sentinel - larger frame ensures it appears reliably
+            if !isSearchMode && viewModel.hasMoreEmails {
                 Color.clear
-                    .frame(height: 1)
+                    .frame(height: 44)
                     .onAppear { Task { await viewModel.loadMoreFromFooter() } }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -630,23 +636,6 @@ struct InboxView: View {
                 }
             }
         } else {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    showingLocationSheet = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: viewModel.currentMailbox.icon)
-                            .font(.body)
-                        Text(viewModel.currentMailbox.rawValue)
-                            .font(.subheadline.weight(.medium))
-                        Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .accessibilityLabel("Location")
-            }
-
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingSettings = true } label: {
                     Image(systemName: "gearshape")
@@ -1132,27 +1121,6 @@ struct InboxView: View {
         return "tray"
     }
 
-#if DEBUG
-    private var debugPagingOverlay: some View {
-        let debug = viewModel.pagingDebug
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, HH:mm:ss"
-        let dateText = debug.oldestLoadedDate.map { formatter.string(from: $0) } ?? "nil"
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("Paging: \(debug.path)")
-            Text("Action: \(debug.action)")
-            Text("Fetched: \(debug.fetched) Appended: \(debug.appended)")
-            Text("Oldest: \(dateText)")
-            Text("NextToken: \(debug.nextPageTokenPresent ? "yes" : "no") Exhausted: \(debug.cacheExhausted ? "yes" : "no")")
-        }
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
-        .padding(8)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .padding(.top, 8)
-        .padding(.leading, 8)
-        .allowsHitTesting(false)
-    }
-#endif
 }
 
 // MARK: - Inbox Header Block (Tight Filter Chips)
