@@ -14,7 +14,7 @@ private struct ScrollOffsetKey: PreferenceKey {
 // MARK: - Inbox View
 
 struct InboxView: View {
-    @State private var viewModel = InboxViewModel()
+    @Bindable private var viewModel = InboxViewModel.shared
     @State private var showingCompose = false
     @State private var listDensity: ListDensity = .comfortable
     @State private var showingSettings = false
@@ -307,9 +307,6 @@ struct InboxView: View {
                 }
             }
         })
-#if DEBUG
-        view = AnyView(view.overlay(alignment: .topLeading) { debugPagingOverlay })
-#endif
         return view
     }
 
@@ -1131,28 +1128,6 @@ struct InboxView: View {
         }
         return "tray"
     }
-
-#if DEBUG
-    private var debugPagingOverlay: some View {
-        let debug = viewModel.pagingDebug
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, HH:mm:ss"
-        let dateText = debug.oldestLoadedDate.map { formatter.string(from: $0) } ?? "nil"
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("Paging: \(debug.path)")
-            Text("Action: \(debug.action)")
-            Text("Fetched: \(debug.fetched) Appended: \(debug.appended)")
-            Text("Oldest: \(dateText)")
-            Text("NextToken: \(debug.nextPageTokenPresent ? "yes" : "no") Exhausted: \(debug.cacheExhausted ? "yes" : "no")")
-        }
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
-        .padding(8)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .padding(.top, 8)
-        .padding(.leading, 8)
-        .allowsHitTesting(false)
-    }
-#endif
 }
 
 // MARK: - Inbox Header Block (Tight Filter Chips)

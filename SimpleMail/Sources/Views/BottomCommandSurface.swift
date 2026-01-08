@@ -34,9 +34,12 @@ struct BottomCommandSurface: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 34, weight: .regular))
                         .foregroundStyle(.secondary)
-                        .frame(width: 50, height: 50)
+                        .frame(width: 56, height: 56)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .frame(width: 56, height: 56)
+                .contentShape(Rectangle())
                 .accessibilityLabel("Cancel search")
             } else {
                 rightButton

@@ -307,6 +307,42 @@ actor GmailService: GmailAPIProvider {
     private let batchSize = 3
     private let requestTimeout: TimeInterval = 20
 
+    // In-flight request deduplication - multiple callers share one fetch
+    private var inFlightFetches: [String: Task<(emails: [EmailDTO], nextPageToken: String?), Error>] = [:]
+
+    // Request queue for rate limiting - serialize ALL inbox fetches
+    private var fetchQueue: [CheckedContinuation<Void, Never>] = []
+    private var isFetching = false
+    private let minFetchInterval: TimeInterval = 0.3 // 300ms between fetches
+
+    /// Creates a unique key for deduplicating fetch requests
+    private func fetchKey(labelIds: [String], pageToken: String?, accountEmail: String) -> String {
+        "\(accountEmail):\(labelIds.joined(separator: ",")):\(pageToken ?? "first")"
+    }
+
+    /// Acquires a slot in the fetch queue - ensures only one fetch at a time with rate limiting
+    private func acquireFetchSlot() async {
+        if isFetching {
+            await withCheckedContinuation { continuation in
+                fetchQueue.append(continuation)
+            }
+        }
+        isFetching = true
+    }
+
+    /// Releases the fetch slot and wakes up the next waiting request
+    private func releaseFetchSlot() async {
+        // Rate limit delay before allowing next fetch
+        try? await Task.sleep(for: .seconds(minFetchInterval))
+
+        if let next = fetchQueue.first {
+            fetchQueue.removeFirst()
+            next.resume()
+        } else {
+            isFetching = false
+        }
+    }
+
     // MARK: - Get Access Token
 
     private func getAccessToken() async throws -> String {
@@ -331,12 +367,48 @@ actor GmailService: GmailAPIProvider {
         pageToken: String? = nil,
         labelIds: [String] = ["INBOX"]
     ) async throws -> (emails: [EmailDTO], nextPageToken: String?) {
-        logger.info("Fetching inbox: labels=\(labelIds), max=\(maxResults), page=\(pageToken ?? "first")")
-
         // Get current account for scoping
         guard let account = await AuthService.shared.currentAccount else {
             throw GmailError.notAuthenticated
         }
+
+        // Deduplicate in-flight requests - if same fetch is running, wait for it
+        let key = fetchKey(labelIds: labelIds, pageToken: pageToken, accountEmail: account.email)
+
+        if let existingTask = inFlightFetches[key] {
+            logger.info("Deduplicating fetch: \(key)")
+            return try await existingTask.value
+        }
+
+        let task = Task<(emails: [EmailDTO], nextPageToken: String?), Error> {
+            try await performFetchInbox(account: account, query: query, maxResults: maxResults, pageToken: pageToken, labelIds: labelIds)
+        }
+
+        inFlightFetches[key] = task
+
+        do {
+            let result = try await task.value
+            inFlightFetches.removeValue(forKey: key)
+            return result
+        } catch {
+            inFlightFetches.removeValue(forKey: key)
+            throw error
+        }
+    }
+
+    private func performFetchInbox(
+        account: AuthService.Account,
+        query: String?,
+        maxResults: Int,
+        pageToken: String?,
+        labelIds: [String]
+    ) async throws -> (emails: [EmailDTO], nextPageToken: String?) {
+        // Acquire slot in fetch queue - serializes requests and adds rate limiting
+        await acquireFetchSlot()
+        defer { Task { await releaseFetchSlot() } }
+
+        logger.info("Fetching inbox: labels=\(labelIds), max=\(maxResults), page=\(pageToken ?? "first")")
+
         let accountEmail = account.email.lowercased()
         let refreshedAccount = try await AuthService.shared.refreshTokenIfNeeded(for: account)
         let token = refreshedAccount.accessToken
@@ -394,12 +466,53 @@ actor GmailService: GmailAPIProvider {
         pageToken: String? = nil,
         labelIds: [String] = ["INBOX"]
     ) async throws -> (emails: [EmailDTO], nextPageToken: String?) {
-        logger.info("Fetching inbox: labels=\(labelIds), max=\(maxResults), page=\(pageToken ?? "first")")
+        // Deduplicate in-flight requests - if same fetch is running, wait for it
+        let key = fetchKey(labelIds: labelIds, pageToken: pageToken, accountEmail: account.email)
 
+        if let existingTask = inFlightFetches[key] {
+            logger.info("Deduplicating fetch: \(key)")
+            return try await existingTask.value
+        }
+
+        let task = Task<(emails: [EmailDTO], nextPageToken: String?), Error> {
+            try await performFetchInbox(account: account, query: query, maxResults: maxResults, pageToken: pageToken, labelIds: labelIds)
+        }
+
+        inFlightFetches[key] = task
+
+        do {
+            let result = try await task.value
+            inFlightFetches.removeValue(forKey: key)
+            return result
+        } catch {
+            inFlightFetches.removeValue(forKey: key)
+            throw error
+        }
+    }
+
+    // MARK: - Fetch Threads List (Proper Pagination)
+    //
+    // Uses Gmail Threads API instead of Messages API.
+    // Each thread in the response is unique - no deduplication needed.
+    // This completely solves the pagination starvation problem.
+
+    func fetchThreadsList(
+        query: String? = nil,
+        maxResults: Int = 50,
+        pageToken: String? = nil,
+        labelIds: [String] = ["INBOX"]
+    ) async throws -> (emails: [EmailDTO], nextPageToken: String?) {
+        logger.info("Fetching threads: labels=\(labelIds), max=\(maxResults), page=\(pageToken ?? "first")")
+
+        guard let account = await AuthService.shared.currentAccount else {
+            throw GmailError.notAuthenticated
+        }
         let accountEmail = account.email.lowercased()
-        let token = try await getAccessToken(for: account)
+        let refreshedAccount = try await AuthService.shared.refreshTokenIfNeeded(for: account)
+        let token = refreshedAccount.accessToken
 
-        guard var components = URLComponents(string: "\(baseURL)/users/me/messages") else {
+        // Use threads endpoint instead of messages
+        guard var components = URLComponents(string: "\(baseURL)/users/me/threads") else {
             throw GmailError.invalidURL
         }
         var queryItems = [
@@ -424,24 +537,205 @@ actor GmailService: GmailAPIProvider {
             throw GmailError.invalidURL
         }
 
-        let listResponse: MessageListResponse = try await request(
+        let listResponse: ThreadListResponse = try await request(
             url: url,
             token: token
         )
 
-        guard let messageRefs = listResponse.messages, !messageRefs.isEmpty else {
-            logger.info("No emails found")
-            return ([], nil)
+        guard let threadRefs = listResponse.threads, !threadRefs.isEmpty else {
+            logger.info("No threads found")
+            return ([], listResponse.nextPageToken)
         }
 
-        let emails = try await fetchEmailDetails(
-            messageIds: messageRefs.map(\.id),
+        // Fetch the first message of each thread for display info
+        // This is more efficient than fetching full threads
+        let emails = try await fetchThreadSummaries(
+            threadRefs: threadRefs,
             token: token,
             accountEmail: accountEmail
         )
 
-        logger.info("Fetched \(emails.count) emails, hasMore=\(listResponse.nextPageToken != nil)")
+        logger.info("Fetched \(emails.count) threads, hasMore=\(listResponse.nextPageToken != nil)")
         return (emails, listResponse.nextPageToken)
+    }
+
+    func fetchThreadsList(
+        for account: AuthService.Account,
+        query: String? = nil,
+        maxResults: Int = 50,
+        pageToken: String? = nil,
+        labelIds: [String] = ["INBOX"]
+    ) async throws -> (emails: [EmailDTO], nextPageToken: String?) {
+        logger.info("Fetching threads for \(account.email): labels=\(labelIds), max=\(maxResults), page=\(pageToken ?? "first")")
+
+        let accountEmail = account.email.lowercased()
+        let token = try await getAccessToken(for: account)
+
+        guard var components = URLComponents(string: "\(baseURL)/users/me/threads") else {
+            throw GmailError.invalidURL
+        }
+        var queryItems = [
+            URLQueryItem(name: "maxResults", value: String(maxResults))
+        ]
+
+        for labelId in labelIds {
+            queryItems.append(URLQueryItem(name: "labelIds", value: labelId))
+        }
+
+        if let query = query {
+            queryItems.append(URLQueryItem(name: "q", value: query))
+        }
+
+        if let pageToken = pageToken {
+            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+        }
+
+        components.queryItems = queryItems
+
+        guard let url = components.url else {
+            throw GmailError.invalidURL
+        }
+
+        let listResponse: ThreadListResponse = try await request(
+            url: url,
+            token: token
+        )
+
+        guard let threadRefs = listResponse.threads, !threadRefs.isEmpty else {
+            logger.info("No threads found")
+            return ([], listResponse.nextPageToken)
+        }
+
+        let emails = try await fetchThreadSummaries(
+            threadRefs: threadRefs,
+            token: token,
+            accountEmail: accountEmail
+        )
+
+        logger.info("Fetched \(emails.count) threads, hasMore=\(listResponse.nextPageToken != nil)")
+        return (emails, listResponse.nextPageToken)
+    }
+
+    /// Fetch summary info for each thread (most recent message metadata)
+    private func fetchThreadSummaries(
+        threadRefs: [ThreadRef],
+        token: String,
+        accountEmail: String
+    ) async throws -> [EmailDTO] {
+        var emails: [EmailDTO] = []
+
+        // Fetch in batches for efficiency
+        for batchStart in stride(from: 0, to: threadRefs.count, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, threadRefs.count)
+            let batch = Array(threadRefs[batchStart..<batchEnd])
+
+            let batchResults = await withTaskGroup(of: Result<EmailDTO, Error>.self) { group in
+                for threadRef in batch {
+                    group.addTask {
+                        do {
+                            // Fetch thread with minimal format for speed
+                            guard let url = URL(string: "\(self.baseURL)/users/me/threads/\(threadRef.id)?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Id&metadataHeaders=Precedence&metadataHeaders=Auto-Submitted") else {
+                                return .failure(GmailError.invalidURL)
+                            }
+
+                            let thread: ThreadDetailResponse = try await self.request(url: url, token: token)
+
+                            // Use the most recent message in the thread
+                            guard let messages = thread.messages, let latestMessage = messages.last else {
+                                return .failure(GmailError.notFound)
+                            }
+
+                            let email = self.parseEmailFromThread(
+                                thread: thread,
+                                latestMessage: latestMessage,
+                                accountEmail: accountEmail
+                            )
+                            return .success(email)
+                        } catch {
+                            return .failure(error)
+                        }
+                    }
+                }
+
+                var results: [EmailDTO] = []
+                for await result in group {
+                    if case .success(let email) = result {
+                        results.append(email)
+                    }
+                }
+                return results
+            }
+
+            emails.append(contentsOf: batchResults)
+        }
+
+        return emails.sorted { $0.date > $1.date }
+    }
+
+    /// Parse email DTO from thread response
+    private nonisolated func parseEmailFromThread(
+        thread: ThreadDetailResponse,
+        latestMessage: MessageResponse,
+        accountEmail: String
+    ) -> EmailDTO {
+        var from = ""
+        var subject = ""
+        var listUnsubscribe: String?
+        var listId: String?
+        var precedence: String?
+        var autoSubmitted: String?
+
+        var date: Date
+        if let internalDate = latestMessage.internalDate,
+           let timestamp = Double(internalDate) {
+            date = Date(timeIntervalSince1970: timestamp / 1000.0)
+        } else {
+            date = Date()
+        }
+
+        for header in latestMessage.payload?.headers ?? [] {
+            switch header.name.lowercased() {
+            case "from": from = header.value
+            case "subject": subject = header.value
+            case "date":
+                if latestMessage.internalDate == nil {
+                    date = parseDate(header.value) ?? date
+                }
+            case "list-unsubscribe": listUnsubscribe = header.value
+            case "list-id": listId = header.value
+            case "precedence": precedence = header.value
+            case "auto-submitted": autoSubmitted = header.value
+            default: break
+            }
+        }
+
+        // Aggregate unread/starred status across all messages in thread
+        let messages = thread.messages ?? []
+        let isUnread = messages.contains { $0.labelIds?.contains("UNREAD") ?? false }
+        let isStarred = messages.contains { $0.labelIds?.contains("STARRED") ?? false }
+        let threadHasAttachments = messages.contains { self.hasAttachments($0.payload) }
+
+        // Combine all label IDs from thread
+        let allLabelIds = Set(messages.flatMap { $0.labelIds ?? [] })
+
+        return EmailDTO(
+            id: latestMessage.id,
+            threadId: thread.id,
+            snippet: cleanPreviewText(latestMessage.snippet ?? ""),
+            subject: subject,
+            from: from,
+            date: date,
+            isUnread: isUnread,
+            isStarred: isStarred,
+            hasAttachments: threadHasAttachments,
+            labelIds: Array(allLabelIds),
+            messagesCount: messages.count,
+            accountEmail: accountEmail,
+            listUnsubscribe: listUnsubscribe,
+            listId: listId,
+            precedence: precedence,
+            autoSubmitted: autoSubmitted
+        )
     }
 
     func fetchEmails(
@@ -1776,6 +2070,20 @@ struct MessageRef: Codable {
     let id: String
     let threadId: String
 }
+
+struct ThreadListResponse: Codable {
+    let threads: [ThreadRef]?
+    let nextPageToken: String?
+    let resultSizeEstimate: Int?
+}
+
+struct ThreadRef: Codable {
+    let id: String
+    let snippet: String?
+    let historyId: String?
+}
+
+typealias ThreadDetailResponse = ThreadResponse
 
 struct MessageResponse: Codable {
     let id: String

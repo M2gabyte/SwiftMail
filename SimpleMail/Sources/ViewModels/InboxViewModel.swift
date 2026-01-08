@@ -18,6 +18,21 @@ extension Notification.Name {
 @MainActor
 @Observable
 final class InboxViewModel {
+    // MARK: - Shared Instance
+
+    /// Singleton instance to prevent multiple ViewModels from being created
+    /// and each starting their own prefetch loops
+    nonisolated(unsafe) private static var _shared: InboxViewModel?
+
+    static var shared: InboxViewModel {
+        if let existing = _shared {
+            return existing
+        }
+        let instance = InboxViewModel()
+        _shared = instance
+        return instance
+    }
+
     // MARK: - State
 
     var emails: [Email] = [] {
@@ -101,9 +116,14 @@ final class InboxViewModel {
     }
 
     // MARK: - Pagination
+    //
+    // Uses Gmail Threads API with pageToken pagination when threading is enabled.
+    // Each page returns unique threads - no deduplication needed, pagination just works.
 
+    /// pageToken from Gmail API for fetching next page
     private var nextPageToken: String?
-    var hasMoreEmails: Bool { nextPageToken?.isEmpty == false }
+
+    var hasMoreEmails: Bool { nextPageToken != nil }
 
     // MARK: - Undo Toast State
 
@@ -144,6 +164,7 @@ final class InboxViewModel {
     @ObservationIgnored private var inboxPreferencesObserver: NSObjectProtocol?
     @ObservationIgnored private let inboxWorker = InboxStoreWorker()
     @ObservationIgnored private var recomputeTask: Task<Void, Never>?
+    @ObservationIgnored private var prefetchTask: Task<Void, Never>?
     @ObservationIgnored private var currentAccountEmail: String?
     @ObservationIgnored private var cachePagingState = CachePagingState()
 
@@ -152,9 +173,6 @@ final class InboxViewModel {
         var isExhausted = false
     }
     private let cachePageSize = 120
-    private var lastFallbackFetchBefore: Date?
-    private var pageTokenStallCount = 0
-    private var fallbackEmptyCount = 0
     private var lastFooterTrigger: Date?
 
     struct PagingDebugState {
@@ -199,7 +217,7 @@ final class InboxViewModel {
         let activeFilterSnapshot = activeFilter
         let accountSnapshot = currentAccountEmail
         let mailboxSnapshot = currentMailbox
-        let nextTokenSnapshot = nextPageToken
+        let pageTokenSnapshot = nextPageToken
         recomputeTask?.cancel()
         recomputeTask = Task { [weak self] in
             guard let self else { return }
@@ -220,7 +238,7 @@ final class InboxViewModel {
                     pinnedTabOption: pinnedSnapshot,
                     activeFilter: activeFilterSnapshot,
                     mailbox: mailboxSnapshot,
-                    nextPageToken: nextTokenSnapshot
+                    nextPageToken: pageTokenSnapshot
                 )
             }
         }
@@ -238,17 +256,13 @@ final class InboxViewModel {
             fetched: fetched,
             appended: appended,
             oldestLoadedDate: cachePagingState.oldestLoadedDate,
-            nextPageTokenPresent: nextPageToken?.isEmpty == false,
-            cacheExhausted: cachePagingState.isExhausted,
+            nextPageTokenPresent: nextPageToken != nil,
+            cacheExhausted: !hasMoreEmails,
             timestamp: Date()
         )
-        logger.info("PagingDebug path=\(path) action=\(action) fetched=\(fetched) appended=\(appended) oldest=\(self.cachePagingState.oldestLoadedDate?.description ?? "nil") nextToken=\(self.nextPageToken?.isEmpty == false) exhausted=\(self.cachePagingState.isExhausted)")
+        logger.info("PagingDebug path=\(path) action=\(action) fetched=\(fetched) appended=\(appended) hasMore=\(self.hasMoreEmails)")
     }
 
-    private func normalizePageToken(_ token: String?) -> String? {
-        guard let token, !token.isEmpty else { return nil }
-        return token
-    }
 
     // MARK: - Init
 
@@ -329,6 +343,10 @@ final class InboxViewModel {
             }
         }
 
+        // Preload cached emails FIRST so we have data to show immediately
+        // This prevents the race where loadEmails() resets empty state before cache loads
+        preloadCachedEmails(mailbox: currentMailbox, accountEmail: currentAccountEmail)
+
         Task {
             await loadEmails()
         }
@@ -354,11 +372,40 @@ final class InboxViewModel {
 
     // MARK: - Load Real Emails
 
-    func loadEmails(showLoading: Bool = true, deferHeavyWork: Bool = false) async {
+    /// Set to true to force a fresh load even if we have data
+    private var forceNextLoad = false
+
+    /// Tracks if a load is currently in progress to prevent concurrent loads
+    private var isLoadInProgress = false
+
+    func loadEmails(showLoading: Bool = true, deferHeavyWork: Bool = false, force: Bool = false) async {
+        // Prevent concurrent loads - if one is already in progress, skip
+        guard !isLoadInProgress else {
+            logger.info("Skipping loadEmails - load already in progress")
+            return
+        }
+
+        // Skip reload if we already have data and are paginating (unless forced)
+        // This prevents unnecessary resets during scrolling
+        // But don't skip if we only have cached data (placeholder token) - we need fresh data
+        let hasCachedDataOnly = nextPageToken == "cached_placeholder"
+        if !force && !forceNextLoad && !emails.isEmpty && hasMoreEmails && !hasCachedDataOnly {
+            logger.info("Skipping loadEmails - already have \(self.emails.count) emails and paginating")
+            return
+        }
+        forceNextLoad = false
+        isLoadInProgress = true
+        defer { isLoadInProgress = false }
+
         if showLoading {
             isLoading = true
         }
+        // Reset pagination state for fresh load
         nextPageToken = nil
+        // Cancel any in-progress prefetch
+        prefetchTask?.cancel()
+        prefetchTask = nil
+
         defer {
             if showLoading {
                 isLoading = false
@@ -368,6 +415,7 @@ final class InboxViewModel {
 
         do {
             if currentMailbox == .allInboxes {
+                // Unified inbox: fetch from all accounts
                 let accounts = AuthService.shared.accounts
                 let query = mailboxQuery(for: currentMailbox)
                 let labelIds = labelIdsForMailbox(currentMailbox)
@@ -378,27 +426,34 @@ final class InboxViewModel {
                 )
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
-                self.nextPageToken = nil
+                // Unified inbox uses date-based pagination, use placeholder to enable it
+                self.nextPageToken = fetchedEmails.count >= 50 ? "unified_date_cursor" : nil
                 updateCachePagingAnchor()
                 EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: false)
                 scheduleSummaryCandidates(for: emails, deferHeavyWork: deferHeavyWork)
             } else {
+                // Single account: simple pageToken pagination (no thread deduping = no starvation)
                 let labelIds = labelIdsForMailbox(currentMailbox)
                 let query = mailboxQuery(for: currentMailbox)
+
                 let (fetchedEmails, pageToken) = try await GmailService.shared.fetchInbox(
                     query: query,
-                    maxResults: 50,
+                    maxResults: 100,
                     labelIds: labelIds
                 )
+
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
-                self.nextPageToken = normalizePageToken(pageToken)
+                self.nextPageToken = pageToken
                 updateCachePagingAnchor()
-                EmailCacheManager.shared.cacheEmails(
-                    fetchedEmails,
-                    isFullInboxFetch: currentMailbox == .inbox && pageToken == nil
-                )
+                EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: currentMailbox == .inbox && pageToken == nil)
                 scheduleSummaryCandidates(for: emails, deferHeavyWork: deferHeavyWork)
+
+                // Aggressive prefetch: keep loading until we have a large buffer
+                // This ensures smooth scrolling like Mail.app
+                if pageToken != nil {
+                    startPrefetch()
+                }
             }
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")
@@ -408,67 +463,82 @@ final class InboxViewModel {
     }
 
     // MARK: - Load More (Pagination)
+    //
+    // Uses Gmail Threads API with pageToken pagination.
+    // Each page returns unique threads - no deduplication needed, pagination just works.
 
     func loadMoreIfNeeded(currentEmail: Email) async {
-        // Check against the last VISIBLE email (after filtering), not the last raw email
-        // This ensures pagination triggers correctly when tab filtering reduces the list
-        guard let lastVisibleId = lastVisibleEmailId,
-              lastVisibleId == currentEmail.id,
-              !isLoadingMore else {
-            return
-        }
+        guard hasMoreEmails, !isLoadingMore else { return }
 
-        syncPagingAnchorWithEmails()
+        // Prefetch threshold: trigger loading when within 15 items of the end
+        // This prevents the "hit bottom, pause, load" pattern
+        let allEmails = viewState.sections.flatMap(\.emails)
+        guard let currentIndex = allEmails.firstIndex(where: { $0.id == currentEmail.id }) else { return }
 
-        if await loadMoreFromCacheIfAvailable() {
-            return
-        }
+        let remainingItems = allEmails.count - currentIndex - 1
+        let prefetchThreshold = 15
 
-        if hasMoreEmails {
-            let didAppend = await loadMoreEmails()
-            if didAppend {
-                return
-            }
-        }
-
-        if let oldestDate = cachePagingState.oldestLoadedDate {
-            _ = await loadMoreFromNetworkByDate(before: oldestDate)
+        if remainingItems <= prefetchThreshold {
+            await loadMoreEmails()
         }
     }
 
     func loadMoreFromFooter() async {
-        if let last = lastFooterTrigger, Date().timeIntervalSince(last) < 1.0 {
-            return
-        }
-        lastFooterTrigger = Date()
-        guard !isLoadingMore else { return }
-        syncPagingAnchorWithEmails()
+        guard hasMoreEmails, !isLoadingMore else { return }
+        // When user reaches footer, load more and continue prefetching
+        startPrefetch()
+    }
 
-        if await loadMoreFromCacheIfAvailable() {
-            return
-        }
+    /// Starts a single prefetch task, cancelling any existing one
+    private func startPrefetch() {
+        // Cancel any existing prefetch to avoid concurrent API calls
+        prefetchTask?.cancel()
+        prefetchTask = Task { await prefetchUntilBuffer() }
+    }
 
-        if hasMoreEmails {
-            let didAppend = await loadMoreEmails()
-            if didAppend {
-                return
+    /// Keeps loading emails in background until we have a substantial buffer
+    /// This prevents the "scroll to bottom, pause, load more" pattern
+    /// Note: GmailService handles rate limiting, so we don't need to add delays here
+    private func prefetchUntilBuffer() async {
+        let targetBuffer = 500 // Keep loading until we have this many emails
+        var consecutiveErrors = 0
+        let maxErrors = 5
+
+        while hasMoreEmails && emails.count < targetBuffer && !Task.isCancelled {
+            let loaded = await loadMoreEmails()
+
+            if !loaded {
+                consecutiveErrors += 1
+                if consecutiveErrors >= maxErrors {
+                    logger.warning("Prefetch stopping after \(maxErrors) consecutive errors")
+                    break
+                }
+                // Brief pause before retry
+                try? await Task.sleep(for: .milliseconds(500))
+                continue
             }
+
+            // Success - reset error count
+            // No delay needed here - GmailService handles rate limiting
+            consecutiveErrors = 0
         }
 
-        if let oldestDate = cachePagingState.oldestLoadedDate {
-            _ = await loadMoreFromNetworkByDate(before: oldestDate)
+        if !Task.isCancelled {
+            logger.info("Prefetch complete: \(self.emails.count) emails loaded")
         }
     }
 
     @discardableResult
     func loadMoreEmails() async -> Bool {
-        if currentMailbox == .allInboxes {
-            await loadMoreUnifiedByDate()
+        guard !isLoadingMore else { return false }
+        guard let pageToken = nextPageToken else {
+            updatePagingDebug(path: "pageToken", action: "no-token")
             return false
         }
 
-        guard let token = normalizePageToken(nextPageToken), !isLoadingMore else { return false }
-        var pageToken = token
+        if currentMailbox == .allInboxes {
+            return await loadMoreUnifiedByDate()
+        }
 
         isLoadingMore = true
         defer { isLoadingMore = false }
@@ -477,79 +547,38 @@ final class InboxViewModel {
         do {
             let labelIds = labelIdsForMailbox(currentMailbox)
             let query = mailboxQuery(for: currentMailbox)
-            var accumulatedOldest: Date?
-            var uniqueNewEmails: [Email] = []
-            var fetched: [EmailDTO] = []
-            var attempts = 0
 
-            while attempts < 4, !pageToken.isEmpty, uniqueNewEmails.isEmpty {
-                attempts += 1
-                let (moreEmails, newPageToken) = try await GmailService.shared.fetchInbox(
-                    query: query,
-                    maxResults: 50,
-                    pageToken: pageToken,
-                    labelIds: labelIds
-                )
-                fetched = moreEmails
-                updatePagingDebug(path: "pageToken", action: "fetched", fetched: moreEmails.count)
-                if let oldest = moreEmails.map(\.date).min() {
-                    accumulatedOldest = min(accumulatedOldest ?? oldest, oldest)
-                }
+            let (fetchedEmails, newPageToken) = try await GmailService.shared.fetchInbox(
+                query: query,
+                maxResults: 100,
+                pageToken: pageToken,
+                labelIds: labelIds
+            )
 
-                let moreEmailModels = moreEmails.map(Email.init(dto:))
-                if conversationThreading {
-                    let existingThreadIds = Set(emails.map { $0.threadId })
-                    uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
-                } else {
-                    let existingIds = Set(emails.map { $0.id })
-                    uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
-                }
+            self.nextPageToken = newPageToken
+            updatePagingDebug(path: "pageToken", action: "fetched", fetched: fetchedEmails.count)
 
-                nextPageToken = normalizePageToken(newPageToken)
-                pageToken = nextPageToken ?? ""
-
-                if !moreEmails.isEmpty {
-                    EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
-                }
-
-                if moreEmails.isEmpty || newPageToken == nil {
-                    break
-                }
+            guard !fetchedEmails.isEmpty else {
+                updatePagingDebug(path: "pageToken", action: "empty")
+                return false
             }
 
-            if !uniqueNewEmails.isEmpty {
-                emails.append(contentsOf: uniqueNewEmails)
-                cachePagingState.oldestLoadedDate = emails.map(\.date).min()
-                cachePagingState.isExhausted = false
-                updateFilterCounts()
-                logger.info("Loaded \(uniqueNewEmails.count) more emails")
-                pageTokenStallCount = 0
-                updatePagingDebug(path: "pageToken", action: "appended", fetched: fetched.count, appended: uniqueNewEmails.count)
-                return true
-            }
+            EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: false)
 
-            if let accumulatedOldest {
-                cachePagingState.oldestLoadedDate = accumulatedOldest
-                lastFallbackFetchBefore = accumulatedOldest
-            }
-            pageTokenStallCount += 1
-            if pageTokenStallCount >= 2 {
-                nextPageToken = nil
-                updatePagingDebug(path: "pageToken", action: "stall-reset", fetched: fetched.count)
-            } else {
-                updatePagingDebug(path: "pageToken", action: "duplicates", fetched: fetched.count)
-            }
-            if let oldestDate = cachePagingState.oldestLoadedDate {
-                // Kick off date fallback without waiting for another onAppear trigger.
-                Task { [weak self] in
-                    guard let self else { return }
-                    _ = await self.loadMoreFromNetworkByDate(before: oldestDate)
-                }
-                updatePagingDebug(path: "pageToken", action: "handoff-to-date", fetched: fetched.count)
-            }
-            return false
+            let fetchedModels = fetchedEmails.map(Email.init(dto:))
+            var allEmails = emails
+            allEmails.append(contentsOf: fetchedModels)
+            emails = dedupeByThread(allEmails)
+
+            cachePagingState.oldestLoadedDate = emails.map(\.date).min()
+            updateFilterCounts()
+
+            logger.info("Loaded \(fetchedModels.count) more messages")
+            updatePagingDebug(path: "pageToken", action: "done", fetched: fetchedEmails.count, appended: fetchedModels.count)
+            return true
+
         } catch {
-            logger.error("Failed to load more emails: \(error.localizedDescription)")
+            logger.error("Failed to load more: \(error.localizedDescription)")
             self.error = error
             updatePagingDebug(path: "pageToken", action: "error")
             return false
@@ -580,23 +609,21 @@ final class InboxViewModel {
     }
 
     private func dedupeByThread(_ emails: [Email]) -> [Email] {
-        // When threading is off, don't dedupe - show all messages individually
-        guard conversationThreading else {
-            return emails
-        }
+        // Don't dedupe for inbox list - show all messages for smooth pagination
+        // Threading/grouping happens in the detail view when you tap a thread
+        let sorted = emails.sorted { $0.date > $1.date }
 
-        var seen = Set<String>()
-        var deduped: [Email] = []
-        for email in emails {
-            let accountKey = email.accountEmail?.lowercased() ?? "unknown"
-            let key = "\(accountKey)::\(email.threadId)"
-            if seen.contains(key) {
+        // Remove exact duplicates (same message ID) but keep different messages from same thread
+        var seenIds = Set<String>()
+        var result: [Email] = []
+        for email in sorted {
+            if seenIds.contains(email.id) {
                 continue
             }
-            seen.insert(key)
-            deduped.append(email)
+            seenIds.insert(email.id)
+            result.append(email)
         }
-        return deduped
+        return result
     }
 
     // MARK: - Filter Counts
@@ -622,7 +649,7 @@ final class InboxViewModel {
     // MARK: - Actions
 
     func refresh() async {
-        await loadEmails()
+        await loadEmails(force: true)
     }
 
     func preloadCachedEmails(mailbox: Mailbox, accountEmail: String?) {
@@ -634,6 +661,8 @@ final class InboxViewModel {
         )
         guard !cached.isEmpty else { return }
         emails = dedupeByThread(cached)
+        // Set a placeholder pageToken to enable pagination until first real fetch
+        nextPageToken = "cached_placeholder"
         updateCachePagingAnchor()
         updateFilterCounts()
     }
@@ -641,238 +670,86 @@ final class InboxViewModel {
     private func updateCachePagingAnchor() {
         cachePagingState.oldestLoadedDate = emails.map(\.date).min()
         cachePagingState.isExhausted = false
-        lastFallbackFetchBefore = nil
-        fallbackEmptyCount = 0
         updatePagingDebug(path: "anchor", action: "reset")
     }
 
-    private func syncPagingAnchorWithEmails() {
-        guard let actualOldest = emails.map(\.date).min() else { return }
-        if cachePagingState.oldestLoadedDate != actualOldest {
-            cachePagingState.oldestLoadedDate = actualOldest
-            lastFallbackFetchBefore = nil
-            cachePagingState.isExhausted = false
-            updatePagingDebug(path: "anchor", action: "sync")
-        } else if hasMoreEmails && cachePagingState.isExhausted {
-            cachePagingState.isExhausted = false
-            updatePagingDebug(path: "anchor", action: "unexhaust")
-        }
-    }
-
-    private func loadMoreFromCacheIfAvailable() async -> Bool {
-        if cachePagingState.isExhausted {
-            updatePagingDebug(path: "cache", action: "exhausted")
-            return false
-        }
-        updatePagingDebug(path: "cache", action: "start")
-        let accountEmail = currentMailbox == .allInboxes
-            ? nil
-            : currentAccountEmail?.lowercased()
-        let cached = EmailCacheManager.shared.loadCachedEmailsPage(
-            mailbox: currentMailbox,
-            limit: cachePageSize,
-            accountEmail: accountEmail,
-            beforeDate: cachePagingState.oldestLoadedDate
-        )
-        guard !cached.isEmpty else {
-            cachePagingState.isExhausted = true
-            updatePagingDebug(path: "cache", action: "empty")
-            return false
-        }
-
-        let uniqueNewEmails: [Email]
-        if conversationThreading {
-            let existingThreadIds = Set(emails.map { $0.threadId })
-            uniqueNewEmails = cached.filter { !existingThreadIds.contains($0.threadId) }
-        } else {
-            let existingIds = Set(emails.map { $0.id })
-            uniqueNewEmails = cached.filter { !existingIds.contains($0.id) }
-        }
-
-        if uniqueNewEmails.isEmpty {
-            cachePagingState.oldestLoadedDate = cached.map(\.date).min()
-            updatePagingDebug(path: "cache", action: "duplicates", fetched: cached.count)
-            return false
-        }
-
-        emails.append(contentsOf: uniqueNewEmails)
-        cachePagingState.oldestLoadedDate = emails.map(\.date).min()
-        updateFilterCounts()
-        fallbackEmptyCount = 0
-        updatePagingDebug(path: "cache", action: "appended", fetched: cached.count, appended: uniqueNewEmails.count)
-        return true
-    }
-
-    private func loadMoreFromNetworkByDate(before date: Date) async -> Bool {
-        if lastFallbackFetchBefore == date {
-            updatePagingDebug(path: "date", action: "same-date-skip")
-            return false
-        }
-        lastFallbackFetchBefore = date
-        updatePagingDebug(path: "date", action: "start")
-
-        if currentMailbox == .allInboxes {
-            await loadMoreUnifiedByDate()
-            return true
-        }
-
-        let dateQuery = formatBeforeQuery(date)
-        let mailboxQuery = mailboxQuery(for: currentMailbox)
-        let combinedQuery: String? = {
-            guard let mailboxQuery, !mailboxQuery.isEmpty else { return dateQuery }
-            return "\(mailboxQuery) \(dateQuery)"
-        }()
-
-        guard !isLoadingMore else { return false }
+    /// Unified inbox pagination - fetches from all accounts with date-based query
+    @discardableResult
+    private func loadMoreUnifiedByDate() async -> Bool {
         isLoadingMore = true
         defer { isLoadingMore = false }
 
-        do {
-            let labelIds = labelIdsForMailbox(currentMailbox)
-            let (moreEmails, _) = try await GmailService.shared.fetchInbox(
-                query: combinedQuery,
-                maxResults: 50,
-                labelIds: labelIds
-            )
-            guard !moreEmails.isEmpty else {
-                cachePagingState.isExhausted = true
-                updatePagingDebug(path: "date", action: "empty")
-                return false
+        let accounts = AuthService.shared.accounts
+        guard !accounts.isEmpty else { return false }
+
+        let previousCount = emails.count
+        var currentCursor = emails.map(\.date).min() ?? Date()
+
+        // Keep fetching until we have new visible content or exhausted
+        var attempts = 0
+        while attempts < 10 {
+            attempts += 1
+            updatePagingDebug(path: "unified-date", action: "fetch-\(attempts)")
+
+            let dateQuery = formatBeforeQuery(currentCursor)
+
+            var fetched: [EmailDTO] = []
+            await withTaskGroup(of: [EmailDTO].self) { group in
+                for account in accounts {
+                    group.addTask {
+                        do {
+                            let (emails, _) = try await GmailService.shared.fetchInbox(
+                                for: account,
+                                query: dateQuery,
+                                maxResults: 100,
+                                labelIds: ["INBOX"]
+                            )
+                            return emails
+                        } catch {
+                            logger.error("Unified inbox backfill failed for \(account.email): \(error.localizedDescription)")
+                            return []
+                        }
+                    }
+                }
+                for await emails in group {
+                    fetched.append(contentsOf: emails)
+                }
             }
-            let moreEmailModels = moreEmails.map(Email.init(dto:))
-            let uniqueNewEmails: [Email]
-            if conversationThreading {
-                let existingThreadIds = Set(emails.map { $0.threadId })
-                uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
-            } else {
-                let existingIds = Set(emails.map { $0.id })
-                uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
+
+            guard !fetched.isEmpty else {
+                nextPageToken = nil
+                updatePagingDebug(path: "unified-date", action: "exhausted")
+                break
             }
-            let fetchedOldest = moreEmails.map(\.date).min()
-            if !uniqueNewEmails.isEmpty {
-                emails.append(contentsOf: uniqueNewEmails)
+
+            // Cache and append
+            EmailCacheManager.shared.cacheEmails(fetched, isFullInboxFetch: false)
+            let fetchedModels = fetched.map(Email.init(dto:))
+            var allEmails = emails
+            allEmails.append(contentsOf: fetchedModels)
+            emails = dedupeByThread(allEmails)
+
+            // Update cursor for next iteration
+            if let oldestFetched = fetched.map(\.date).min() {
+                currentCursor = oldestFetched
+            }
+
+            // Did we get new visible threads?
+            if emails.count > previousCount {
                 cachePagingState.oldestLoadedDate = emails.map(\.date).min()
-                EmailCacheManager.shared.cacheEmails(moreEmails, isFullInboxFetch: false)
                 updateFilterCounts()
-                fallbackEmptyCount = 0
-                updatePagingDebug(path: "date", action: "appended", fetched: moreEmails.count, appended: uniqueNewEmails.count)
+                let newCount = emails.count - previousCount
+                logger.info("Unified: Loaded \(newCount) new threads after \(attempts) fetches")
+                updatePagingDebug(path: "unified-date", action: "done", fetched: attempts * 50, appended: newCount)
                 return true
             }
 
-            if let fetchedOldest, fetchedOldest < date {
-                cachePagingState.oldestLoadedDate = fetchedOldest
-                lastFallbackFetchBefore = fetchedOldest
-                fallbackEmptyCount = 0
-                updatePagingDebug(path: "date", action: "duplicates-advance", fetched: moreEmails.count)
-            } else {
-                fallbackEmptyCount += 1
-                if fallbackEmptyCount <= 3 {
-                    let calendar = Calendar.current
-                    if let stepped = calendar.date(byAdding: .day, value: -1, to: date) {
-                        cachePagingState.oldestLoadedDate = calendar.startOfDay(for: stepped)
-                        lastFallbackFetchBefore = cachePagingState.oldestLoadedDate
-                        updatePagingDebug(path: "date", action: "step-back", fetched: moreEmails.count)
-                    }
-                } else {
-                    cachePagingState.isExhausted = true
-                    updatePagingDebug(path: "date", action: "exhausted", fetched: moreEmails.count)
-                }
-            }
-            return false
-        } catch {
-            logger.error("Failed to load more emails by date: \(error.localizedDescription)")
-            self.error = error
-            updatePagingDebug(path: "date", action: "error")
-            return false
-        }
-    }
-
-    private func loadMoreUnifiedByDate() async {
-        guard !isLoadingMore else { return }
-        guard let oldestDate = cachePagingState.oldestLoadedDate else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-        updatePagingDebug(path: "unified-date", action: "start")
-
-        let dateQuery = formatBeforeQuery(oldestDate)
-        let mailboxQuery = mailboxQuery(for: currentMailbox)
-        let combinedQuery: String? = {
-            guard let mailboxQuery, !mailboxQuery.isEmpty else { return dateQuery }
-            return "\(mailboxQuery) \(dateQuery)"
-        }()
-
-        let accounts = AuthService.shared.accounts
-        guard !accounts.isEmpty else { return }
-
-        var fetched: [EmailDTO] = []
-        await withTaskGroup(of: [EmailDTO].self) { group in
-            for account in accounts {
-                group.addTask {
-                    do {
-                        let (emails, _) = try await GmailService.shared.fetchInbox(
-                            for: account,
-                            query: combinedQuery,
-                            maxResults: 50,
-                            labelIds: ["INBOX"]
-                        )
-                        return emails
-                    } catch {
-                        logger.error("Unified inbox backfill failed for \(account.email): \(error.localizedDescription)")
-                        return []
-                    }
-                }
-            }
-            for await emails in group {
-                fetched.append(contentsOf: emails)
-            }
+            // Continue fetching older...
         }
 
-        guard !fetched.isEmpty else {
-            cachePagingState.isExhausted = true
-            updatePagingDebug(path: "unified-date", action: "empty")
-            return
-        }
-
-        let moreEmailModels = fetched.map(Email.init(dto:))
-        let uniqueNewEmails: [Email]
-        if conversationThreading {
-            let existingThreadIds = Set(emails.map { $0.threadId })
-            uniqueNewEmails = moreEmailModels.filter { !existingThreadIds.contains($0.threadId) }
-        } else {
-            let existingIds = Set(emails.map { $0.id })
-            uniqueNewEmails = moreEmailModels.filter { !existingIds.contains($0.id) }
-        }
-
-        let fetchedOldest = fetched.map(\.date).min()
-        if !uniqueNewEmails.isEmpty {
-            emails.append(contentsOf: uniqueNewEmails)
-            cachePagingState.oldestLoadedDate = emails.map(\.date).min()
-            EmailCacheManager.shared.cacheEmails(fetched, isFullInboxFetch: false)
-            updateFilterCounts()
-            fallbackEmptyCount = 0
-            updatePagingDebug(path: "unified-date", action: "appended", fetched: fetched.count, appended: uniqueNewEmails.count)
-            return
-        }
-
-        if let fetchedOldest, fetchedOldest < oldestDate {
-            cachePagingState.oldestLoadedDate = fetchedOldest
-            lastFallbackFetchBefore = fetchedOldest
-            fallbackEmptyCount = 0
-            updatePagingDebug(path: "unified-date", action: "duplicates-advance", fetched: fetched.count)
-        } else {
-            fallbackEmptyCount += 1
-            if fallbackEmptyCount <= 3 {
-                let calendar = Calendar.current
-                if let stepped = calendar.date(byAdding: .day, value: -1, to: oldestDate) {
-                    cachePagingState.oldestLoadedDate = calendar.startOfDay(for: stepped)
-                    lastFallbackFetchBefore = cachePagingState.oldestLoadedDate
-                    updatePagingDebug(path: "unified-date", action: "step-back", fetched: fetched.count)
-                }
-            } else {
-                cachePagingState.isExhausted = true
-                updatePagingDebug(path: "unified-date", action: "exhausted", fetched: fetched.count)
-            }
-        }
+        cachePagingState.oldestLoadedDate = emails.map(\.date).min()
+        updateFilterCounts()
+        return emails.count > previousCount
     }
 
     private func formatBeforeQuery(_ date: Date) -> String {
@@ -902,7 +779,7 @@ final class InboxViewModel {
             ) {
                 emails = snapshot.emails
                 viewState = snapshot.viewState
-                nextPageToken = normalizePageToken(snapshot.nextPageToken)
+                nextPageToken = snapshot.nextPageToken
                 updateCachePagingAnchor()
                 return
             }
@@ -915,7 +792,8 @@ final class InboxViewModel {
         )
         if !cached.isEmpty {
             emails = dedupeByThread(cached)
-            nextPageToken = nil
+            // Set placeholder to enable pagination until real fetch
+            nextPageToken = "cached_placeholder"
             updateCachePagingAnchor()
         }
     }
@@ -940,7 +818,7 @@ final class InboxViewModel {
             activeFilter: activeFilter,
             emails: emails,
             viewState: viewState,
-            nextPageToken: normalizePageToken(nextPageToken)
+            nextPageToken: nextPageToken
         )
     }
 
@@ -1240,7 +1118,7 @@ final class InboxViewModel {
                         let (emails, _) = try await GmailService.shared.fetchInbox(
                             for: account,
                             query: query,
-                            maxResults: 50,
+                            maxResults: 100,
                             labelIds: labelIds
                         )
                         return emails
