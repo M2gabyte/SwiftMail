@@ -353,6 +353,7 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
         clearAllCaches()
         Task { @MainActor in
             AccountSnapshotStore.shared.clear(accountEmail: nil)
+            InboxViewModel.shared.reset()
         }
         NotificationCenter.default.post(name: .accountDidChange, object: nil)
     }

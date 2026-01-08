@@ -33,6 +33,32 @@ final class InboxViewModel {
         return instance
     }
 
+    /// Reset all state - call on sign out to clear cached data
+    func reset() {
+        emails = []
+        viewState = InboxViewState()
+        currentTab = .all
+        activeFilter = nil
+        currentMailbox = .inbox
+        isLoading = false
+        isLoadingMore = false
+        error = nil
+        selectedEmail = nil
+        showingEmailDetail = false
+        searchResults = []
+        isSearchActive = false
+        isSearching = false
+        currentSearchQuery = ""
+        localSearchResults = []
+        nextPageToken = nil
+        prefetchTask?.cancel()
+        prefetchTask = nil
+        isLoadInProgress = false
+        hasCompletedInitialLoad = false
+        currentAccountEmail = nil
+        logger.info("InboxViewModel reset")
+    }
+
     // MARK: - State
 
     var emails: [Email] = [] {
@@ -58,6 +84,7 @@ final class InboxViewModel {
     var currentMailbox: Mailbox = .inbox
     var isLoading = false
     var isLoadingMore = false
+    var hasCompletedInitialLoad = false
     var error: Error?
 
     // Threading control - when false, shows all messages individually
@@ -395,7 +422,6 @@ final class InboxViewModel {
         }
         forceNextLoad = false
         isLoadInProgress = true
-        defer { isLoadInProgress = false }
 
         if showLoading {
             isLoading = true
@@ -410,6 +436,8 @@ final class InboxViewModel {
             if showLoading {
                 isLoading = false
             }
+            hasCompletedInitialLoad = true
+            isLoadInProgress = false
             updateFilterCounts()
         }
 
@@ -458,7 +486,17 @@ final class InboxViewModel {
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")
             self.error = error
-            // Do NOT load mock data - show empty state with error instead
+
+            // Check if this is an auth error - trigger sign out if so
+            if let authError = error as? AuthError {
+                switch authError {
+                case .tokenRefreshFailed, .invalidRefreshToken, .refreshTokenRevoked:
+                    logger.warning("Auth token expired - signing out")
+                    AuthService.shared.signOut()
+                default:
+                    break
+                }
+            }
         }
     }
 

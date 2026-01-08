@@ -43,6 +43,7 @@ struct SettingsView: View {
                 Button("Sign Out", role: .destructive) {
                     Task {
                         await viewModel.signOut()
+                        dismiss()
                     }
                 }
             } message: {
@@ -789,6 +790,7 @@ class SettingsViewModel: ObservableObject {
 
     func signOut() async {
         EmailCacheManager.shared.clearCache(accountEmail: accountEmail)
+        InboxViewModel.shared.reset()
         AuthService.shared.signOut()
     }
 }

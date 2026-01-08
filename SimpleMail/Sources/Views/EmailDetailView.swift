@@ -33,6 +33,13 @@ struct EmailDetailView: View {
                 if viewModel.isLoading {
                     ProgressView()
                         .padding(40)
+                } else if let error = viewModel.error {
+                    ContentUnavailableView {
+                        Label("Failed to Load", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error.localizedDescription)
+                    }
+                    .padding(40)
                 } else {
                     // AI Summary at thread level (for long emails)
                     // Check plain text length, not HTML length, to avoid false negatives
@@ -85,6 +92,7 @@ struct EmailDetailView: View {
                 }
             }
         }
+        .background(Color(.systemGroupedBackground))
         .accessibilityIdentifier("emailDetailView")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
