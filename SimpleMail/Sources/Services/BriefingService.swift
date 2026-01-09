@@ -13,6 +13,42 @@ final class BriefingService {
     private let snapshotKey = "briefingSnapshot"
     private let stateKey = "briefingUserState"
     private let calendar = Calendar.current
+    private let noReplyPatterns: [NSRegularExpression] = {
+        let patterns = [
+            "noreply", "no-reply", "donotreply", "do-not-reply",
+            "notifications?@", "notify@", "info@", "marketing@",
+            "newsletter@", "updates@", "mailer-daemon", "postmaster"
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    }()
+
+    private let askPatterns: [NSRegularExpression] = {
+        let patterns = [
+            "can\\s+you", "could\\s+you", "would\\s+you", "please\\s+",
+            "let\\s+me\\s+know", "need\\s+you\\s+to", "request",
+            "confirm", "send\\s+me", "share", "follow\\s+up"
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    }()
+
+    private let deadlinePatterns: [NSRegularExpression] = {
+        let patterns = [
+            "\\btoday\\b", "\\btomorrow\\b", "\\beod\\b",
+            "\\bend\\s+of\\s+day\\b", "\\bdue\\b", "\\bdeadline\\b",
+            "\\bby\\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b",
+            "\\bby\\s+\\d{1,2}/\\d{1,2}\\b"
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    }()
+
+    private let moneyPatterns: [NSRegularExpression] = {
+        let patterns = [
+            "\\binvoice\\b", "\\bpayment\\b", "\\bcharged\\b", "\\bcharge\\b",
+            "\\brefund\\b", "\\breceipt\\b", "\\bsubscription\\b", "\\brenewal\\b",
+            "\\baction\\s+required\\b", "\\bpay\\b"
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    }()
 
     private init() {}
 
@@ -51,7 +87,11 @@ final class BriefingService {
 
         let hits = shortlist.map { $0.hit }
         let extraction = await extractItems(from: hits)
-        let cleaned = filterAndNormalize(items: extraction.items, hits: hits)
+        var cleaned = filterAndNormalize(items: extraction.items, hits: hits)
+        if cleaned.isEmpty {
+            let fallback = deterministicFallback(from: hits)
+            cleaned = filterAndNormalize(items: fallback, hits: hits)
+        }
 
         let ranked = rank(items: cleaned, hits: hits)
         let debugInfo = BriefingDebugInfo(
@@ -101,8 +141,18 @@ final class BriefingService {
 
         let sorted = byThread.values.sorted { $0.date > $1.date }
         let candidates = sorted.prefix(200).compactMap { email -> ThreadCandidate? in
+            let senderEmail = EmailParser.extractSenderEmail(from: email.from).lowercased()
+            if isNoReply(senderEmail) { return nil }
+            if EmailFilters.isBulk(email) { return nil }
+            if !EmailFilters.looksLikeHumanSender(email) { return nil }
+
             let snippet = email.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
             let excerpt = fetchExcerptIfNeeded(messageId: email.id, fallbackSnippet: snippet)
+            let evidenceText = ((snippet + " " + (excerpt ?? "")).trimmingCharacters(in: .whitespacesAndNewlines))
+            if !matchesAny(evidenceText, patterns: askPatterns + deadlinePatterns + moneyPatterns) {
+                return nil
+            }
+
             let hit = BriefingThreadHit(
                 threadId: email.threadId,
                 messageId: email.id,
@@ -121,6 +171,9 @@ final class BriefingService {
             if email.labelIds.contains("IMPORTANT") { score += 4 }
             if email.labelIds.contains("CATEGORY_PERSONAL") { score += 3 }
             if email.isStarred { score += 2 }
+            if matchesAny(evidenceText, patterns: deadlinePatterns) { score += 3 }
+            if matchesAny(evidenceText, patterns: askPatterns) { score += 2 }
+            if matchesAny(evidenceText, patterns: moneyPatterns) { score += 2 }
             let ageHours = max(1.0, Date().timeIntervalSince(email.date) / 3600.0)
             score += max(0.0, 6.0 - log2(ageHours))
 
@@ -241,6 +294,111 @@ final class BriefingService {
         Thread hits JSON (fields: threadId, messageId, from, subject, snippet, excerpt):
         \(data)
         """
+    }
+
+    // MARK: - Deterministic fallback (no AI)
+
+    private func deterministicFallback(from hits: [BriefingThreadHit]) -> [BriefingItem] {
+        var items: [BriefingItem] = []
+        for hit in hits {
+            let evidenceText = (hit.snippet + " " + (hit.excerpt ?? "")).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !evidenceText.isEmpty else { continue }
+
+            if let quote = extractQuote(from: evidenceText, patterns: deadlinePatterns) {
+                let item = BriefingItem(
+                    id: "",
+                    type: .deadline,
+                    title: "Handle: \(shortTitle(from: hit.subject))",
+                    whyQuote: quote,
+                    sourceThreadId: hit.threadId,
+                    sourceMessageIds: [hit.messageId],
+                    confidence: .medium,
+                    dueAt: inferredDueDate(from: quote)
+                )
+                items.append(item)
+                continue
+            }
+
+            if let quote = extractQuote(from: evidenceText, patterns: askPatterns) {
+                let sender = EmailParser.extractSenderName(from: hit.from)
+                let item = BriefingItem(
+                    id: "",
+                    type: .oweReply,
+                    title: "Reply to \(sender): \(shortTitle(from: hit.subject))",
+                    whyQuote: quote,
+                    sourceThreadId: hit.threadId,
+                    sourceMessageIds: [hit.messageId],
+                    confidence: .medium,
+                    dueAt: inferredDueDate(from: quote)
+                )
+                items.append(item)
+                continue
+            }
+
+            if let quote = extractQuote(from: evidenceText, patterns: moneyPatterns) {
+                let item = BriefingItem(
+                    id: "",
+                    type: .money,
+                    title: "Review payment: \(shortTitle(from: hit.subject))",
+                    whyQuote: quote,
+                    sourceThreadId: hit.threadId,
+                    sourceMessageIds: [hit.messageId],
+                    confidence: .medium,
+                    dueAt: nil
+                )
+                items.append(item)
+                continue
+            }
+        }
+
+        return items
+    }
+
+    private func shortTitle(from subject: String) -> String {
+        let trimmed = subject.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "No subject" }
+        return String(trimmed.prefix(40))
+    }
+
+    private func isNoReply(_ email: String) -> Bool {
+        matchesAny(email, patterns: noReplyPatterns)
+    }
+
+    private func matchesAny(_ text: String, patterns: [NSRegularExpression]) -> Bool {
+        let range = NSRange(text.startIndex..., in: text)
+        return patterns.contains { $0.firstMatch(in: text, options: [], range: range) != nil }
+    }
+
+    private func extractQuote(from text: String, patterns: [NSRegularExpression]) -> String? {
+        let range = NSRange(text.startIndex..., in: text)
+        for pattern in patterns {
+            if let match = pattern.firstMatch(in: text, options: [], range: range),
+               let matchRange = Range(match.range, in: text) {
+                let snippet = extractSentence(from: text, around: matchRange)
+                return String(snippet.prefix(140))
+            }
+        }
+        return nil
+    }
+
+    private func extractSentence(from text: String, around range: Range<String.Index>) -> String {
+        let start = text[..<range.lowerBound].lastIndex(of: ".") ?? text.startIndex
+        let end = text[range.upperBound...].firstIndex(of: ".") ?? text.endIndex
+        let slice = text[start..<end]
+        return slice.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func inferredDueDate(from quote: String) -> String? {
+        let lower = quote.lowercased()
+        if lower.contains("tomorrow") {
+            if let date = calendar.date(byAdding: .day, value: 1, to: Date()) {
+                return ISO8601DateFormatter().string(from: date)
+            }
+        }
+        if lower.contains("today") || lower.contains("eod") || lower.contains("end of day") {
+            return ISO8601DateFormatter().string(from: Date())
+        }
+        return nil
     }
 
     private func extractJSON(from text: String) -> String? {
