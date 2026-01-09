@@ -156,12 +156,11 @@ actor SummaryQueue {
         return score
     }
 
+    @MainActor
     private func shouldPrecompute(for accountEmail: String?) -> Bool {
-        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
-              let settings = try? JSONDecoder().decode(AppSettings.self, from: data) else {
-            return true
-        }
-        return settings.precomputeSummaries
+        return AccountDefaults.data(for: "appSettings", accountEmail: accountEmail)
+            .flatMap { try? JSONDecoder().decode(AppSettings.self, from: $0) }
+            .map { $0.precomputeSummaries } ?? true
     }
 
     private func canRunNow() async -> Bool {
