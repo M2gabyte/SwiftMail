@@ -27,13 +27,13 @@ final class StartupCoordinator {
 
         // Stage 2: after first frame (defer heavy work)
         Task.detached(priority: .utility) { [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(2.5))
             guard let self else { return }
             await MainActor.run {
                 self.prewarmWebKit()
             }
             if isAuthenticated {
-                await self.preloadContactsIfNeeded()
+                self.scheduleContactsPreloadIfNeeded(delaySeconds: 5)
             }
         }
 
@@ -49,16 +49,19 @@ final class StartupCoordinator {
 
     func handleAuthChanged(isAuthenticated: Bool) {
         if isAuthenticated {
-            Task { @MainActor in
-                await preloadContactsIfNeeded()
-            }
+            scheduleContactsPreloadIfNeeded(delaySeconds: 5)
         }
     }
 
-    private func preloadContactsIfNeeded() async {
+    private func scheduleContactsPreloadIfNeeded(delaySeconds: Double) {
         guard !didPreloadContacts else { return }
         didPreloadContacts = true
-        await PeopleService.shared.preloadContacts()
+        Task.detached(priority: .background) {
+            if delaySeconds > 0 {
+                try? await Task.sleep(for: .seconds(delaySeconds))
+            }
+            await PeopleService.shared.preloadContacts()
+        }
     }
 
     /// Pre-warm WebKit by creating a WKWebView and loading minimal content.
