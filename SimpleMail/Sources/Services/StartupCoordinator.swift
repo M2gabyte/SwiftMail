@@ -11,6 +11,7 @@ final class StartupCoordinator {
 
     private var didStart = false
     private var didPreloadContacts = false
+    private var didPrewarmWebKit = false
     private var webKitWarmer: WKWebView?  // Keep alive briefly to complete warmup
 
     private init() {}
@@ -39,6 +40,12 @@ final class StartupCoordinator {
 
     func handleAuthChanged(isAuthenticated: Bool) {
         if isAuthenticated { }
+    }
+
+    func prewarmWebKitIfNeeded() {
+        guard !didPrewarmWebKit else { return }
+        didPrewarmWebKit = true
+        prewarmWebKit()
     }
 
     private func scheduleContactsPreloadIfNeeded(delaySeconds: Double) {

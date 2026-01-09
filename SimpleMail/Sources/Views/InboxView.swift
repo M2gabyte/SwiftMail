@@ -38,6 +38,7 @@ struct InboxView: View {
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
+    @State private var didScheduleWebKitWarmup = false
     @State private var inboxScope: InboxLocationScope = .unified
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
@@ -248,6 +249,16 @@ struct InboxView: View {
             selectedThreadIds = selectedThreadIds.intersection(valid)
             if selectedThreadIds.isEmpty && isSelectionMode {
                 exitSelectionMode()
+            }
+        })
+        view = AnyView(view.onChange(of: viewModel.hasCompletedInitialLoad) { _, done in
+            guard done, !didScheduleWebKitWarmup else { return }
+            didScheduleWebKitWarmup = true
+            Task.detached(priority: .utility) {
+                try? await Task.sleep(for: .seconds(1.5))
+                await MainActor.run {
+                    StartupCoordinator.shared.prewarmWebKitIfNeeded()
+                }
             }
         })
         view = AnyView(view.onChange(of: scenePhase) { oldPhase, newPhase in
