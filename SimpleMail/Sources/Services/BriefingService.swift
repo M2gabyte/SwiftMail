@@ -47,7 +47,7 @@ final class BriefingService {
 
     func refreshSnapshot(scopeDays: Int, accountEmail: String?) async -> BriefingSnapshot {
         let candidates = collectCandidateThreads(scopeDays: scopeDays, accountEmail: accountEmail)
-        let shortlist = Array(candidates.prefix(20))
+        let shortlist = Array(candidates.prefix(12))
 
         let hits = shortlist.map { $0.hit }
         let extraction = await extractItems(from: hits)
@@ -137,7 +137,7 @@ final class BriefingService {
         let plain = SummaryService.plainText(detail.body)
         let normalized = plain.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return nil }
-        return String(normalized.prefix(320))
+        return String(normalized.prefix(200))
     }
 
     // MARK: - AI extraction
@@ -178,9 +178,30 @@ final class BriefingService {
         return ExtractionResult(items: [], note: "Apple Intelligence is unavailable on this device.")
     }
 
+    private struct AINarrowHit: Codable {
+        let threadId: String
+        let messageId: String
+        let from: String
+        let subject: String
+        let dateISO: String
+        let snippet: String
+        let excerpt: String?
+    }
+
     private func buildPrompt(hits: [BriefingThreadHit]) -> String {
         let nowISO = ISO8601DateFormatter().string(from: Date())
-        let data = (try? JSONEncoder().encode(hits)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let compactHits = hits.map { hit in
+            AINarrowHit(
+                threadId: hit.threadId,
+                messageId: hit.messageId,
+                from: String(hit.from.prefix(80)),
+                subject: String(hit.subject.prefix(80)),
+                dateISO: hit.dateISO,
+                snippet: String(hit.snippet.prefix(140)),
+                excerpt: hit.excerpt.map { String($0.prefix(200)) }
+            )
+        }
+        let data = (try? JSONEncoder().encode(compactHits)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         return """
         You are an on-device assistant extracting action items from email snippets.
         Current time: \(nowISO)
@@ -208,7 +229,7 @@ final class BriefingService {
         - Normalize relative dates to ISO8601 using current time.
         - Items must include sourceThreadId and 1-2 sourceMessageIds.
 
-        Thread hits JSON:
+        Thread hits JSON (fields: threadId, messageId, from, subject, dateISO, snippet, excerpt):
         \(data)
         """
     }
