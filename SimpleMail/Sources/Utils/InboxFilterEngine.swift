@@ -283,14 +283,17 @@ struct InboxFilterEngine {
         return needsReplyPatterns.contains { $0.firstMatch(in: text, range: range) != nil }
     }
 
+    @MainActor
     private static func blockedSenders(for accountEmail: String?) -> Set<String> {
         Set(AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail))
     }
 
+    @MainActor
     private static func alwaysPrimarySenders(for accountEmail: String?) -> [String] {
         AccountDefaults.stringArray(for: "alwaysPrimarySenders", accountEmail: accountEmail)
     }
 
+    @MainActor
     private static func alwaysOtherSenders(for accountEmail: String?) -> [String] {
         AccountDefaults.stringArray(for: "alwaysOtherSenders", accountEmail: accountEmail)
     }
@@ -299,14 +302,14 @@ struct InboxFilterEngine {
         email.accountEmail ?? fallback
     }
 
-    private static func senderOverride(for email: Email, currentAccountEmail: String?) -> InboxTab? {
+    private static func senderOverride(for email: Email, currentAccountEmail: String?) async -> InboxTab? {
         let accountEmail = accountEmail(for: email, fallback: currentAccountEmail)
         let sender = email.senderEmail.lowercased()
 
-        let primary = alwaysPrimarySenders(for: accountEmail)
+        let primary = await alwaysPrimarySenders(for: accountEmail)
         if primary.contains(sender) { return .primary }
 
-        let other = alwaysOtherSenders(for: accountEmail)
+        let other = await alwaysOtherSenders(for: accountEmail)
         if other.contains(sender) { return .pinned }
 
         return nil
@@ -352,7 +355,7 @@ struct InboxFilterEngine {
         classification: Classification,
         currentAccountEmail: String?
     ) -> Bool {
-        if let override = senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
+        if let override = await senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
             return override == .primary
         }
 
