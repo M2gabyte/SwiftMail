@@ -118,20 +118,11 @@ struct InboxView: View {
                 isContinuationInSenderRun: isContinuationInSenderRun
             )
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color.black.opacity(0.04), radius: 6, y: 2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color(.separator).opacity(0.2), lineWidth: 0.5)
-        )
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 8 : 6, leading: 16, bottom: 6, trailing: 16))
-        .listRowSeparator(.hidden)
+        .background(Color(.systemBackground))
+        .listRowBackground(Color(.systemBackground))
+        .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
+        .listRowSeparator(.visible)
+        .listRowSeparatorTint(Color(.separator).opacity(0.35))
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button { viewModel.toggleRead(email) } label: {
                 Label(email.isUnread ? "Read" : "Unread",
@@ -485,7 +476,7 @@ struct InboxView: View {
             }
         }
         .listStyle(.plain)
-        .listSectionSpacing(6)
+        .listSectionSpacing(2)
         .contentMargins(.top, 0, for: .scrollContent)
         .contentMargins(.bottom, 56, for: .scrollContent)
         .scrollContentBackground(.hidden)
@@ -1166,26 +1157,15 @@ struct SectionHeaderRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text(title.uppercased())
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(Color(.secondarySystemBackground))
-                    )
-                    .accessibilityAddTraits(.isHeader)
-
-                Rectangle()
-                    .fill(Color(.separator).opacity(0.2))
-                    .frame(height: 1.0 / displayScale)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.top, isFirst ? 8 : 12)
-            .padding(.bottom, 6)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.primary.opacity(0.85))
+                .textCase(nil)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, isFirst ? 6 : 10)
+                .padding(.bottom, 4)
+                .accessibilityAddTraits(.isHeader)
 
             // Inset separator with softer opacity
             Rectangle()
