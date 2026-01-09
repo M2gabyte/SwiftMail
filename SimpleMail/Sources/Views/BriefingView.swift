@@ -52,7 +52,7 @@ struct BriefingView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .listRowSeparator(.hidden)
                 }
-            } else if snapshot != nil {
+            } else if viewModel.snapshot != nil {
                 BriefingEmptyState(
                     scopeDays: viewModel.scopeDays,
                     onSwitchScope: { viewModel.setScopeDays($0) }

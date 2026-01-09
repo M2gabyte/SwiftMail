@@ -421,15 +421,22 @@ struct InboxView: View {
     // MARK: - Extracted View Components
 
     private var inboxList: some View {
-        if viewModel.currentMailbox == .briefingBeta {
-            BriefingView(
-                viewModel: briefingViewModel,
-                onOpenEmail: { email in
-                    viewModel.openEmail(email)
-                }
-            )
-        } else {
-            List {
+        Group {
+            if viewModel.currentMailbox == .briefingBeta {
+                BriefingView(
+                    viewModel: briefingViewModel,
+                    onOpenEmail: { email in
+                        viewModel.openEmail(email)
+                    }
+                )
+            } else {
+                mailList
+            }
+        }
+    }
+
+    private var mailList: some View {
+        List {
             if !isSearchMode {
                 InboxHeaderBlock(
                     currentTab: currentTabBinding,
@@ -502,17 +509,16 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
-            }
-            .listStyle(.plain)
-            .listSectionSpacing(2)
-            .contentMargins(.top, 0, for: .scrollContent)
-            .contentMargins(.bottom, 56, for: .scrollContent)
-            .scrollContentBackground(.hidden)
-            .background(Color(.systemGroupedBackground))
-            .coordinateSpace(name: "inboxScroll")
-            .onPreferenceChange(ScrollOffsetKey.self) { value in
-                scrollOffset = value
-            }
+        }
+        .listStyle(.plain)
+        .listSectionSpacing(2)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .contentMargins(.bottom, 56, for: .scrollContent)
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemGroupedBackground))
+        .coordinateSpace(name: "inboxScroll")
+        .onPreferenceChange(ScrollOffsetKey.self) { value in
+            scrollOffset = value
         }
     }
 
