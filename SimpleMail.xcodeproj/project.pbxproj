@@ -74,6 +74,7 @@
 		A10000A8 /* StartupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A8 /* StartupCoordinator.swift */; };
 		A10000A9 /* AccountSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A9 /* AccountSnapshotStore.swift */; };
 		A10000AA /* AccountWarmupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AA /* AccountWarmupCoordinator.swift */; };
+		A10000AE /* MainThreadWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AE /* MainThreadWatchdog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,6 +96,7 @@
 		B10000AB /* BriefingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingViewModel.swift; sourceTree = "<group>"; };
 		B10000AC /* BriefingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingView.swift; sourceTree = "<group>"; };
 		B10000AD /* BriefingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingService.swift; sourceTree = "<group>"; };
+		B10000AE /* MainThreadWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainThreadWatchdog.swift; sourceTree = "<group>"; };
 		B1000060 /* InboxTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxTab.swift; sourceTree = "<group>"; };
 		B1000061 /* PinnedTabOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabOption.swift; sourceTree = "<group>"; };
 		B1000062 /* PrimaryRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryRule.swift; sourceTree = "<group>"; };
@@ -318,6 +320,7 @@
 				B1000036 /* NetworkRetry.swift */,
 				B1000099 /* EmailPreviewParser.swift */,
 				B1000050 /* EmailPreviewNormalizer.swift */,
+				B10000AE /* MainThreadWatchdog.swift */,
 				B10000A0 /* InboxViewModelCacheTests.swift */,
 				B10000A4 /* InboxFilterEngine.swift */,
 			);
@@ -507,6 +510,7 @@
 				A10000A8 /* StartupCoordinator.swift in Sources */,
 				A10000A9 /* AccountSnapshotStore.swift in Sources */,
 				A10000AA /* AccountWarmupCoordinator.swift in Sources */,
+				A10000AE /* MainThreadWatchdog.swift in Sources */,
 				A1000049 /* QueuedEmail.swift in Sources */,
 				A1000050 /* EmailPreviewNormalizer.swift in Sources */,
 				A10000A0 /* InboxViewModelCacheTests.swift in Sources */,
