@@ -1548,6 +1548,7 @@ struct EmailRow: View {
                 highlightedText(EmailPreviewNormalizer.normalizeSubjectForDisplay(email.subject), font: subjectFont)
                     .foregroundStyle(subjectColor)
                     .lineLimit(1)
+                    .truncationMode(.tail)
 
                 // Snippet (not in compact mode, normalized to remove forwarded boilerplate)
                 if !isCompact {
@@ -1559,8 +1560,12 @@ struct EmailRow: View {
                         .font(MailTypography.snippet)
                         .foregroundStyle(snippetColor)
                         .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                 }
             }
+            .layoutPriority(1)
         }
         .padding(.vertical, isCompact ? 5 : 7)
         .contentShape(Rectangle())
