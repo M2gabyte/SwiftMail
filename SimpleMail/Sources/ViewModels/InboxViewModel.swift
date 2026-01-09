@@ -642,6 +642,7 @@ final class InboxViewModel {
     private func labelIdsForMailbox(_ mailbox: Mailbox) -> [String] {
         switch mailbox {
         case .allInboxes: return ["INBOX"]
+        case .briefingBeta: return ["INBOX"]
         case .inbox: return ["INBOX"]
         case .sent: return ["SENT"]
         case .archive: return []
@@ -656,6 +657,8 @@ final class InboxViewModel {
         case .archive:
             return "-in:inbox -in:trash -in:spam"
         case .allInboxes:
+            return nil
+        case .briefingBeta:
             return nil
         default:
             return nil
@@ -703,6 +706,7 @@ final class InboxViewModel {
     // MARK: - Actions
 
     func refresh() async {
+        if currentMailbox == .briefingBeta { return }
         await loadEmails(force: true)
     }
 
@@ -1195,9 +1199,8 @@ final class InboxViewModel {
         guard mailbox != currentMailbox else { return }
         currentMailbox = mailbox
         emails = []
-        Task {
-            await loadEmails()
-        }
+        if mailbox == .briefingBeta { return }
+        Task { await loadEmails() }
     }
 
     func openEmail(_ email: Email) {

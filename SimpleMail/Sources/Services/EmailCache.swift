@@ -630,6 +630,7 @@ final class EmailCacheManager: ObservableObject {
     private func labelIdsForMailbox(_ mailbox: Mailbox) -> [String] {
         switch mailbox {
         case .allInboxes: return ["INBOX"]  // Unified inbox shows INBOX from all accounts
+        case .briefingBeta: return ["INBOX"]
         case .inbox: return ["INBOX"]
         case .sent: return ["SENT"]
         case .archive: return []

@@ -21,6 +21,7 @@ struct InboxView: View {
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
     @StateObject private var searchHistory = SearchHistoryManager.shared
+    @StateObject private var briefingViewModel = BriefingViewModel()
     @Environment(\.isSearching) private var isSearching
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.displayScale) private var displayScale
@@ -37,6 +38,7 @@ struct InboxView: View {
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
+    @State private var inboxScope: InboxLocationScope = .unified
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
 
@@ -196,7 +198,13 @@ struct InboxView: View {
             Button("Cancel", role: .cancel) { }
         })
         view = AnyView(view.navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination })
-        view = AnyView(view.refreshable { await viewModel.refresh() })
+        view = AnyView(view.refreshable {
+            if viewModel.currentMailbox == .briefingBeta {
+                await briefingViewModel.refresh()
+            } else {
+                await viewModel.refresh()
+            }
+        })
         view = AnyView(view.task(id: searchText) { await debounceSearch() })
         view = AnyView(view.onChange(of: searchText) { _, newValue in
             if newValue.isEmpty && viewModel.isSearchActive {
@@ -219,6 +227,12 @@ struct InboxView: View {
         })
         view = AnyView(view.onChange(of: viewModel.currentMailbox) { _, _ in
             exitSelectionMode()
+            if viewModel.currentMailbox == .briefingBeta {
+                isSearchMode = false
+                searchFieldFocused = false
+            }
+            briefingViewModel.accountEmail = currentBriefingAccountEmail()
+            briefingViewModel.loadCached()
         })
         view = AnyView(view.onChange(of: viewModel.activeFilter) { oldValue, newValue in
             exitSelectionMode()
@@ -240,7 +254,13 @@ struct InboxView: View {
             if newPhase == .background {
                 exitSelectionMode()
             } else if newPhase == .active && oldPhase == .background {
-                Task { await viewModel.refresh() }
+                Task {
+                    if viewModel.currentMailbox == .briefingBeta {
+                        await briefingViewModel.refresh()
+                    } else {
+                        await viewModel.refresh()
+                    }
+                }
             }
         })
         view = AnyView(view.onChange(of: pendingSendManager.hasRestoredDraft) { _, hasRestored in
@@ -401,7 +421,15 @@ struct InboxView: View {
     // MARK: - Extracted View Components
 
     private var inboxList: some View {
-        List {
+        if viewModel.currentMailbox == .briefingBeta {
+            BriefingView(
+                viewModel: briefingViewModel,
+                onOpenEmail: { email in
+                    viewModel.openEmail(email)
+                }
+            )
+        } else {
+            List {
             if !isSearchMode {
                 InboxHeaderBlock(
                     currentTab: currentTabBinding,
@@ -474,16 +502,17 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
-        }
-        .listStyle(.plain)
-        .listSectionSpacing(2)
-        .contentMargins(.top, 0, for: .scrollContent)
-        .contentMargins(.bottom, 56, for: .scrollContent)
-        .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
-        .coordinateSpace(name: "inboxScroll")
-        .onPreferenceChange(ScrollOffsetKey.self) { value in
-            scrollOffset = value
+            }
+            .listStyle(.plain)
+            .listSectionSpacing(2)
+            .contentMargins(.top, 0, for: .scrollContent)
+            .contentMargins(.bottom, 56, for: .scrollContent)
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground))
+            .coordinateSpace(name: "inboxScroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { value in
+                scrollOffset = value
+            }
         }
     }
 
@@ -638,9 +667,12 @@ struct InboxView: View {
     }
 
     private func handleScopeSelection(_ scope: InboxLocationScope) {
+        inboxScope = scope
         switch scope {
         case .unified:
-            viewModel.selectMailbox(.allInboxes)
+            if viewModel.currentMailbox != .briefingBeta {
+                viewModel.selectMailbox(.allInboxes)
+            }
         case .account(let account):
             AuthService.shared.switchAccount(to: account)
             if viewModel.currentMailbox == .allInboxes {
@@ -649,6 +681,7 @@ struct InboxView: View {
                 viewModel.selectMailbox(viewModel.currentMailbox)
             }
         }
+        briefingViewModel.accountEmail = currentBriefingAccountEmail()
     }
 
     private var selectedEmails: [Email] {
@@ -1053,10 +1086,21 @@ struct InboxView: View {
 
     private func handleAppear() {
         loadSettings()
-        viewModel.preloadCachedEmails(
-            mailbox: viewModel.currentMailbox,
-            accountEmail: viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
-        )
+        if viewModel.currentMailbox == .allInboxes {
+            inboxScope = .unified
+        } else if let account = AuthService.shared.currentAccount {
+            inboxScope = .account(account)
+        } else {
+            inboxScope = .unified
+        }
+        briefingViewModel.accountEmail = currentBriefingAccountEmail()
+
+        if viewModel.currentMailbox != .briefingBeta {
+            viewModel.preloadCachedEmails(
+                mailbox: viewModel.currentMailbox,
+                accountEmail: viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
+            )
+        }
     }
 
     private func loadSettings() {
@@ -1081,6 +1125,15 @@ struct InboxView: View {
             }
         } catch {
             logger.warning("Failed to decode app settings: \(error.localizedDescription)")
+        }
+    }
+
+    private func currentBriefingAccountEmail() -> String? {
+        switch inboxScope {
+        case .unified:
+            return nil
+        case .account(let account):
+            return account.email
         }
     }
 
@@ -1576,6 +1629,7 @@ struct EmailRow: View {
 
 enum Mailbox: String, CaseIterable {
     case allInboxes = "All Inboxes"
+    case briefingBeta = "Briefing (Beta)"
     case inbox = "Inbox"
     case sent = "Sent"
     case archive = "Archive"
@@ -1586,6 +1640,7 @@ enum Mailbox: String, CaseIterable {
     var icon: String {
         switch self {
         case .allInboxes: return "tray.full"
+        case .briefingBeta: return "sparkles"
         case .inbox: return "tray"
         case .sent: return "paperplane"
         case .archive: return "archivebox"

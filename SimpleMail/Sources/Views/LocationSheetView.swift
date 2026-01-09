@@ -54,9 +54,9 @@ struct LocationSheetView: View {
 
     private var availableMailboxes: [Mailbox] {
         if isUnified {
-            return [.inbox]
+            return [.briefingBeta, .inbox]
         }
-        return [.inbox, .starred, .drafts, .sent, .archive, .trash]
+        return [.briefingBeta, .inbox, .starred, .drafts, .sent, .archive, .trash]
     }
 
     private var moreMailboxes: [Mailbox] {
@@ -64,6 +64,9 @@ struct LocationSheetView: View {
     }
 
     private var selectedMailboxForDisplay: Mailbox {
+        if selectedMailbox == .briefingBeta {
+            return .briefingBeta
+        }
         if isUnified {
             return .inbox
         }
@@ -108,7 +111,7 @@ struct LocationSheetView: View {
                 Section("Mailboxes") {
                     ForEach(availableMailboxes, id: \.self) { mailbox in
                         Button {
-                            if isUnified {
+                            if isUnified && mailbox != .briefingBeta {
                                 onSelectMailbox(.allInboxes)
                             } else {
                                 onSelectMailbox(mailbox)
