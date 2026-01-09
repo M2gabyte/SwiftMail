@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 final class SummaryCache {
     static let shared = SummaryCache()
 
