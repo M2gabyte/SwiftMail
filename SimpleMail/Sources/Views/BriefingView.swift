@@ -75,7 +75,10 @@ struct BriefingView: View {
         }
         .onAppear {
             viewModel.loadCached()
-            Task { await viewModel.refresh() }
+            Task {
+                try? await Task.sleep(for: .milliseconds(600))
+                await viewModel.refresh()
+            }
         }
         .sheet(isPresented: $showingSnooze) {
             SnoozePickerSheet { date in

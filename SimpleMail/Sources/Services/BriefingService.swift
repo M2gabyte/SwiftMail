@@ -47,7 +47,7 @@ final class BriefingService {
 
     func refreshSnapshot(scopeDays: Int, accountEmail: String?) async -> BriefingSnapshot {
         let candidates = collectCandidateThreads(scopeDays: scopeDays, accountEmail: accountEmail)
-        let shortlist = Array(candidates.prefix(12))
+        let shortlist = Array(candidates.prefix(6))
 
         let hits = shortlist.map { $0.hit }
         let extraction = await extractItems(from: hits)
@@ -137,7 +137,7 @@ final class BriefingService {
         let plain = SummaryService.plainText(detail.body)
         let normalized = plain.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return nil }
-        return String(normalized.prefix(200))
+        return String(normalized.prefix(120))
     }
 
     // MARK: - AI extraction
@@ -158,20 +158,31 @@ final class BriefingService {
 
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
-            let prompt = buildPrompt(hits: hits)
-            do {
-                let session = LanguageModelSession()
-                let response = try await session.respond(to: prompt)
-                let text = String(describing: response.content)
-                if let json = extractJSON(from: text),
-                   let data = json.data(using: .utf8),
-                   let decoded = try? JSONDecoder().decode(AIResponse.self, from: data) {
-                    return ExtractionResult(items: decoded.items, note: nil)
-                }
-            } catch {
-                logger.error("Briefing AI extraction failed: \(error.localizedDescription)")
-                return ExtractionResult(items: [], note: "Apple Intelligence failed to generate a briefing.")
+            var merged: [BriefingItem] = []
+            var lastError: String?
+            let batches = stride(from: 0, to: hits.count, by: 4).map {
+                Array(hits[$0..<min($0 + 4, hits.count)])
             }
+            for batch in batches {
+                let prompt = buildPrompt(hits: batch)
+                do {
+                    let session = LanguageModelSession()
+                    let response = try await session.respond(to: prompt)
+                    let text = String(describing: response.content)
+                    if let json = extractJSON(from: text),
+                       let data = json.data(using: .utf8),
+                       let decoded = try? JSONDecoder().decode(AIResponse.self, from: data) {
+                        merged.append(contentsOf: decoded.items)
+                    }
+                } catch {
+                    lastError = error.localizedDescription
+                    logger.error("Briefing AI extraction failed: \(error.localizedDescription)")
+                }
+            }
+            if !merged.isEmpty {
+                return ExtractionResult(items: merged, note: nil)
+            }
+            return ExtractionResult(items: [], note: "Apple Intelligence failed to generate a briefing.")
         }
         #endif
 
@@ -183,7 +194,6 @@ final class BriefingService {
         let messageId: String
         let from: String
         let subject: String
-        let dateISO: String
         let snippet: String
         let excerpt: String?
     }
@@ -194,11 +204,10 @@ final class BriefingService {
             AINarrowHit(
                 threadId: hit.threadId,
                 messageId: hit.messageId,
-                from: String(hit.from.prefix(80)),
-                subject: String(hit.subject.prefix(80)),
-                dateISO: hit.dateISO,
-                snippet: String(hit.snippet.prefix(140)),
-                excerpt: hit.excerpt.map { String($0.prefix(200)) }
+                from: String(hit.from.prefix(60)),
+                subject: String(hit.subject.prefix(60)),
+                snippet: String(hit.snippet.prefix(100)),
+                excerpt: hit.excerpt.map { String($0.prefix(120)) }
             )
         }
         let data = (try? JSONEncoder().encode(compactHits)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
@@ -229,7 +238,7 @@ final class BriefingService {
         - Normalize relative dates to ISO8601 using current time.
         - Items must include sourceThreadId and 1-2 sourceMessageIds.
 
-        Thread hits JSON (fields: threadId, messageId, from, subject, dateISO, snippet, excerpt):
+        Thread hits JSON (fields: threadId, messageId, from, subject, snippet, excerpt):
         \(data)
         """
     }
