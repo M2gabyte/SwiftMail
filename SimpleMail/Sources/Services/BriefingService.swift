@@ -50,11 +50,17 @@ final class BriefingService {
         let shortlist = Array(candidates.prefix(20))
 
         let hits = shortlist.map { $0.hit }
-        let responseItems = await extractItems(from: hits)
-        let cleaned = filterAndNormalize(items: responseItems, hits: hits)
+        let extraction = await extractItems(from: hits)
+        let cleaned = filterAndNormalize(items: extraction.items, hits: hits)
 
         let ranked = rank(items: cleaned, hits: hits)
-        let snapshot = BriefingSnapshot(items: ranked, sources: hits, generatedAt: Date(), scopeDays: scopeDays)
+        let snapshot = BriefingSnapshot(
+            items: ranked,
+            sources: hits,
+            generatedAt: Date(),
+            scopeDays: scopeDays,
+            generationNote: extraction.note
+        )
         saveSnapshot(snapshot, accountEmail: accountEmail)
         return snapshot
     }
@@ -133,8 +139,15 @@ final class BriefingService {
         let items: [BriefingItem]
     }
 
-    private func extractItems(from hits: [BriefingThreadHit]) async -> [BriefingItem] {
-        guard !hits.isEmpty else { return [] }
+    private struct ExtractionResult {
+        let items: [BriefingItem]
+        let note: String?
+    }
+
+    private func extractItems(from hits: [BriefingThreadHit]) async -> ExtractionResult {
+        guard !hits.isEmpty else {
+            return ExtractionResult(items: [], note: "No recent cached emails to analyze.")
+        }
 
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
@@ -146,15 +159,16 @@ final class BriefingService {
                 if let json = extractJSON(from: text),
                    let data = json.data(using: .utf8),
                    let decoded = try? JSONDecoder().decode(AIResponse.self, from: data) {
-                    return decoded.items
+                    return ExtractionResult(items: decoded.items, note: nil)
                 }
             } catch {
                 logger.error("Briefing AI extraction failed: \(error.localizedDescription)")
+                return ExtractionResult(items: [], note: "Apple Intelligence failed to generate a briefing.")
             }
         }
         #endif
 
-        return []
+        return ExtractionResult(items: [], note: "Apple Intelligence is unavailable on this device.")
     }
 
     private func buildPrompt(hits: [BriefingThreadHit]) -> String {

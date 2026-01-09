@@ -27,8 +27,8 @@ struct BriefingView: View {
                 ForEach(viewModel.sectionedItems(hits: hits), id: \.0) { section, items in
                     Section {
                         ForEach(items) { item in
-                                BriefingItemRow(
-                                    item: item,
+                            BriefingItemRow(
+                                item: item,
                                     hit: hits[item.sourceThreadId],
                                     dueLabel: dueLabel(for: item),
                                     onOpen: { openItem(item) },
@@ -52,9 +52,11 @@ struct BriefingView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .listRowSeparator(.hidden)
                 }
-            } else if viewModel.snapshot != nil {
+            } else if let snapshot = viewModel.snapshot {
                 BriefingEmptyState(
                     scopeDays: viewModel.scopeDays,
+                    sourceCount: snapshot.sources.count,
+                    note: snapshot.generationNote,
                     onSwitchScope: { viewModel.setScopeDays($0) }
                 )
                 .listRowSeparator(.hidden)
@@ -253,17 +255,35 @@ private struct BriefingChip: View {
 
 private struct BriefingEmptyState: View {
     let scopeDays: Int
+    let sourceCount: Int
+    let note: String?
     let onSwitchScope: (Int) -> Void
 
     var body: some View {
         VStack(spacing: 8) {
-            Text("Nothing urgent found in last \(scopeDays) days")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            Button("Try 30 days") {
-                onSwitchScope(30)
+            if sourceCount == 0 {
+                Text("No cached emails found")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text("Open your inbox once to sync, then come back.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("Nothing urgent found in last \(scopeDays) days")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                if let note {
+                    Text(note)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                Button("Try 30 days") {
+                    onSwitchScope(30)
+                }
+                .font(.subheadline.weight(.semibold))
             }
-            .font(.subheadline.weight(.semibold))
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.vertical, 24)

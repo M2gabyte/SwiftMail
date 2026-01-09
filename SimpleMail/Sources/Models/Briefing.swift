@@ -29,6 +29,7 @@ struct BriefingSnapshot: Codable {
     let sources: [BriefingThreadHit]
     let generatedAt: Date
     let scopeDays: Int
+    let generationNote: String?
 }
 
 struct BriefingUserState: Codable {
