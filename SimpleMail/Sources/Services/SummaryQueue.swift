@@ -97,7 +97,7 @@ actor SummaryQueue {
             let job = queue.removeFirst()
             queuedIds.remove(job.emailId)
 
-            guard shouldPrecompute(for: job.accountEmail) else {
+            guard await shouldPrecompute(for: job.accountEmail) else {
                 continue
             }
 
@@ -156,11 +156,12 @@ actor SummaryQueue {
         return score
     }
 
-    @MainActor
-    private func shouldPrecompute(for accountEmail: String?) -> Bool {
-        return AccountDefaults.data(for: "appSettings", accountEmail: accountEmail)
-            .flatMap { try? JSONDecoder().decode(AppSettings.self, from: $0) }
-            .map { $0.precomputeSummaries } ?? true
+    private func shouldPrecompute(for accountEmail: String?) async -> Bool {
+        await MainActor.run {
+            AccountDefaults.data(for: "appSettings", accountEmail: accountEmail)
+                .flatMap { try? JSONDecoder().decode(AppSettings.self, from: $0) }
+                .map { $0.precomputeSummaries } ?? true
+        }
     }
 
     private func canRunNow() async -> Bool {
