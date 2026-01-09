@@ -1,5 +1,6 @@
 import SwiftUI
 import OSLog
+import MainThreadWatchdog
 
 private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxView")
 typealias SelectionID = String
