@@ -17,6 +17,7 @@ struct BriefingView: View {
                 scopeDays: viewModel.scopeDays,
                 isRefreshing: viewModel.isRefreshing,
                 lastUpdated: viewModel.lastUpdated,
+                debugInfo: viewModel.snapshot?.debugInfo,
                 onScopeChange: { viewModel.setScopeDays($0) }
             )
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -121,6 +122,7 @@ private struct BriefingHeader: View {
     let scopeDays: Int
     let isRefreshing: Bool
     let lastUpdated: Date?
+    let debugInfo: BriefingDebugInfo?
     let onScopeChange: (Int) -> Void
 
     var body: some View {
@@ -160,7 +162,7 @@ private struct BriefingHeader: View {
                 }
             }
 
-            if let debug = viewModel.snapshot?.debugInfo {
+            if let debug = debugInfo {
                 Text("Debug: candidates \(debug.candidateCount) · shortlist \(debug.shortlistCount) · AI \(debug.aiItemCount) · kept \(debug.keptItemCount)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
