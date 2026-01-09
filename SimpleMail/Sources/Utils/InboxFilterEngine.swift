@@ -77,11 +77,9 @@ struct InboxFilterEngine {
         currentAccountEmail: String?,
         classifications: [String: Classification]
     ) -> [InboxFilter: Int] {
+        let blocked = blockedSendersSync(for: currentAccountEmail)
         let base = applyTabContext(
-            emails.filter { email in
-                let blocked = blockedSenders(for: accountEmail(for: email, fallback: currentAccountEmail))
-                return !blocked.contains(email.senderEmail.lowercased())
-            },
+            emails.filter { !blocked.contains($0.senderEmail.lowercased()) },
             currentTab: currentTab,
             pinnedTabOption: pinnedTabOption,
             currentAccountEmail: currentAccountEmail,
@@ -120,9 +118,9 @@ struct InboxFilterEngine {
         currentAccountEmail: String?,
         classifications: [String: Classification]
     ) -> [Email] {
+        let blocked = blockedSendersSync(for: currentAccountEmail)
         var filtered = emails.filter { email in
-            let blocked = blockedSenders(for: accountEmail(for: email, fallback: currentAccountEmail))
-            return !blocked.contains(email.senderEmail.lowercased())
+            !blocked.contains(email.senderEmail.lowercased())
         }
 
         filtered = applyTabContext(
@@ -288,6 +286,10 @@ struct InboxFilterEngine {
         Set(AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail))
     }
 
+    private static func blockedSendersSync(for accountEmail: String?) -> Set<String> {
+        Set(AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail))
+    }
+
     @MainActor
     private static func alwaysPrimarySenders(for accountEmail: String?) -> [String] {
         AccountDefaults.stringArray(for: "alwaysPrimarySenders", accountEmail: accountEmail)
@@ -359,7 +361,8 @@ struct InboxFilterEngine {
             return override == .primary
         }
 
-        for rule in PrimaryRule.allCases where InboxPreferences.isPrimaryRuleEnabled(rule) {
+        for rule in PrimaryRule.allCases {
+            if await InboxPreferences.isPrimaryRuleEnabled(rule) == false { continue }
             switch rule {
             case .people:
                 if classification.isPeople { return true }
