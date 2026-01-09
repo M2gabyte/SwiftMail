@@ -1028,44 +1028,46 @@ struct InboxView: View {
                     .buttonStyle(.borderedProminent)
                 }
                 .padding()
-            } else if displaySections.isEmpty && !viewModel.hasCompletedInitialLoad {
-                // Still loading initial data - show spinner, not empty state
-                VStack(spacing: 16) {
-                    ProgressView()
-                    Text("Loading emails...")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if displaySections.isEmpty && !viewModel.isLoading && viewModel.hasCompletedInitialLoad {
-                if viewModel.activeFilter != nil {
-                    // Filter-specific empty state with clear button
-                    ContentUnavailableView {
-                        Label(emptyStateTitle, systemImage: emptyStateIcon)
-                    } description: {
-                        Text(emptyStateDescription)
-                    } actions: {
-                        Button("Clear Filter") {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                viewModel.activeFilter = nil
+            } else if viewModel.currentMailbox != .briefingBeta {
+                if displaySections.isEmpty && !viewModel.hasCompletedInitialLoad {
+                    // Still loading initial data - show spinner, not empty state
+                    VStack(spacing: 16) {
+                        ProgressView()
+                        Text("Loading emails...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if displaySections.isEmpty && !viewModel.isLoading && viewModel.hasCompletedInitialLoad {
+                    if viewModel.activeFilter != nil {
+                        // Filter-specific empty state with clear button
+                        ContentUnavailableView {
+                            Label(emptyStateTitle, systemImage: emptyStateIcon)
+                        } description: {
+                            Text(emptyStateDescription)
+                        } actions: {
+                            Button("Clear Filter") {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    viewModel.activeFilter = nil
+                                }
                             }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .buttonStyle(.borderedProminent)
-                    }
-                } else {
-                    ContentUnavailableView {
-                        Label(emptyStateTitle, systemImage: emptyStateIcon)
-                    } description: {
-                        Text(emptyStateDescription)
-                    } actions: {
-                        Button("Check for New Mail") {
-                            Task { await viewModel.refresh() }
+                    } else {
+                        ContentUnavailableView {
+                            Label(emptyStateTitle, systemImage: emptyStateIcon)
+                        } description: {
+                            Text(emptyStateDescription)
+                        } actions: {
+                            Button("Check for New Mail") {
+                                Task { await viewModel.refresh() }
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .buttonStyle(.borderedProminent)
                     }
+                } else if viewModel.isLoading && viewModel.emailSections.isEmpty {
+                    InboxSkeletonView()
                 }
-            } else if viewModel.isLoading && viewModel.emailSections.isEmpty {
-                InboxSkeletonView()
             }
         }
     }
