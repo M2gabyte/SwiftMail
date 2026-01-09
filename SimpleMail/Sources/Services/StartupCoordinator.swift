@@ -25,19 +25,7 @@ final class StartupCoordinator {
         OutboxManager.shared.configure(with: modelContext)
         NetworkMonitor.shared.start()
 
-        // Stage 2: after first frame (defer heavy work)
-        Task.detached(priority: .utility) { [weak self] in
-            try? await Task.sleep(for: .seconds(2.5))
-            guard let self else { return }
-            await MainActor.run {
-                self.prewarmWebKit()
-            }
-            if isAuthenticated {
-                await MainActor.run {
-                    self.scheduleContactsPreloadIfNeeded(delaySeconds: 5)
-                }
-            }
-        }
+        // Stage 2: disabled to avoid launch hitches; warmups happen on demand.
 
         // Stage 3: background warmups (longer delay)
         Task.detached(priority: .background) {
@@ -50,9 +38,7 @@ final class StartupCoordinator {
     }
 
     func handleAuthChanged(isAuthenticated: Bool) {
-        if isAuthenticated {
-            scheduleContactsPreloadIfNeeded(delaySeconds: 5)
-        }
+        if isAuthenticated { }
     }
 
     private func scheduleContactsPreloadIfNeeded(delaySeconds: Double) {
