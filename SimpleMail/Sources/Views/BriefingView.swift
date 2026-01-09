@@ -159,6 +159,12 @@ private struct BriefingHeader: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            if let debug = viewModel.snapshot?.debugInfo {
+                Text("Debug: candidates \(debug.candidateCount) · shortlist \(debug.shortlistCount) · AI \(debug.aiItemCount) · kept \(debug.keptItemCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

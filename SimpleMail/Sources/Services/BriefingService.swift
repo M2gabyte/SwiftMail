@@ -54,12 +54,19 @@ final class BriefingService {
         let cleaned = filterAndNormalize(items: extraction.items, hits: hits)
 
         let ranked = rank(items: cleaned, hits: hits)
+        let debugInfo = BriefingDebugInfo(
+            candidateCount: candidates.count,
+            shortlistCount: hits.count,
+            aiItemCount: extraction.items.count,
+            keptItemCount: ranked.count
+        )
         let snapshot = BriefingSnapshot(
             items: ranked,
             sources: hits,
             generatedAt: Date(),
             scopeDays: scopeDays,
-            generationNote: extraction.note
+            generationNote: extraction.note,
+            debugInfo: debugInfo
         )
         saveSnapshot(snapshot, accountEmail: accountEmail)
         return snapshot
