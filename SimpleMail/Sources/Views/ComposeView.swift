@@ -201,15 +201,20 @@ struct ComposeView: View {
             }
             .alert("Discard Draft?", isPresented: $viewModel.showDiscardAlert) {
                 Button("Discard", role: .destructive) {
+                    viewModel.cancelAutoSave()
                     dismiss()
                 }
                 Button("Save Draft") {
                     Task {
                         await viewModel.saveDraft()
+                        viewModel.cancelAutoSave()
                         dismiss()
                     }
                 }
                 Button("Cancel", role: .cancel) {}
+            }
+            .onDisappear {
+                viewModel.cancelAutoSave()
             }
     }
 
@@ -2119,6 +2124,11 @@ class ComposeViewModel: ObservableObject {
                 await self.saveDraft()
             }
         }
+    }
+
+    func cancelAutoSave() {
+        autoSaveTask?.cancel()
+        autoSaveTask = nil
     }
 
     func addAttachment(data: Data, filename: String, mimeType: String) {

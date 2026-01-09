@@ -251,16 +251,6 @@ struct InboxView: View {
                 exitSelectionMode()
             }
         })
-        view = AnyView(view.onChange(of: viewModel.hasCompletedInitialLoad) { _, done in
-            guard done, !didScheduleWebKitWarmup else { return }
-            didScheduleWebKitWarmup = true
-            Task.detached(priority: .utility) {
-                try? await Task.sleep(for: .seconds(1.5))
-                await MainActor.run {
-                    StartupCoordinator.shared.prewarmWebKitIfNeeded()
-                }
-            }
-        })
         view = AnyView(view.onChange(of: scenePhase) { oldPhase, newPhase in
             if newPhase == .background {
                 exitSelectionMode()
@@ -1119,6 +1109,18 @@ struct InboxView: View {
                 mailbox: viewModel.currentMailbox,
                 accountEmail: viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
             )
+        }
+        scheduleWebKitWarmup()
+    }
+
+    private func scheduleWebKitWarmup() {
+        guard !didScheduleWebKitWarmup else { return }
+        didScheduleWebKitWarmup = true
+        Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .seconds(2))
+            await MainActor.run {
+                StartupCoordinator.shared.prewarmWebKitIfNeeded()
+            }
         }
     }
 
