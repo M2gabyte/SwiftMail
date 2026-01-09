@@ -25,18 +25,21 @@ final class StartupCoordinator {
         OutboxManager.shared.configure(with: modelContext)
         NetworkMonitor.shared.start()
 
-        // Stage 2: after first frame (short delay)
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(300))
-            prewarmWebKit()
+        // Stage 2: after first frame (defer heavy work)
+        Task.detached(priority: .utility) { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard let self else { return }
+            await MainActor.run {
+                self.prewarmWebKit()
+            }
             if isAuthenticated {
-                await preloadContactsIfNeeded()
+                await self.preloadContactsIfNeeded()
             }
         }
 
         // Stage 3: background warmups (longer delay)
         Task.detached(priority: .background) {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(4))
             let accountEmail = await MainActor.run { AuthService.shared.currentAccount?.email.lowercased() }
             await SearchIndexManager.shared.prewarmIfNeeded(accountEmail: accountEmail)
             await AccountWarmupCoordinator.shared.schedulePrewarmNext()

@@ -83,7 +83,7 @@ final class BriefingService {
 
     func refreshSnapshot(scopeDays: Int, accountEmail: String?) async -> BriefingSnapshot {
         let candidates = collectCandidateThreads(scopeDays: scopeDays, accountEmail: accountEmail)
-        let shortlist = Array(candidates.prefix(6))
+        let shortlist = Array(candidates.prefix(4))
 
         let hits = shortlist.map { $0.hit }
         let extraction = await extractItems(from: hits)
@@ -190,7 +190,7 @@ final class BriefingService {
         let plain = SummaryService.plainText(detail.body)
         let normalized = plain.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return nil }
-        return String(normalized.prefix(120))
+        return String(normalized.prefix(80))
     }
 
     // MARK: - AI extraction
@@ -213,8 +213,8 @@ final class BriefingService {
         if #available(iOS 26.0, *) {
             var merged: [BriefingItem] = []
             var lastError: String?
-            let batches = stride(from: 0, to: hits.count, by: 4).map {
-                Array(hits[$0..<min($0 + 4, hits.count)])
+            let batches = stride(from: 0, to: hits.count, by: 2).map {
+                Array(hits[$0..<min($0 + 2, hits.count)])
             }
             for batch in batches {
                 let prompt = buildPrompt(hits: batch)
@@ -257,18 +257,17 @@ final class BriefingService {
             AINarrowHit(
                 threadId: hit.threadId,
                 messageId: hit.messageId,
-                from: String(hit.from.prefix(60)),
-                subject: String(hit.subject.prefix(60)),
-                snippet: String(hit.snippet.prefix(100)),
-                excerpt: hit.excerpt.map { String($0.prefix(120)) }
+                from: String(hit.from.prefix(50)),
+                subject: String(hit.subject.prefix(50)),
+                snippet: String(hit.snippet.prefix(80)),
+                excerpt: hit.snippet.count > 60 ? nil : hit.excerpt.map { String($0.prefix(80)) }
             )
         }
         let data = (try? JSONEncoder().encode(compactHits)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         return """
-        You are an on-device assistant extracting action items from email snippets.
-        Current time: \(nowISO)
+        Extract action items from the JSON thread hits. Current time: \(nowISO)
 
-        Given the JSON array of thread hits below, return JSON only with this schema:
+        Return JSON only with schema:
         {
           "items": [
             {
