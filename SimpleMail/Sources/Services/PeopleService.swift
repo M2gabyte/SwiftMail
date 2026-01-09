@@ -201,6 +201,7 @@ actor PeopleService {
     /// Preloads contacts in the background
     func preloadContacts() async {
         do {
+            guard await AuthService.shared.isAuthenticated else { return }
             _ = try await fetchContacts()
             logger.info("Contacts preloaded successfully")
         } catch {

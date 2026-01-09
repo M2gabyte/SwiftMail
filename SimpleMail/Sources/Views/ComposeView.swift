@@ -205,10 +205,12 @@ struct ComposeView: View {
                     dismiss()
                 }
                 Button("Save Draft") {
-                    Task {
+                    Task.detached(priority: .utility) {
                         await viewModel.saveDraft()
-                        viewModel.cancelAutoSave()
-                        dismiss()
+                        await MainActor.run {
+                            viewModel.cancelAutoSave()
+                            dismiss()
+                        }
                     }
                 }
                 Button("Cancel", role: .cancel) {}

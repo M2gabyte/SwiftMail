@@ -20,22 +20,17 @@ final class StartupCoordinator {
         guard !didStart else { return }
         didStart = true
 
-        // Stage 1: critical path (immediate, non-blocking)
-        EmailCacheManager.shared.configure(with: modelContext, deferIndexRebuild: true)
-        SnoozeManager.shared.configure(with: modelContext)
-        OutboxManager.shared.configure(with: modelContext)
-        NetworkMonitor.shared.start()
-
-        // Stage 2: disabled to avoid launch hitches; warmups happen on demand.
-
-        // Stage 3: background warmups (longer delay)
-        Task.detached(priority: .background) {
-            try? await Task.sleep(for: .seconds(4))
-            let accountEmail = await MainActor.run { AuthService.shared.currentAccount?.email.lowercased() }
-            await SearchIndexManager.shared.prewarmIfNeeded(accountEmail: accountEmail)
-            await AccountWarmupCoordinator.shared.schedulePrewarmNext()
-            startupLogger.info("Completed deferred warmups")
+        // Stage 1: critical path (off main where possible)
+        Task.detached(priority: .userInitiated) { @MainActor in
+            EmailCacheManager.shared.configure(with: modelContext, deferIndexRebuild: true)
+            SnoozeManager.shared.configure(with: modelContext)
+            OutboxManager.shared.configure(with: modelContext)
+            NetworkMonitor.shared.start()
         }
+
+        // Stage 2: warmups happen on-demand (first email open)
+
+        // Stage 3: disabled for now to avoid background hitches
     }
 
     func handleAuthChanged(isAuthenticated: Bool) {

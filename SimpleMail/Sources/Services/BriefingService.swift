@@ -239,6 +239,11 @@ final class BriefingService {
         }
         #endif
 
+        // Simulator: skip AI to avoid stalls
+        #if targetEnvironment(simulator)
+        return ExtractionResult(items: [], note: "Simulator: AI skipped, using fallback.")
+        #endif
+
         return ExtractionResult(items: [], note: "Apple Intelligence is unavailable on this device.")
     }
 

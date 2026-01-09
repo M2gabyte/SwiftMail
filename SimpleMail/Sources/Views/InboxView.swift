@@ -301,6 +301,7 @@ struct InboxView: View {
                     hasPrewarmedSearch = true
                 }
             }
+            MainThreadWatchdog.start(thresholdMs: 250)
         })
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() })
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() })
@@ -1105,10 +1106,14 @@ struct InboxView: View {
         briefingViewModel.accountEmail = currentBriefingAccountEmail()
 
         if viewModel.currentMailbox != .briefingBeta {
-            viewModel.preloadCachedEmails(
-                mailbox: viewModel.currentMailbox,
-                accountEmail: viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
-            )
+            Task.detached(priority: .utility) {
+                await viewModel.preloadCachedEmails(
+                    mailbox: await MainActor.run { viewModel.currentMailbox },
+                    accountEmail: await MainActor.run {
+                        viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
+                    }
+                )
+            }
         }
         scheduleWebKitWarmup()
     }
@@ -1117,7 +1122,7 @@ struct InboxView: View {
         guard !didScheduleWebKitWarmup else { return }
         didScheduleWebKitWarmup = true
         Task.detached(priority: .utility) {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(1))
             await MainActor.run {
                 StartupCoordinator.shared.prewarmWebKitIfNeeded()
             }
