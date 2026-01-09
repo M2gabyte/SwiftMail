@@ -212,7 +212,6 @@ final class BriefingService {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             var merged: [BriefingItem] = []
-            var lastError: String?
             let batches = stride(from: 0, to: hits.count, by: 2).map {
                 Array(hits[$0..<min($0 + 2, hits.count)])
             }
@@ -228,7 +227,6 @@ final class BriefingService {
                         merged.append(contentsOf: decoded.items)
                     }
                 } catch {
-                    lastError = error.localizedDescription
                     logger.error("Briefing AI extraction failed: \(error.localizedDescription)")
                 }
             }
