@@ -118,11 +118,11 @@ struct InboxView: View {
                 isContinuationInSenderRun: isContinuationInSenderRun
             )
         }
-        .background(Color(.systemBackground))
-        .listRowBackground(Color(.systemBackground))
-        .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
+        .background(Color(.secondarySystemBackground).opacity(0.7))
+        .listRowBackground(Color(.secondarySystemBackground).opacity(0.7))
+        .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 10 : 6, leading: 16, bottom: 6, trailing: 16))
         .listRowSeparator(.visible)
-        .listRowSeparatorTint(Color(.separator).opacity(0.25))
+        .listRowSeparatorTint(Color(.separator).opacity(0.15))
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button { viewModel.toggleRead(email) } label: {
                 Label(email.isUnread ? "Read" : "Unread",
@@ -1156,23 +1156,29 @@ struct SectionHeaderRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.primary.opacity(0.8))
-                .textCase(nil)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, isFirst ? 4 : 10)
-                .padding(.bottom, 4)
-                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: 8) {
+                Text(title.uppercased())
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.secondary)
+                    .tracking(0.6)
+                    .accessibilityAddTraits(.isHeader)
+
+                Rectangle()
+                    .fill(Color(.separator).opacity(0.2))
+                    .frame(height: 1.0 / displayScale)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, isFirst ? 8 : 14)
+            .padding(.bottom, 6)
 
             // Inset separator with softer opacity
             Rectangle()
-                .fill(Color(.separator).opacity(0.25))
+                .fill(Color(.separator).opacity(0.18))
                 .frame(height: 1.0 / displayScale)
                 .padding(.leading, 16)
         }
-        .background(.ultraThinMaterial)
+        .background(Color(.secondarySystemBackground).opacity(0.7))
         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
         .listRowSeparator(.hidden)
     }
@@ -1180,12 +1186,12 @@ struct SectionHeaderRow: View {
 
 private enum MailTypography {
     static let senderUnread = Font.subheadline.weight(.semibold)
-    static let senderRead = Font.subheadline.weight(.medium)
+    static let senderRead = Font.subheadline.weight(.semibold)
     static let senderCompactUnread = Font.subheadline.weight(.semibold)
     static let senderCompactRead = Font.subheadline.weight(.medium)
     static let senderContinuation = Font.footnote.weight(.regular)
-    static let subjectUnread = Font.subheadline.weight(.semibold)
-    static let subjectRead = Font.subheadline.weight(.regular)
+    static let subjectUnread = Font.footnote.weight(.medium)
+    static let subjectRead = Font.footnote.weight(.regular)
     static let subjectCompactUnread = Font.footnote.weight(.semibold)
     static let subjectCompactRead = Font.footnote.weight(.regular)
     static let snippet = Font.footnote
@@ -1479,8 +1485,9 @@ struct EmailRow: View {
             }
             return email.isUnread ? MailTypography.subjectUnread : MailTypography.subjectRead
         }()
-        let subjectColor: Color = email.isUnread ? .primary : Color.primary.opacity(0.82)
-        let snippetColor: Color = email.isUnread ? Color.secondary.opacity(0.9) : Color.secondary.opacity(0.7)
+        let subjectColor: Color = email.isUnread ? Color.primary.opacity(0.92) : Color.primary.opacity(0.78)
+        let snippetColor: Color = email.isUnread ? Color.secondary.opacity(0.8) : Color.secondary.opacity(0.6)
+        let metaColor: Color = Color.secondary.opacity(email.isUnread ? 0.9 : 0.7)
 
         HStack(spacing: isCompact ? 8 : 10) {
             // Avatar (hidden in compact mode)
@@ -1500,7 +1507,7 @@ struct EmailRow: View {
             }
 
             // Content
-            VStack(alignment: .leading, spacing: isCompact ? 2 : 3) {
+            VStack(alignment: .leading, spacing: isCompact ? 2 : 4) {
                 // Top row: sender + metadata cluster
                 HStack(alignment: .center, spacing: 6) {
                     // Sender name: reduced emphasis for sender-run continuation
@@ -1532,7 +1539,7 @@ struct EmailRow: View {
 
                         Text(DateFormatters.formatEmailDate(email.date))
                             .font(MailTypography.meta)
-                            .foregroundStyle(email.isUnread ? .primary : .secondary)
+                            .foregroundStyle(metaColor)
 
                         // Unread dot aligned with timestamp
                         if email.isUnread {
@@ -1567,7 +1574,7 @@ struct EmailRow: View {
             }
             .layoutPriority(1)
         }
-        .padding(.vertical, isCompact ? 5 : 7)
+        .padding(.vertical, isCompact ? 6 : 9)
         .contentShape(Rectangle())
     }
 }
