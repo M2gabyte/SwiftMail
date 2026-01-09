@@ -33,7 +33,9 @@ final class StartupCoordinator {
                 self.prewarmWebKit()
             }
             if isAuthenticated {
-                self.scheduleContactsPreloadIfNeeded(delaySeconds: 5)
+                await MainActor.run {
+                    self.scheduleContactsPreloadIfNeeded(delaySeconds: 5)
+                }
             }
         }
 
