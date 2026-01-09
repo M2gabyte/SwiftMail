@@ -59,7 +59,8 @@ actor SummaryQueue {
             if queuedIds.contains(candidate.emailId) {
                 continue
             }
-            if SummaryCache.shared.summary(for: candidate.emailId, accountEmail: candidate.accountEmail) != nil {
+            let cached = await MainActor.run { SummaryCache.shared.summary(for: candidate.emailId, accountEmail: candidate.accountEmail) }
+            if cached != nil {
                 stats.skippedCached += 1
                 continue
             }
