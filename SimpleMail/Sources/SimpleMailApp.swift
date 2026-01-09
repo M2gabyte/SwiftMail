@@ -120,7 +120,7 @@ struct ContentView: View {
                         NavigationStack {
                             InboxView()
                         }
-                            .transition(.opacity)
+                        .transition(.opacity)
                     } else {
                         SignInView()
                             .transition(.opacity)

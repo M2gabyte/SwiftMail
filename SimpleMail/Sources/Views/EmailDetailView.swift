@@ -731,7 +731,7 @@ struct EmailBodyWebView: UIViewRepresentable {
                     var dark = Math.min(l1, l2);
                     return (light + 0.05) / (dark + 0.05);
                 }
-                function getBackgroundRGB(el) {
+                function getBackgroundRGB(el, isDarkMode) {
                     var node = el;
                     while (node && node !== document.documentElement) {
                         var bg = getComputedStyle(node).backgroundColor;
@@ -740,24 +740,33 @@ struct EmailBodyWebView: UIViewRepresentable {
                         }
                         node = node.parentElement;
                     }
-                    return parseRGB(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255 };
+                    // Check body's computed background
+                    var bodyBg = parseRGB(getComputedStyle(document.body).backgroundColor);
+                    if (bodyBg && (bodyBg.r > 10 || bodyBg.g > 10 || bodyBg.b > 10)) {
+                        return bodyBg;
+                    }
+                    // No explicit background found - use system default based on color scheme
+                    // In dark mode, the app's dark UI shows through the transparent WebView
+                    return isDarkMode ? { r: 28, g: 28, b: 30 } : { r: 255, g: 255, b: 255 };
                 }
-                // Improve readability by clamping low-contrast text colors.
-                // This preserves brand styling unless the contrast ratio drops below 3:1.
+                // Improve readability by fixing low-contrast text colors.
+                // Only adjusts text that would be unreadable against the actual visible background.
                 function adjustLowContrastText() {
-                    var elements = document.querySelectorAll('p, span, td, div, li, a, h1, h2, h3, h4, h5, h6');
+                    var isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    var elements = document.querySelectorAll('p, span, td, div, li, a, h1, h2, h3, h4, h5, h6, th, label, strong, em, b, i');
                     elements.forEach(function(el) {
                         if (!el.textContent || el.textContent.trim().length === 0) { return; }
                         if (el.dataset && el.dataset.smContrastAdjusted === '1') { return; }
                         var style = getComputedStyle(el);
                         var color = parseRGB(style.color);
                         if (!color) { return; }
-                        var bg = getBackgroundRGB(el);
+                        var bg = getBackgroundRGB(el, isDarkMode);
                         var ratio = contrastRatio(luminance(color), luminance(bg));
-                        // 3.0 is a pragmatic threshold for small body text in emails.
+                        // Fix text with contrast below 3:1 (minimum for readability)
                         if (ratio < 3.0) {
                             var bgLum = luminance(bg);
-                            el.style.color = bgLum > 0.6 ? '#222222' : '#e6e6e6';
+                            var newColor = bgLum > 0.5 ? '#1a1a1a' : '#f0f0f0';
+                            el.style.setProperty('color', newColor, 'important');
                         }
                         if (el.dataset) { el.dataset.smContrastAdjusted = '1'; }
                     });

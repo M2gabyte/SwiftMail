@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import WebKit
 import OSLog
 
 private let startupLogger = Logger(subsystem: "com.simplemail.app", category: "StartupCoordinator")
@@ -10,6 +11,7 @@ final class StartupCoordinator {
 
     private var didStart = false
     private var didPreloadContacts = false
+    private var webKitWarmer: WKWebView?  // Keep alive briefly to complete warmup
 
     private init() {}
 
@@ -26,6 +28,7 @@ final class StartupCoordinator {
         // Stage 2: after first frame (short delay)
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
+            prewarmWebKit()
             if isAuthenticated {
                 await preloadContactsIfNeeded()
             }
@@ -53,5 +56,21 @@ final class StartupCoordinator {
         guard !didPreloadContacts else { return }
         didPreloadContacts = true
         await PeopleService.shared.preloadContacts()
+    }
+
+    /// Pre-warm WebKit by creating a WKWebView and loading minimal content.
+    /// This triggers GPU, WebContent, and Networking process launches early,
+    /// so the first email opens instantly instead of waiting 2+ seconds.
+    private func prewarmWebKit() {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: config)
+        webView.loadHTMLString("<html><body></body></html>", baseURL: nil)
+        webKitWarmer = webView
+
+        // Release after processes have launched (1 second should be enough)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            self.webKitWarmer = nil
+        }
     }
 }

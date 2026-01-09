@@ -50,6 +50,7 @@ struct ComposeView: View {
     @StateObject private var viewModel: ComposeViewModel
     @FocusState private var focusedField: Field?
     @StateObject private var richTextContext = RichTextContext()
+    @State private var editingBody: NSAttributedString = NSAttributedString()
     @State private var showingAIDraft = false
     @State private var showingTemplates = false
     @State private var showingScheduleSheet = false
@@ -130,7 +131,7 @@ struct ComposeView: View {
             .sheet(isPresented: $showingTemplates) {
                 TemplatesSheet(
                     templates: viewModel.templates,
-                    defaultBody: viewModel.bodyAttributed.string,
+                    defaultBody: editingBody.string,
                     onInsert: { template in
                         viewModel.appendTemplate(template)
                     },
@@ -223,7 +224,8 @@ struct ComposeView: View {
             .onChange(of: viewModel.subject) { _, _ in
                 viewModel.scheduleAutoSave()
             }
-            .onChange(of: viewModel.bodyAttributed) { _, _ in
+            .onChange(of: editingBody) { _, newValue in
+                viewModel.bodyAttributed = newValue
                 viewModel.scheduleAutoSave()
             }
             .onChange(of: viewModel.to) { _, _ in
@@ -234,6 +236,17 @@ struct ComposeView: View {
             }
             .onChange(of: viewModel.bcc) { _, _ in
                 viewModel.scheduleAutoSave()
+            }
+            .task {
+                if editingBody.string.isEmpty {
+                    editingBody = viewModel.bodyAttributed
+                }
+                if let rich = await viewModel.loadDeferredBody() {
+                    await MainActor.run {
+                        editingBody = rich
+                        viewModel.bodyAttributed = rich
+                    }
+                }
             }
     }
 
@@ -349,13 +362,13 @@ struct ComposeView: View {
                 // Body (rich text)
                 ZStack(alignment: .topLeading) {
                     RichTextEditor(
-                        attributedText: $viewModel.bodyAttributed,
+                        attributedText: $editingBody,
                         context: richTextContext
                     )
                     .frame(minHeight: 300)
                     .focused($focusedField, equals: .body)
 
-                    if viewModel.bodyAttributed.string.isEmpty {
+                    if editingBody.string.isEmpty {
                         Text("Write your message…")
                             .foregroundStyle(.secondary)
                             .padding(.top, 8)
@@ -363,6 +376,11 @@ struct ComposeView: View {
                     }
                 }
                 .padding(.horizontal)
+            }
+        }
+        .task {
+            if editingBody.string.isEmpty {
+                editingBody = viewModel.bodyAttributed
             }
         }
     }
@@ -1388,6 +1406,7 @@ struct ScheduleSendSheet: View {
 
 // MARK: - Rich Text Editor
 
+@MainActor
 final class RichTextContext: ObservableObject {
     @Published var selectedRange: NSRange = NSRange(location: 0, length: 0)
     @Published var isBold = false
@@ -1395,6 +1414,8 @@ final class RichTextContext: ObservableObject {
     @Published var isUnderline = false
     weak var textView: UITextView?
     var onTextChange: ((NSAttributedString) -> Void)?
+    var isUpdatingFromUIView = false
+    var sessionID = UUID()
 
     func toggleBold() { toggleTrait(.traitBold) }
     func toggleItalic() { toggleTrait(.traitItalic) }
@@ -1423,7 +1444,10 @@ final class RichTextContext: ObservableObject {
             }
             textView.attributedText = mutable
             textView.selectedRange = range
-            onTextChange?(mutable)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isUpdatingFromUIView else { return }
+                self.onTextChange?(mutable)
+            }
         } else {
             let currentFont = currentFont(from: textView)
             let nextStyle = nextStyleFor(font: currentFont, styles: styles)
@@ -1438,7 +1462,10 @@ final class RichTextContext: ObservableObject {
         let mutable = NSMutableAttributedString(string: textView.text ?? "", attributes: [.font: font])
         textView.attributedText = mutable
         textView.typingAttributes = [.font: font]
-        onTextChange?(mutable)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isUpdatingFromUIView else { return }
+            self.onTextChange?(mutable)
+        }
     }
 
     func insertBulletList() {
@@ -1465,7 +1492,10 @@ final class RichTextContext: ObservableObject {
 
         textView.attributedText = mutable
         textView.selectedRange = NSRange(location: range.location + range.length, length: 0)
-        onTextChange?(mutable)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isUpdatingFromUIView else { return }
+            self.onTextChange?(mutable)
+        }
     }
 
     private func toggleTrait(_ trait: UIFontDescriptor.SymbolicTraits) {
@@ -1482,7 +1512,10 @@ final class RichTextContext: ObservableObject {
             }
             textView.attributedText = mutable
             textView.selectedRange = range
-            onTextChange?(mutable)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isUpdatingFromUIView else { return }
+                self.onTextChange?(mutable)
+            }
         } else {
             let newFont = toggledFont(font, trait: trait)
             textView.typingAttributes[.font] = newFont
@@ -1497,15 +1530,17 @@ final class RichTextContext: ObservableObject {
             mutable.addAttribute(key, value: value, range: range)
             textView.attributedText = mutable
             textView.selectedRange = range
-            onTextChange?(mutable)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isUpdatingFromUIView else { return }
+                self.onTextChange?(mutable)
+            }
         } else {
             textView.typingAttributes[key] = value
         }
     }
 
-    func updateSelectionState() {
-        guard let textView = textView else { return }
-        let range = textView.selectedRange
+    func applySelectionState(from textView: UITextView, range: NSRange) {
+        guard !isUpdatingFromUIView else { return }
         let attributes: [NSAttributedString.Key: Any]
         if range.length > 0, range.location < textView.attributedText.length {
             attributes = textView.attributedText.attributes(at: range.location, effectiveRange: nil)
@@ -1515,14 +1550,13 @@ final class RichTextContext: ObservableObject {
 
         let font = (attributes[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
         let traits = font.fontDescriptor.symbolicTraits
-        isBold = traits.contains(.traitBold)
-        isItalic = traits.contains(.traitItalic)
+        let bold = traits.contains(.traitBold)
+        let italic = traits.contains(.traitItalic)
+        let underline = (attributes[.underlineStyle] as? Int).map { $0 != 0 } ?? false
 
-        if let underline = attributes[.underlineStyle] as? Int {
-            isUnderline = underline != 0
-        } else {
-            isUnderline = false
-        }
+        if isBold != bold { isBold = bold }
+        if isItalic != italic { isItalic = italic }
+        if isUnderline != underline { isUnderline = underline }
     }
 
     private func currentFont(from textView: UITextView) -> UIFont {
@@ -1586,8 +1620,11 @@ struct RichTextEditor: UIViewRepresentable {
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.setContentHuggingPriority(.defaultLow, for: .vertical)
         self.context.textView = textView
+        self.context.sessionID = UUID()
+        context.coordinator.sessionID = self.context.sessionID
+        context.coordinator.context = self.context
         self.context.onTextChange = { updated in
-            self.attributedText = updated
+            context.coordinator.handleExternalTextChange(updated)
         }
         return textView
     }
@@ -1596,8 +1633,12 @@ struct RichTextEditor: UIViewRepresentable {
         // Compare string content to avoid unnecessary updates
         if textView.attributedText.string != attributedText.string {
             // Mark as programmatic update to prevent feedback loop
+            self.context.isUpdatingFromUIView = true
             context.coordinator.isProgrammaticUpdate = true
-            defer { context.coordinator.isProgrammaticUpdate = false }
+            defer {
+                context.coordinator.isProgrammaticUpdate = false
+                self.context.isUpdatingFromUIView = false
+            }
 
             // Save cursor position
             let selectedRange = textView.selectedRange
@@ -1633,21 +1674,52 @@ struct RichTextEditor: UIViewRepresentable {
     class Coordinator: NSObject, UITextViewDelegate {
         let parent: RichTextEditor
         var isProgrammaticUpdate = false
+        var sessionID: UUID?
+        weak var context: RichTextContext?
+        private var publishTask: Task<Void, Never>?
+        private var pendingAttributedText: NSAttributedString?
+        private var pendingSelection: NSRange?
 
         init(_ parent: RichTextEditor) {
             self.parent = parent
         }
 
+        func handleExternalTextChange(_ updated: NSAttributedString) {
+            pendingAttributedText = updated
+            schedulePublish()
+        }
+
+        private func schedulePublish() {
+            publishTask?.cancel()
+            publishTask = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard let self else { return }
+                guard let context = self.context, self.sessionID == context.sessionID else { return }
+                guard !context.isUpdatingFromUIView else { return }
+
+                if let text = self.pendingAttributedText {
+                    self.parent.attributedText = text
+                    self.pendingAttributedText = nil
+                }
+                if let range = self.pendingSelection, let textView = context.textView {
+                    context.selectedRange = range
+                    context.applySelectionState(from: textView, range: range)
+                    self.pendingSelection = nil
+                }
+            }
+        }
+
         func textViewDidChange(_ textView: UITextView) {
             // Skip if this is a programmatic update to prevent feedback loop
-            guard !isProgrammaticUpdate else { return }
-            parent.attributedText = textView.attributedText
-            parent.context.updateSelectionState()
+            guard !isProgrammaticUpdate, !parent.context.isUpdatingFromUIView else { return }
+            pendingAttributedText = textView.attributedText ?? NSAttributedString()
+            schedulePublish()
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
-            parent.context.selectedRange = textView.selectedRange
-            parent.context.updateSelectionState()
+            guard !parent.context.isUpdatingFromUIView else { return }
+            pendingSelection = textView.selectedRange
+            schedulePublish()
         }
     }
 }
@@ -1826,6 +1898,8 @@ class ComposeViewModel: ObservableObject {
     private var replyToMessageId: String?
     private var replyThreadId: String?
     private var draftId: String?
+    private var pendingHTMLBody: String?
+    private var pendingQuotedEmail: EmailDetail?
     private var autoSaveTask: Task<Void, Never>?
     private let templatesKey = "composeTemplates"
     var dismissAfterQueue: (() -> Void)?
@@ -1882,7 +1956,9 @@ class ComposeViewModel: ObservableObject {
             let senderEmail = EmailParser.extractSenderEmail(from: email.from)
             to = [senderEmail]
             subject = email.subject.hasPrefix("Re:") ? email.subject : "Re: \(email.subject)"
-            bodyAttributed = buildQuotedReply(email)
+            // Defer rich HTML parse to avoid publish-during-update crash
+            bodyAttributed = Self.attributedBody(from: buildQuotedReplyFallback(email))
+            pendingQuotedEmail = email
             replyThreadId = threadId
             replyToMessageId = email.id
 
@@ -1891,7 +1967,8 @@ class ComposeViewModel: ObservableObject {
             to = [senderEmail]
             cc = email.cc
             subject = email.subject.hasPrefix("Re:") ? email.subject : "Re: \(email.subject)"
-            bodyAttributed = buildQuotedReply(email)
+            bodyAttributed = Self.attributedBody(from: buildQuotedReplyFallback(email))
+            pendingQuotedEmail = email
             replyThreadId = threadId
             replyToMessageId = email.id
 
@@ -1914,7 +1991,8 @@ class ComposeViewModel: ObservableObject {
             subject = subj
             // Prefer HTML body if available for rich text restoration
             if let html = bodyHtmlText, !html.isEmpty, isLikelyHTML(html) {
-                bodyAttributed = attributedBody(fromHTML: html) ?? Self.attributedBody(from: bodyText)
+                bodyAttributed = Self.attributedBody(from: bodyText)
+                pendingHTMLBody = html
             } else {
                 bodyAttributed = Self.attributedBody(from: bodyText)
             }
@@ -1922,6 +2000,21 @@ class ComposeViewModel: ObservableObject {
             replyThreadId = threadIdValue
             isRecoveredDraft = true
         }
+    }
+
+    /// Load deferred rich body (HTML or quoted email) to avoid publish during view update.
+    func loadDeferredBody() async -> NSAttributedString? {
+        if let html = pendingHTMLBody {
+            pendingHTMLBody = nil
+            if let rich = attributedBody(fromHTML: html) {
+                return rich
+            }
+        }
+        if let email = pendingQuotedEmail {
+            pendingQuotedEmail = nil
+            return buildQuotedReply(email)
+        }
+        return nil
     }
 
     func send() async -> Bool {
@@ -2074,6 +2167,19 @@ class ComposeViewModel: ObservableObject {
         }
         bodyAttributed = Self.attributedBody(from: draft.body)
         pendingAIDraft = nil
+    }
+
+    private func buildQuotedReplyFallback(_ email: EmailDetail) -> String {
+        // Fast plain-text fallback to avoid heavy HTML parsing during view init
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+        let dateStr = dateFormatter.string(from: email.date)
+        let senderName = EmailParser.extractSenderName(from: email.from)
+        let header = "On \(dateStr), \(senderName) wrote:"
+        let plainBody = plainTextFromHTML(email.body)
+        let quotePreview = summarizeForQuote(plainBody)
+        let fallback = "\n\n\(header)\n> \(quotePreview.replacingOccurrences(of: "\n", with: "\n> "))"
+        return fallback
     }
 
     private func buildQuotedReply(_ email: EmailDetail) -> NSAttributedString {
