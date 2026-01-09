@@ -4,6 +4,7 @@ extension Notification.Name {
     static let inboxPreferencesDidChange = Notification.Name("inboxPreferencesDidChange")
 }
 
+@MainActor
 enum InboxPreferences {
     private static let initializedKey = "inboxPrefsInitialized"
     private static let pinnedTabKey = "pinnedTabOption"
