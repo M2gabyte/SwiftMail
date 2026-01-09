@@ -12,7 +12,9 @@ enum SummaryService {
         accountEmail: String?,
         minLength: Int = SummaryService.minLength
     ) async -> String? {
-        if let cached = SummaryCache.shared.summary(for: messageId, accountEmail: accountEmail) {
+        if let cached = await MainActor.run(body: {
+            SummaryCache.shared.summary(for: messageId, accountEmail: accountEmail)
+        }) {
             return cached
         }
 
@@ -29,7 +31,9 @@ enum SummaryService {
         }
 
         let cleaned = sanitizeSummary(summary)
-        SummaryCache.shared.save(summary: cleaned, for: messageId, accountEmail: accountEmail)
+        await MainActor.run {
+            SummaryCache.shared.save(summary: cleaned, for: messageId, accountEmail: accountEmail)
+        }
         return cleaned
     }
 
