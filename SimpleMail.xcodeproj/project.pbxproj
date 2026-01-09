@@ -11,6 +11,9 @@
 		A1000001 /* SimpleMailApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001 /* SimpleMailApp.swift */; };
 		A1000002 /* Email.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* Email.swift */; };
 		A1000003 /* Briefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Briefing.swift */; };
+		A10000AB /* BriefingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AB /* BriefingViewModel.swift */; };
+		A10000AC /* BriefingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AC /* BriefingView.swift */; };
+		A10000AD /* BriefingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AD /* BriefingService.swift */; };
 		A1000060 /* InboxTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000060 /* InboxTab.swift */; };
 		A1000061 /* PinnedTabOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000061 /* PinnedTabOption.swift */; };
 		A1000062 /* PrimaryRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* PrimaryRule.swift */; };
@@ -89,6 +92,9 @@
 		B1000001 /* SimpleMailApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleMailApp.swift; sourceTree = "<group>"; };
 		B1000002 /* Email.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Email.swift; sourceTree = "<group>"; };
 		B1000003 /* Briefing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Briefing.swift; sourceTree = "<group>"; };
+		B10000AB /* BriefingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingViewModel.swift; sourceTree = "<group>"; };
+		B10000AC /* BriefingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingView.swift; sourceTree = "<group>"; };
+		B10000AD /* BriefingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingService.swift; sourceTree = "<group>"; };
 		B1000060 /* InboxTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxTab.swift; sourceTree = "<group>"; };
 		B1000061 /* PinnedTabOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabOption.swift; sourceTree = "<group>"; };
 		B1000062 /* PrimaryRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryRule.swift; sourceTree = "<group>"; };
@@ -232,6 +238,7 @@
 			children = (
 				D0000012 /* Components */,
 				B1000005 /* InboxView.swift */,
+				B10000AC /* BriefingView.swift */,
 				B1000042 /* LocationSheetView.swift */,
 				B1000007 /* EmailDetailView.swift */,
 				B1000008 /* ComposeView.swift */,
@@ -252,6 +259,7 @@
 			isa = PBXGroup;
 			children = (
 				B1000012 /* InboxViewModel.swift */,
+				B10000AB /* BriefingViewModel.swift */,
 				B10000A1 /* EmailSection.swift */,
 				B10000A3 /* InboxViewState.swift */,
 				B10000A5 /* InboxStoreWorker.swift */,
@@ -265,6 +273,7 @@
 				B1000013 /* GmailService.swift */,
 				B1000014 /* AuthService.swift */,
 				B3582BDA6D42420A /* PendingSendManager.swift */,
+				B10000AD /* BriefingService.swift */,
 				B1000043 /* SummaryCache.swift */,
 				B1000044 /* SummaryService.swift */,
 				B1000045 /* SummaryQueue.swift */,
@@ -450,10 +459,12 @@
 				A1000045 /* SummaryQueue.swift in Sources */,
 				A1000002 /* Email.swift in Sources */,
 				A1000003 /* Briefing.swift in Sources */,
+				A10000AD /* BriefingService.swift in Sources */,
 				A1000060 /* InboxTab.swift in Sources */,
 				A1000061 /* PinnedTabOption.swift in Sources */,
 				A1000062 /* PrimaryRule.swift in Sources */,
 				A1000005 /* InboxView.swift in Sources */,
+				A10000AC /* BriefingView.swift in Sources */,
 				A1000042 /* LocationSheetView.swift in Sources */,
 				A1000007 /* EmailDetailView.swift in Sources */,
 				A1000008 /* ComposeView.swift in Sources */,
@@ -462,6 +473,7 @@
 				A1000064 /* PrimaryInboxRulesView.swift in Sources */,
 				A1000065 /* PinnedTabSettingsView.swift in Sources */,
 				A1000012 /* InboxViewModel.swift in Sources */,
+				A10000AB /* BriefingViewModel.swift in Sources */,
 				A1000013 /* GmailService.swift in Sources */,
 				A1000014 /* AuthService.swift in Sources */,
 				A1000015 /* BackgroundSync.swift in Sources */,
