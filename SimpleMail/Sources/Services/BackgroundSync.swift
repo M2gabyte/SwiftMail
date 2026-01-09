@@ -308,13 +308,17 @@ final class BackgroundSyncManager {
 
     private func syncAccount(_ account: AuthService.Account) async throws -> SyncResult {
         let accountEmail = account.email.lowercased()
-        let lastHistoryId = AccountDefaults.string(for: "gmailHistoryId", accountEmail: accountEmail)
+        let lastHistoryId = await MainActor.run {
+            AccountDefaults.string(for: "gmailHistoryId", accountEmail: accountEmail)
+        }
 
         if let lastHistoryId {
             do {
                 let delta = try await fetchHistoryDelta(for: account, startHistoryId: lastHistoryId)
                 if let newHistoryId = delta.historyId {
-                    AccountDefaults.setString(newHistoryId, for: "gmailHistoryId", accountEmail: accountEmail)
+                    await MainActor.run {
+                        AccountDefaults.setString(newHistoryId, for: "gmailHistoryId", accountEmail: accountEmail)
+                    }
                 }
                 return SyncResult(
                     emails: delta.changedEmails,
@@ -335,7 +339,9 @@ final class BackgroundSyncManager {
             maxResults: 50
         )
         if let profile = try? await GmailService.shared.getProfile(for: account) {
-            AccountDefaults.setString(profile.historyId, for: "gmailHistoryId", accountEmail: accountEmail)
+            await MainActor.run {
+                AccountDefaults.setString(profile.historyId, for: "gmailHistoryId", accountEmail: accountEmail)
+            }
         }
         return SyncResult(emails: emails, deletedIds: [], isFullSync: true)
     }
@@ -495,9 +501,14 @@ final class BackgroundSyncManager {
             // Check for cancellation before processing notifications
             try Task.checkCancellation()
 
-            let newEmails = emails.filter { email in
-                // Check if we've already notified for this email
-                !AccountDefaults.bool(for: "notified_\(email.id)", accountEmail: email.accountEmail)
+            var newEmails: [EmailDTO] = []
+            for email in emails {
+                let alreadyNotified = await MainActor.run {
+                    AccountDefaults.bool(for: "notified_\(email.id)", accountEmail: email.accountEmail)
+                }
+                if !alreadyNotified {
+                    newEmails.append(email)
+                }
             }
 
             for email in newEmails {
@@ -505,26 +516,35 @@ final class BackgroundSyncManager {
                 if Task.isCancelled { break }
 
                 let accountEmail = email.accountEmail
-                let settings = loadSettings(accountEmail: accountEmail)
+                let settings = await loadSettings(accountEmail: accountEmail)
                 guard settings.notificationsEnabled else { continue }
 
-                let vipSenders = Set(AccountDefaults.stringArray(for: "vipSenders", accountEmail: accountEmail))
+                let vipSenders = await MainActor.run {
+                    Set(AccountDefaults.stringArray(for: "vipSenders", accountEmail: accountEmail))
+                }
                 let isVIP = vipSenders.contains(email.senderEmail.lowercased())
 
                 // Check notification preferences
                 if isVIP && settings.notifyVIPSenders {
                     await sendNotification(for: email, isVIP: true)
-                    AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
+                    await MainActor.run {
+                        AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
+                    }
                 } else if settings.notifyNewEmails {
                     await sendNotification(for: email, isVIP: false)
-                    AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
+                    await MainActor.run {
+                        AccountDefaults.setBool(true, for: "notified_\(email.id)", accountEmail: email.accountEmail)
+                    }
                 }
             }
         }
     }
 
-    private func loadSettings(accountEmail: String?) -> AppSettings {
-        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail) else {
+    private func loadSettings(accountEmail: String?) async -> AppSettings {
+        let data = await MainActor.run {
+            AccountDefaults.data(for: "appSettings", accountEmail: accountEmail)
+        }
+        guard let data else {
             return AppSettings()
         }
 
@@ -539,12 +559,12 @@ final class BackgroundSyncManager {
     private func shouldRunAggressiveSummaryProcessing() async -> Bool {
         let accounts = await MainActor.run { AuthService.shared.accounts }
         if accounts.isEmpty {
-            let settings = loadSettings(accountEmail: nil)
+            let settings = await loadSettings(accountEmail: nil)
             return settings.precomputeSummaries && settings.backgroundSummaryProcessing
         }
 
         for account in accounts {
-            let settings = loadSettings(accountEmail: account.email)
+            let settings = await loadSettings(accountEmail: account.email)
             if settings.precomputeSummaries && settings.backgroundSummaryProcessing {
                 return true
             }

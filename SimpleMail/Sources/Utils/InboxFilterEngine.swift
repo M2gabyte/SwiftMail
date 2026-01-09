@@ -43,6 +43,25 @@ struct InboxFilterEngine {
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
     }()
 
+    private static func scopedKey(_ key: String, accountEmail: String?) -> String {
+        guard let email = accountEmail?.lowercased(), !email.isEmpty else {
+            return key
+        }
+        return "\(key)::\(email)"
+    }
+
+    private static func stringArraySync(for key: String, accountEmail: String?) -> [String] {
+        UserDefaults.standard.stringArray(forKey: scopedKey(key, accountEmail: accountEmail)) ?? []
+    }
+
+    private static func boolSync(for key: String, accountEmail: String?) -> Bool {
+        UserDefaults.standard.bool(forKey: scopedKey(key, accountEmail: accountEmail))
+    }
+
+    private static func isPrimaryRuleEnabledSync(_ rule: PrimaryRule) -> Bool {
+        boolSync(for: rule.defaultsKey, accountEmail: nil)
+    }
+
     static func buildClassificationCache(
         emails: [Email],
         existingCache: [String: CacheEntry],
@@ -281,44 +300,41 @@ struct InboxFilterEngine {
         return needsReplyPatterns.contains { $0.firstMatch(in: text, range: range) != nil }
     }
 
-    @MainActor
     private static func blockedSenders(for accountEmail: String?) -> Set<String> {
-        Set(AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail))
+        Set(stringArraySync(for: "blockedSenders", accountEmail: accountEmail))
     }
 
     private static func blockedSendersSync(for accountEmail: String?) -> Set<String> {
-        Set(AccountDefaults.stringArray(for: "blockedSenders", accountEmail: accountEmail))
+        Set(stringArraySync(for: "blockedSenders", accountEmail: accountEmail))
     }
 
-    @MainActor
     private static func alwaysPrimarySenders(for accountEmail: String?) -> [String] {
-        AccountDefaults.stringArray(for: "alwaysPrimarySenders", accountEmail: accountEmail)
+        stringArraySync(for: "alwaysPrimarySenders", accountEmail: accountEmail)
     }
 
-    @MainActor
     private static func alwaysOtherSenders(for accountEmail: String?) -> [String] {
-        AccountDefaults.stringArray(for: "alwaysOtherSenders", accountEmail: accountEmail)
+        stringArraySync(for: "alwaysOtherSenders", accountEmail: accountEmail)
     }
 
     private static func accountEmail(for email: Email, fallback: String?) -> String? {
         email.accountEmail ?? fallback
     }
 
-    private static func senderOverride(for email: Email, currentAccountEmail: String?) async -> InboxTab? {
+    private static func senderOverride(for email: Email, currentAccountEmail: String?) -> InboxTab? {
         let accountEmail = accountEmail(for: email, fallback: currentAccountEmail)
         let sender = email.senderEmail.lowercased()
 
-        let primary = await alwaysPrimarySenders(for: accountEmail)
+        let primary = alwaysPrimarySenders(for: accountEmail)
         if primary.contains(sender) { return .primary }
 
-        let other = await alwaysOtherSenders(for: accountEmail)
+        let other = alwaysOtherSenders(for: accountEmail)
         if other.contains(sender) { return .pinned }
 
         return nil
     }
 
     private static func isVIPSender(_ email: Email) -> Bool {
-        let vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: email.accountEmail)
+        let vipSenders = stringArraySync(for: "vipSenders", accountEmail: email.accountEmail)
         return vipSenders.contains(email.senderEmail.lowercased())
     }
 
@@ -357,12 +373,12 @@ struct InboxFilterEngine {
         classification: Classification,
         currentAccountEmail: String?
     ) -> Bool {
-        if let override = await senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
+        if let override = senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
             return override == .primary
         }
 
         for rule in PrimaryRule.allCases {
-            if await InboxPreferences.isPrimaryRuleEnabled(rule) == false { continue }
+            if isPrimaryRuleEnabledSync(rule) == false { continue }
             switch rule {
             case .people:
                 if classification.isPeople { return true }
