@@ -33,22 +33,18 @@ final class EmailCacheManager: ObservableObject {
         self.modelContext = context
         updateCacheStats()
         guard deferIndexRebuild else {
-            Task.detached(priority: .utility) { [weak self] in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
-                let cached = await MainActor.run {
-                    self.loadAllCachedEmails()
-                }
+                let cached = self.loadAllCachedEmails()
                 await SearchIndexManager.shared.rebuildIndex(with: cached)
             }
             return
         }
 
-        Task.detached(priority: .utility) { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
             try? await Task.sleep(for: .milliseconds(300))
-            let cached = await MainActor.run {
-                self.loadAllCachedEmails()
-            }
+            let cached = self.loadAllCachedEmails()
             await SearchIndexManager.shared.rebuildIndex(with: cached)
         }
     }

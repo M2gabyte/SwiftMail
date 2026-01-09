@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 enum AccountDefaults {
     static func scopedKey(_ key: String, accountEmail: String?) -> String {
         guard let email = accountEmail?.lowercased(), !email.isEmpty else {

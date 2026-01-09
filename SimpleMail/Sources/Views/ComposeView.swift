@@ -1900,6 +1900,7 @@ class ComposeViewModel: ObservableObject {
     private var draftId: String?
     private var pendingHTMLBody: String?
     private var pendingQuotedEmail: EmailDetail?
+    private static let htmlCache = NSCache<NSString, NSAttributedString>()
     private var autoSaveTask: Task<Void, Never>?
     private let templatesKey = "composeTemplates"
     var dismissAfterQueue: (() -> Void)?
@@ -2112,7 +2113,7 @@ class ComposeViewModel: ObservableObject {
     func scheduleAutoSave() {
         autoSaveTask?.cancel()
         autoSaveTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(3))
             guard let self, !Task.isCancelled else { return }
             if self.hasContent {
                 await self.saveDraft()
@@ -2261,11 +2262,18 @@ class ComposeViewModel: ObservableObject {
     private func attributedBody(fromHTML html: String) -> NSAttributedString? {
         let trimmed = html.count > 250_000 ? String(html.prefix(250_000)) : html
         guard let data = trimmed.data(using: .utf8) else { return nil }
+        if let cached = Self.htmlCache.object(forKey: trimmed as NSString) {
+            return cached
+        }
         let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
             .documentType: NSAttributedString.DocumentType.html,
             .characterEncoding: String.Encoding.utf8.rawValue
         ]
-        return try? NSAttributedString(data: data, options: options, documentAttributes: nil)
+        if let parsed = try? NSAttributedString(data: data, options: options, documentAttributes: nil) {
+            Self.htmlCache.setObject(parsed, forKey: trimmed as NSString)
+            return parsed
+        }
+        return nil
     }
 
     private func isLikelyHTML(_ text: String) -> Bool {

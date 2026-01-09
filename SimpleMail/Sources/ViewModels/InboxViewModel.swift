@@ -192,6 +192,7 @@ final class InboxViewModel {
     @ObservationIgnored private let inboxWorker = InboxStoreWorker()
     @ObservationIgnored private var recomputeTask: Task<Void, Never>?
     @ObservationIgnored private var prefetchTask: Task<Void, Never>?
+    @ObservationIgnored private var preferredPageSizeCache: Int?
     @ObservationIgnored private var currentAccountEmail: String?
     @ObservationIgnored private var cachePagingState = CachePagingState()
 
@@ -214,6 +215,19 @@ final class InboxViewModel {
     }
 
     var pagingDebug = PagingDebugState()
+
+    private func preferredPageSize() -> Int {
+        if let cached = preferredPageSizeCache { return cached }
+        let size: Int
+        switch NetworkMonitor.shared.connectionType {
+        case .cellular:
+            size = 50
+        default:
+            size = 100
+        }
+        preferredPageSizeCache = size
+        return size
+    }
 
     // MARK: - Computed Properties
 
@@ -464,9 +478,10 @@ final class InboxViewModel {
                 let labelIds = labelIdsForMailbox(currentMailbox)
                 let query = mailboxQuery(for: currentMailbox)
 
+                let pageSize = preferredPageSize()
                 let (fetchedEmails, pageToken) = try await GmailService.shared.fetchInbox(
                     query: query,
-                    maxResults: 100,
+                    maxResults: pageSize,
                     labelIds: labelIds
                 )
 
@@ -586,9 +601,10 @@ final class InboxViewModel {
             let labelIds = labelIdsForMailbox(currentMailbox)
             let query = mailboxQuery(for: currentMailbox)
 
+            let pageSize = preferredPageSize()
             let (fetchedEmails, newPageToken) = try await GmailService.shared.fetchInbox(
                 query: query,
-                maxResults: 100,
+                maxResults: pageSize,
                 pageToken: pageToken,
                 labelIds: labelIds
             )
