@@ -201,12 +201,17 @@ struct ComposeView: View {
             }
             .alert("Discard Draft?", isPresented: $viewModel.showDiscardAlert) {
                 Button("Discard", role: .destructive) {
-                    viewModel.cancelAutoSave()
+                    // Dismiss immediately - delete draft in background (non-blocking)
+                    let draftToDelete = viewModel.discardLocally()
                     dismiss()
+
+                    // Fire-and-forget deletion
+                    if let id = draftToDelete {
+                        Task { try? await GmailService.shared.deleteDraft(draftId: id) }
+                    }
                 }
                 Button("Save Draft") {
                     Task {
-                        // saveDraft() handles running network call off-main internally
                         await viewModel.saveDraft()
                         viewModel.cancelAutoSave()
                         dismiss()
@@ -228,22 +233,31 @@ struct ComposeView: View {
                 }
             }
             .onChange(of: viewModel.subject) { _, _ in
+                viewModel.markUserEdited()
                 viewModel.scheduleAutoSave()
             }
             .onChange(of: editingBody) { _, newValue in
                 viewModel.bodyAttributed = newValue
+                viewModel.markUserEdited()
                 viewModel.scheduleAutoSave()
             }
             .onChange(of: viewModel.to) { _, _ in
+                viewModel.markUserEdited()
                 viewModel.scheduleAutoSave()
             }
             .onChange(of: viewModel.cc) { _, _ in
+                viewModel.markUserEdited()
                 viewModel.scheduleAutoSave()
             }
             .onChange(of: viewModel.bcc) { _, _ in
+                viewModel.markUserEdited()
                 viewModel.scheduleAutoSave()
             }
             .task {
+                // Mark as seeding to prevent auto-save from triggering on programmatic changes
+                viewModel.isSeedingBody = true
+                defer { viewModel.isSeedingBody = false }
+
                 if editingBody.string.isEmpty {
                     editingBody = viewModel.bodyAttributed
                 }
@@ -385,6 +399,10 @@ struct ComposeView: View {
             }
         }
         .task {
+            // Guard programmatic body initialization
+            viewModel.isSeedingBody = true
+            defer { viewModel.isSeedingBody = false }
+
             if editingBody.string.isEmpty {
                 editingBody = viewModel.bodyAttributed
             }
@@ -1917,10 +1935,19 @@ class ComposeViewModel: ObservableObject {
     private var replyToMessageId: String?
     private var replyThreadId: String?
     private var draftId: String?
+    private var isSavingDraft = false  // Prevent concurrent saves
     private var pendingHTMLBody: String?
     private var pendingQuotedEmail: EmailDetail?
     private static let htmlCache = NSCache<NSString, NSAttributedString>()
     private var autoSaveTask: Task<Void, Never>?
+
+    /// True while programmatically setting body (e.g., loading quoted email)
+    /// Prevents auto-save from triggering on programmatic changes
+    var isSeedingBody = false
+
+    /// True after user has made a real edit (keystroke, not programmatic)
+    /// Auto-save only runs after this is true
+    private var hasUserEdited = false
     private let templatesKey = "composeTemplates"
     var dismissAfterQueue: (() -> Void)?
 
@@ -1976,8 +2003,8 @@ class ComposeViewModel: ObservableObject {
             let senderEmail = EmailParser.extractSenderEmail(from: email.from)
             to = [senderEmail]
             subject = email.subject.hasPrefix("Re:") ? email.subject : "Re: \(email.subject)"
-            // Defer rich HTML parse to avoid publish-during-update crash
-            bodyAttributed = Self.attributedBody(from: buildQuotedReplyFallback(email))
+            // Use placeholder - loadDeferredBody() will build quote on background thread
+            bodyAttributed = Self.attributedBody(from: "\n\n")
             pendingQuotedEmail = email
             replyThreadId = threadId
             replyToMessageId = email.id
@@ -1987,7 +2014,8 @@ class ComposeViewModel: ObservableObject {
             to = [senderEmail]
             cc = email.cc
             subject = email.subject.hasPrefix("Re:") ? email.subject : "Re: \(email.subject)"
-            bodyAttributed = Self.attributedBody(from: buildQuotedReplyFallback(email))
+            // Use placeholder - loadDeferredBody() will build quote on background thread
+            bodyAttributed = Self.attributedBody(from: "\n\n")
             pendingQuotedEmail = email
             replyThreadId = threadId
             replyToMessageId = email.id
@@ -2253,24 +2281,32 @@ class ComposeViewModel: ObservableObject {
     }
 
     func saveDraft() async {
-        // Extract data on main actor (fast - just reading properties)
+        // Prevent concurrent saves (would create duplicate drafts)
+        guard !isSavingDraft else { return }
+        isSavingDraft = true
+        defer { isSavingDraft = false }
+
         let toRecipients = to
         let emailSubject = subject
         let emailBody = plainBody()
         let existingDraftId = draftId
 
-        // Perform actual save OFF the main actor to avoid blocking UI
+        // GmailService is an actor - calling it suspends but doesn't block main thread
+        // No Task.detached needed, and this allows proper cancellation propagation
         do {
-            _ = try await Task.detached(priority: .utility) {
-                try await GmailService.shared.saveDraft(
-                    to: toRecipients,
-                    subject: emailSubject,
-                    body: emailBody,
-                    existingDraftId: existingDraftId
-                )
-            }.value
+            let newDraftId = try await GmailService.shared.saveDraft(
+                to: toRecipients,
+                subject: emailSubject,
+                body: emailBody,
+                existingDraftId: existingDraftId
+            )
+            // Store the draft ID so subsequent saves UPDATE instead of creating new
+            self.draftId = newDraftId
         } catch {
-            self.error = error
+            // Don't set error for cancellation
+            if !(error is CancellationError) {
+                self.error = error
+            }
         }
     }
 
@@ -2316,20 +2352,54 @@ class ComposeViewModel: ObservableObject {
     }
 
     func scheduleAutoSave() {
+        // Don't schedule auto-save during programmatic body loads or before user has edited
+        guard !isSeedingBody, hasUserEdited else { return }
+
         autoSaveTask?.cancel()
         autoSaveTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
             guard let self, !Task.isCancelled else { return }
             if self.hasContent {
-                // saveDraft() internally handles running the network call off-main
                 await self.saveDraft()
             }
         }
     }
 
+    /// Call when user makes a real edit (not programmatic changes)
+    func markUserEdited() {
+        guard !isSeedingBody else { return }
+        hasUserEdited = true
+    }
+
     func cancelAutoSave() {
         autoSaveTask?.cancel()
         autoSaveTask = nil
+    }
+
+    /// Get the draft ID for background cleanup, then clear local state
+    /// Returns the draft ID if one exists (caller should delete it in background)
+    func discardLocally() -> String? {
+        cancelAutoSave()
+        let idToDelete = draftId
+        draftId = nil
+        hasUserEdited = false
+        return idToDelete
+    }
+
+    /// Discard draft: cancel auto-save and delete any saved draft from server
+    /// NOTE: This blocks on network - prefer discardLocally() + background deletion
+    func discardDraft() async {
+        cancelAutoSave()
+        // Delete draft from server if it was already saved
+        if let draftId = draftId {
+            do {
+                try await GmailService.shared.deleteDraft(draftId: draftId)
+                self.draftId = nil
+            } catch {
+                // Log but don't block dismiss - draft cleanup is non-critical
+                logger.warning("Failed to delete draft \(draftId): \(error.localizedDescription)")
+            }
+        }
     }
 
     func addAttachment(data: Data, filename: String, mimeType: String) {
@@ -2381,74 +2451,6 @@ class ComposeViewModel: ObservableObject {
         pendingAIDraft = nil
     }
 
-    private func buildQuotedReplyFallback(_ email: EmailDetail) -> String {
-        // Fast plain-text fallback to avoid heavy HTML parsing during view init
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-        let dateStr = dateFormatter.string(from: email.date)
-        let senderName = EmailParser.extractSenderName(from: email.from)
-        let header = "On \(dateStr), \(senderName) wrote:"
-        let plainBody = plainTextFromHTML(email.body)
-        let quotePreview = summarizeForQuote(plainBody)
-        let fallback = "\n\n\(header)\n> \(quotePreview.replacingOccurrences(of: "\n", with: "\n> "))"
-        return fallback
-    }
-
-    private func buildQuotedReply(_ email: EmailDetail) -> NSAttributedString {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-        let dateStr = dateFormatter.string(from: email.date)
-
-        let senderName = EmailParser.extractSenderName(from: email.from)
-        let header = "On \(dateStr), \(senderName) wrote:"
-        let rawBody = email.body
-
-        let bodyHTML: String
-        if isLikelyHTML(rawBody) {
-            bodyHTML = sanitizeHTMLForQuote(rawBody)
-        } else {
-            bodyHTML = escapeHTML(rawBody)
-                .replacingOccurrences(of: "\n", with: "<br>")
-        }
-
-        let html = """
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: -apple-system; font-size: 16px; color: #111; }
-            blockquote {
-              margin: 8px 0 0 0;
-              padding-left: 12px;
-              border-left: 2px solid #d0d0d0;
-              color: #555;
-            }
-            blockquote, blockquote * {
-              text-align: left !important;
-              margin-left: 0 !important;
-            }
-            img { max-width: 100%; height: auto; }
-          </style>
-        </head>
-        <body>
-          <div><br><br></div>
-          <div>\(escapeHTML(header))</div>
-          <blockquote><div class="quoted">\(bodyHTML)</div></blockquote>
-        </body>
-        </html>
-        """
-
-        if let attributed = attributedBody(fromHTML: html) {
-            return attributed
-        }
-
-        // Fallback to compact plain-text quote
-        let plainBody = plainTextFromHTML(rawBody)
-        let quotePreview = summarizeForQuote(plainBody)
-        let fallback = "\n\n\(header)\n> \(quotePreview.replacingOccurrences(of: "\n", with: "\n> "))"
-        return Self.attributedBody(from: fallback)
-    }
-
     private func buildForwardedMessage(_ email: EmailDetail) -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
@@ -2496,146 +2498,6 @@ class ComposeViewModel: ObservableObject {
             lower.contains("<img")
     }
 
-    private func sanitizeHTMLForQuote(_ html: String) -> String {
-        var result = html
-        if result.count > 250_000 {
-            result = String(result.prefix(250_000))
-        }
-        // Remove script/style blocks to avoid junk in the quote.
-        result = result.replacingOccurrences(of: "<script[\\s\\S]*?</script>", with: "", options: .regularExpression)
-        result = result.replacingOccurrences(of: "<style[\\s\\S]*?</style>", with: "", options: .regularExpression)
-        // Strip html/head/body wrappers, keep inner content.
-        result = result.replacingOccurrences(of: "</?(html|head|body)[^>]*>", with: "", options: .regularExpression)
-        return result
-    }
-
-    private func escapeHTML(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&#39;")
-    }
-
-    private func plainTextFromHTML(_ html: String) -> String {
-        // Avoid NSAttributedString HTML parsing here (can throw Obj-C exceptions on malformed HTML).
-        var text = html
-        if text.count > 200_000 {
-            text = String(text.prefix(200_000))
-        }
-
-        // Remove style/script blocks
-        while let start = text.range(of: "<style", options: .caseInsensitive),
-              let end = text.range(of: "</style>", options: .caseInsensitive, range: start.upperBound..<text.endIndex) {
-            text.removeSubrange(start.lowerBound..<end.upperBound)
-        }
-        while let start = text.range(of: "<script", options: .caseInsensitive),
-              let end = text.range(of: "</script>", options: .caseInsensitive, range: start.upperBound..<text.endIndex) {
-            text.removeSubrange(start.lowerBound..<end.upperBound)
-        }
-
-        // Strip tags + normalize whitespace
-        text = text
-            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-
-        text = decodeHTMLEntities(text)
-        text = text
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Remove any lingering zero-width characters
-        text = text.replacingOccurrences(of: "[\\u200B-\\u200D\\uFEFF]", with: "", options: .regularExpression)
-
-        return text
-    }
-
-    private func decodeHTMLEntities(_ text: String) -> String {
-        var output = text
-
-        let basic: [String: String] = [
-            "&nbsp;": " ",
-            "&zwnj;": "",
-            "&zwj;": "",
-            "&lrm;": "",
-            "&rlm;": "",
-            "&amp;": "&",
-            "&lt;": "<",
-            "&gt;": ">",
-            "&quot;": "\"",
-            "&#39;": "'",
-            "&apos;": "'"
-        ]
-        for (entity, value) in basic {
-            output = output.replacingOccurrences(of: entity, with: value, options: .caseInsensitive)
-        }
-
-        // Decode decimal numeric entities
-        let decimalPattern = "&#(\\d+);"
-        if let regex = try? NSRegularExpression(pattern: decimalPattern) {
-            let nsrange = NSRange(output.startIndex..., in: output)
-            var result = output
-            regex.enumerateMatches(in: output, range: nsrange) { match, _, _ in
-                guard let match, match.numberOfRanges == 2,
-                      let range = Range(match.range(at: 1), in: output) else {
-                    return
-                }
-                if let codePoint = Int(output[range]),
-                   let scalar = UnicodeScalar(codePoint) {
-                    let fullRange = Range(match.range(at: 0), in: output)!
-                    result = result.replacingOccurrences(of: String(output[fullRange]), with: String(scalar))
-                }
-            }
-            output = result
-        }
-
-        // Decode hex numeric entities
-        let hexPattern = "&#x([0-9a-fA-F]+);"
-        if let regex = try? NSRegularExpression(pattern: hexPattern) {
-            let nsrange = NSRange(output.startIndex..., in: output)
-            var result = output
-            regex.enumerateMatches(in: output, range: nsrange) { match, _, _ in
-                guard let match, match.numberOfRanges == 2,
-                      let range = Range(match.range(at: 1), in: output) else {
-                    return
-                }
-                let hex = output[range]
-                if let codePoint = Int(hex, radix: 16),
-                   let scalar = UnicodeScalar(codePoint) {
-                    let fullRange = Range(match.range(at: 0), in: output)!
-                    result = result.replacingOccurrences(of: String(output[fullRange]), with: String(scalar))
-                }
-            }
-            output = result
-        }
-
-        // Strip zero-width characters
-        output = output
-            .replacingOccurrences(of: "[\\u200B-\\u200D\\uFEFF]", with: "", options: .regularExpression)
-
-        return output
-    }
-
-    private func summarizeForQuote(_ text: String) -> String {
-        let normalized = text
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-        let lines = normalized
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        let previewLines = lines.prefix(4)
-        var preview = previewLines.joined(separator: "\n")
-        if preview.count > 320 {
-            preview = String(preview.prefix(320))
-        }
-        if lines.count > previewLines.count || normalized.count > preview.count {
-            preview += "…"
-        }
-        return preview
-    }
     private func htmlBody() -> String? {
         let range = NSRange(location: 0, length: bodyAttributed.length)
         let documentAttributes: [NSAttributedString.DocumentAttributeKey: Any] = [

@@ -56,6 +56,8 @@ final class InboxViewModel: ObservableObject {
     func reset() {
         emails = []
         viewState = InboxViewState()
+        pendingState = nil
+        isBootstrapping = true  // Re-enable bootstrap batching for next sign-in
         currentTab = .all
         activeFilter = nil
         currentMailbox = .inbox
@@ -69,6 +71,7 @@ final class InboxViewModel: ObservableObject {
         isSearching = false
         currentSearchQuery = ""
         localSearchResults = []
+        searchFilter = nil
         nextPageToken = nil
         prefetchTask?.cancel()
         prefetchTask = nil
@@ -81,6 +84,34 @@ final class InboxViewModel: ObservableObject {
         hasCompletedInitialLoad = false
         currentAccountEmail = nil
         logger.info("InboxViewModel reset")
+    }
+
+    // MARK: - Swipe Lifecycle
+
+    /// Call when a swipe gesture begins to pause list mutations
+    func swipeDidBegin() {
+        isSwipeActive = true
+        // Cancel background prefetch during swipe to avoid competing mutations
+        prefetchTask?.cancel()
+        prefetchTask = nil
+    }
+
+    /// Call when a swipe gesture ends to apply any deferred mutations
+    func swipeDidEnd() {
+        isSwipeActive = false
+        if let pending = deferredEmails {
+            deferredEmails = nil
+            applyEmailUpdate(pending)
+        }
+    }
+
+    /// Apply email update, deferring if a swipe is active
+    private func applyEmailUpdate(_ newEmails: [Email]) {
+        if isSwipeActive {
+            deferredEmails = newEmails
+            return
+        }
+        emails = newEmails
     }
 
     // MARK: - State
@@ -129,6 +160,13 @@ final class InboxViewModel: ObservableObject {
     var currentSearchQuery = ""
     var localSearchResults: [EmailDTO] = []
 
+    /// Parsed search filter for local filtering (computed in background worker)
+    var searchFilter: SearchFilter? = nil {
+        didSet {
+            scheduleRecompute()
+        }
+    }
+
     // MARK: - Bulk Actions Toast
 
     var bulkToastMessage: String?
@@ -143,6 +181,32 @@ final class InboxViewModel: ObservableObject {
     // MARK: - View State
 
     var viewState = InboxViewState()
+
+    // MARK: - Bootstrap State Batching
+    // During startup, buffer state changes to avoid multiple SwiftUI rebuilds.
+    // Only publish once when bootstrap completes (preload or first network fetch).
+
+    @ObservationIgnored private var pendingState: InboxViewState?
+    @ObservationIgnored private var isBootstrapping = true
+
+    /// Buffer state during bootstrap, publish immediately after.
+    private func applyState(_ state: InboxViewState) {
+        if isBootstrapping {
+            pendingState = state
+        } else {
+            viewState = state
+        }
+    }
+
+    /// End bootstrap phase and publish any buffered state.
+    func finishBootstrapIfNeeded() {
+        guard isBootstrapping else { return }
+        isBootstrapping = false
+        if let pending = pendingState {
+            viewState = pending
+            pendingState = nil
+        }
+    }
 
     // MARK: - Filter Counts
 
@@ -222,64 +286,21 @@ final class InboxViewModel: ObservableObject {
     @ObservationIgnored private var didPreloadCache = false
     @ObservationIgnored private var preloadTask: Task<Void, Never>?
     @ObservationIgnored private var localSearchTask: Task<Void, Never>?
+    @ObservationIgnored private var recomputeGeneration: Int = 0
+
+    // MARK: - Swipe Mutation Protection
+    @ObservationIgnored private var isSwipeActive = false
+    @ObservationIgnored private var deferredEmails: [Email]?
 
     private struct CachePagingState {
         var oldestLoadedDate: Date?
         var isExhausted = false
     }
 
-    // Off-main display model builder for inbox rows.
-    actor DisplayModelWorker {
-        struct RowModel: Sendable {
-            let id: String
-            let threadId: String
-            let subject: String
-            let snippet: String
-            let senderName: String
-            let senderEmail: String
-            let dateText: String
-            let isUnread: Bool
-            let isStarred: Bool
-            let accountEmail: String?
-        }
-
-        private let dateFormatter: DateFormatter = {
-            let f = DateFormatter()
-            f.dateStyle = .medium
-            f.timeStyle = .short
-            return f
-        }()
-
-        func buildRowModels(from emails: [Email]) -> [String: RowModel] {
-            var result: [String: RowModel] = [:]
-            for email in emails {
-                let senderEmail = EmailParser.extractSenderEmail(from: email.from)
-                let senderName = EmailParser.extractSenderName(from: email.from)
-                let dateText = dateFormatter.string(from: email.date)
-                let model = RowModel(
-                    id: email.id,
-                    threadId: email.threadId,
-                    subject: email.subject,
-                    snippet: email.snippet,
-                    senderName: senderName,
-                    senderEmail: senderEmail,
-                    dateText: dateText,
-                    isUnread: email.isUnread,
-                    isStarred: email.isStarred,
-                    accountEmail: email.accountEmail
-                )
-                result[email.id] = model
-            }
-            return result
-        }
-    }
-
     private let cachePageSize = 120
     private var lastFooterTrigger: Date?
     private let visibleWindowSize = 600
     private let fetchWorker = InboxFetchWorker()
-    private let displayWorker = DisplayModelWorker()
-    private var rowModels: [String: DisplayModelWorker.RowModel] = [:]
 
     struct PagingDebugState {
         var path: String = "idle"
@@ -309,12 +330,6 @@ final class InboxViewModel: ObservableObject {
         viewState.sections
     }
 
-    func rowModel(for id: String) -> DisplayModelWorker.RowModel? {
-        rowModels[id]
-    }
-
-
-
     /// Last visible email after filtering (for pagination trigger)
     private var lastVisibleEmailId: String? {
         emailSections.last?.emails.last?.id
@@ -332,38 +347,71 @@ final class InboxViewModel: ObservableObject {
     }
 
     private func scheduleRecompute() {
-        StallLogger.mark("InboxViewModel.scheduleRecompute.start")
+        recomputeGeneration += 1
+        let generation = recomputeGeneration
 
-        // Convert SwiftData Email models to Sendable EmailDTO snapshots on main actor
-        // CRITICAL: This prevents cross-actor SwiftData access that causes main thread stalls
-        let emailDTOs = emails.map { $0.toDTO() }
-        let emailsSnapshot = emails  // Keep for saveSnapshotIfNeeded
+        // Capture ONLY raw SwiftData fields on main thread (no regex computation)
+        let models = emails
+
+        let rawData: [RawEmailData] = models.map { email in
+            let labelKey = email.labelIds.sorted().joined(separator: "|")
+            return RawEmailData(
+                id: email.id,
+                threadId: email.threadId,
+                date: email.date,
+                subject: email.subject,
+                snippet: email.snippet,
+                from: email.from,
+                isUnread: email.isUnread,
+                isStarred: email.isStarred,
+                hasAttachments: email.hasAttachments,
+                accountEmail: email.accountEmail,
+                labelIdsKey: labelKey,
+                listUnsubscribe: email.listUnsubscribe,
+                listId: email.listId,
+                precedence: email.precedence,
+                autoSubmitted: email.autoSubmitted,
+                messagesCount: email.messagesCount
+            )
+        }
+
         let currentTabSnapshot = currentTab
         let pinnedSnapshot = pinnedTabOption
+        let searchFilterSnapshot = searchFilter
         let activeFilterSnapshot = activeFilter
         let accountSnapshot = currentAccountEmail
         let mailboxSnapshot = currentMailbox
         let pageTokenSnapshot = nextPageToken
 
-        StallLogger.mark("InboxViewModel.scheduleRecompute.dtosReady")
-
         recomputeTask?.cancel()
         recomputeTask = Task { [weak self] in
             guard let self else { return }
+
+            // Debounce/coalesce: let rapid mutations collapse into one recompute.
+            try? await Task.sleep(for: .milliseconds(60))
+            guard !Task.isCancelled else { return }
+            guard generation == self.recomputeGeneration else { return }
+
             StallLogger.mark("InboxViewModel.computeState.start")
-            let state = await inboxWorker.computeState(
-                emails: emailDTOs,
+            // Regex parsing happens on the actor (off main thread)
+            let state = await self.inboxWorker.computeStateFromRaw(
+                rawEmails: rawData,
                 currentTab: currentTabSnapshot,
                 pinnedTabOption: pinnedSnapshot,
                 activeFilter: activeFilterSnapshot,
-                currentAccountEmail: accountSnapshot
+                currentAccountEmail: accountSnapshot,
+                searchFilter: searchFilterSnapshot
             )
             StallLogger.mark("InboxViewModel.computeState.end")
+
+            guard !Task.isCancelled else { return }
+            guard generation == self.recomputeGeneration else { return }
+
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                viewState = state
-                saveSnapshotIfNeeded(
-                    emails: emailsSnapshot,
+                self.applyState(state)
+                self.saveSnapshotIfNeeded(
+                    emails: models,
                     viewState: state,
                     currentTab: currentTabSnapshot,
                     pinnedTabOption: pinnedSnapshot,
@@ -475,7 +523,6 @@ final class InboxViewModel: ObservableObject {
         }
 
         // Preload cached emails FIRST so we have data to show immediately
-        // This prevents the race where loadEmails() resets empty state before cache loads
         preloadCachedEmails(mailbox: currentMailbox, accountEmail: currentAccountEmail)
 
         Task {
@@ -542,6 +589,7 @@ final class InboxViewModel: ObservableObject {
             }
             hasCompletedInitialLoad = true
             isLoadInProgress = false
+            finishBootstrapIfNeeded()  // First network fetch = bootstrap complete
             updateFilterCounts()
         }
 
@@ -557,8 +605,7 @@ final class InboxViewModel: ObservableObject {
                     labelIds: labelIds
                 )
                 let emailModels = fetchedEmails.map(Email.init(dto:))
-                self.emails = dedupeByThread(emailModels)
-                rebuildDisplayModels()
+                applyEmailUpdate(dedupeByThread(emailModels))
                 // Unified inbox uses date-based pagination, use placeholder to enable it
                 let token: String? = fetchedEmails.count >= 50 ? "unified_date_cursor" : nil
                 self.nextPageToken = token
@@ -579,8 +626,7 @@ final class InboxViewModel: ObservableObject {
                 )
 
                 let emailModels = fetchedEmails.map(Email.init(dto:))
-                self.emails = dedupeByThread(emailModels)
-                rebuildDisplayModels()
+                applyEmailUpdate(dedupeByThread(emailModels))
                 self.nextPageToken = pageToken
                 updateCachePagingAnchor()
                 EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: currentMailbox == .inbox && pageToken == nil)
@@ -619,10 +665,10 @@ final class InboxViewModel: ObservableObject {
 
         // Prefetch threshold: trigger loading when within 15 items of the end
         // This prevents the "hit bottom, pause, load" pattern
-        let allEmails = viewState.sections.flatMap(\.emails)
-        guard let currentIndex = allEmails.firstIndex(where: { $0.id == currentEmailId }) else { return }
+        let allEmailIds = viewState.sections.flatMap(\.emails).map(\.id)
+        guard let currentIndex = allEmailIds.firstIndex(of: currentEmailId) else { return }
 
-        let remainingItems = allEmails.count - currentIndex - 1
+        let remainingItems = allEmailIds.count - currentIndex - 1
         let prefetchThreshold = 15
 
         if remainingItems <= prefetchThreshold {
@@ -639,6 +685,8 @@ final class InboxViewModel: ObservableObject {
 
     /// Starts a single prefetch task, cancelling any existing one
     private func startPrefetch() {
+        // Don't start prefetch during active swipe to avoid list mutation
+        guard !isSwipeActive else { return }
         // Cancel any existing prefetch to avoid concurrent API calls
         prefetchTask?.cancel()
         prefetchTask = Task { await prefetchUntilBuffer() }
@@ -718,8 +766,7 @@ final class InboxViewModel: ObservableObject {
             let fetchedModels = fetchedEmails.map(Email.init(dto:))
             var allEmails = emails
             allEmails.append(contentsOf: fetchedModels)
-            emails = dedupeByThread(allEmails)
-            rebuildDisplayModels()
+            applyEmailUpdate(dedupeByThread(allEmails))
             trimVisibleWindow()
 
             cachePagingState.oldestLoadedDate = emails.map(\.date).min()
@@ -781,21 +828,7 @@ final class InboxViewModel: ObservableObject {
     /// Keep only the most recent visibleWindowSize emails in-memory; older stay in cache.
     private func trimVisibleWindow() {
         guard emails.count > visibleWindowSize else { return }
-        emails = Array(emails.prefix(visibleWindowSize))
-        Task { [weak self, emails] in
-            guard let self else { return }
-            let models = await self.displayWorker.buildRowModels(from: emails)
-            await MainActor.run { self.rowModels = models }
-        }
-    }
-
-    private func rebuildDisplayModels() {
-        let currentEmails = emails
-        Task { [weak self] in
-            guard let self else { return }
-            let models = await displayWorker.buildRowModels(from: currentEmails)
-            await MainActor.run { self.rowModels = models }
-        }
+        applyEmailUpdate(Array(emails.prefix(visibleWindowSize)))
     }
 
     // MARK: - Filter Counts
@@ -806,13 +839,35 @@ final class InboxViewModel: ObservableObject {
 
 #if DEBUG
     func refreshViewStateForTests() async -> InboxViewState {
-        let emailDTOs = emails.map { $0.toDTO() }
+        let snapshots: [EmailSnapshot] = emails.map { email in
+            let labelKey = (email.labelIds ?? []).sorted().joined(separator: "|")
+            return EmailSnapshot(
+                id: email.id,
+                threadId: email.threadId,
+                date: email.date,
+                subject: email.subject,
+                snippet: email.snippet,
+                senderEmail: email.senderEmail,
+                senderName: email.senderName,
+                isUnread: email.isUnread,
+                isStarred: email.isStarred,
+                hasAttachments: email.hasAttachments,
+                accountEmail: email.accountEmail,
+                labelIdsKey: labelKey,
+                listUnsubscribe: email.listUnsubscribe,
+                listId: email.listId,
+                precedence: email.precedence,
+                autoSubmitted: email.autoSubmitted,
+                messagesCount: email.messagesCount
+            )
+        }
         let state = await inboxWorker.computeState(
-            emails: emailDTOs,
+            emails: snapshots,
             currentTab: currentTab,
             pinnedTabOption: pinnedTabOption,
             activeFilter: activeFilter,
-            currentAccountEmail: currentAccountEmail
+            currentAccountEmail: currentAccountEmail,
+            searchFilter: searchFilter
         )
         viewState = state
         return state
@@ -826,6 +881,8 @@ final class InboxViewModel: ObservableObject {
     }
 
     func preloadCachedEmails(mailbox: Mailbox, accountEmail: String?) {
+        // Gate: cache must be configured
+        guard EmailCacheManager.shared.isReady else { return }
         // Gate: only run once per session
         guard !didPreloadCache else { return }
         guard emails.isEmpty else {
@@ -860,14 +917,29 @@ final class InboxViewModel: ObservableObject {
 
             StallLogger.mark("InboxViewModel.preloadCachedEmails.cacheReady")
 
-            emails = deduped
+            // STAGED RENDERING: Show first batch immediately, append rest after delay
+            // This reduces "single frame" work from 50+ rows to ~20 rows
+            let initialBatchSize = 20
+            if deduped.count > initialBatchSize {
+                // Render first batch immediately
+                applyEmailUpdate(Array(deduped.prefix(initialBatchSize)))
+
+                // Append remaining after animation settles
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled else { return }
+                applyEmailUpdate(deduped) // Full list replaces partial
+            } else {
+                applyEmailUpdate(deduped)
+            }
 
             // Enable pagination until first real fetch
             nextPageToken = "cached_placeholder"
 
-            // Derived state updates (keep as-is but ensure they only run once on preload)
+            // Update paging anchor (scheduleRecompute already triggered by emails didSet)
             updateCachePagingAnchor()
-            updateFilterCounts()
+
+            // Cache preload complete - end bootstrap phase
+            finishBootstrapIfNeeded()
         }
     }
 
@@ -931,8 +1003,7 @@ final class InboxViewModel: ObservableObject {
             let fetchedModels = fetched.map(Email.init(dto:))
             var allEmails = emails
             allEmails.append(contentsOf: fetchedModels)
-            emails = dedupeByThread(allEmails)
-            rebuildDisplayModels()
+            applyEmailUpdate(dedupeByThread(allEmails))
             trimVisibleWindow()
 
             // Update cursor for next iteration
@@ -983,10 +1054,11 @@ final class InboxViewModel: ObservableObject {
                 pinnedTabOption: pinnedTabOption,
                 activeFilter: activeFilter
             ) {
-                emails = snapshot.emails
-                viewState = snapshot.viewState
+                applyEmailUpdate(snapshot.emails)
+                applyState(snapshot.viewState)
                 nextPageToken = snapshot.nextPageToken
                 updateCachePagingAnchor()
+                finishBootstrapIfNeeded()  // Snapshot restore = bootstrap complete
                 return
             }
         }
@@ -997,7 +1069,7 @@ final class InboxViewModel: ObservableObject {
             accountEmail: currentMailbox == .allInboxes ? nil : accountEmail
         )
         if !cached.isEmpty {
-            emails = dedupeByThread(cached)
+            applyEmailUpdate(dedupeByThread(cached))
             // Set placeholder to enable pagination until real fetch
             nextPageToken = "cached_placeholder"
             updateCachePagingAnchor()
@@ -1029,24 +1101,28 @@ final class InboxViewModel: ObservableObject {
     }
 
     private func scheduleSummaryCandidates(for emails: [Email], deferHeavyWork: Bool) {
+        // IMPORTANT: Build candidates on main thread BEFORE detached task
+        // SwiftData @Model objects must not cross actor boundaries
+        let candidates = emails.compactMap { email -> SummaryQueue.Candidate? in
+            guard let accountEmail = email.accountEmail else { return nil }
+            return SummaryQueue.Candidate(
+                emailId: email.id,
+                threadId: email.threadId,
+                accountEmail: accountEmail,
+                subject: email.subject,
+                from: email.from,
+                snippet: email.snippet,
+                date: email.date,
+                isUnread: email.isUnread,
+                isStarred: email.isStarred,
+                listUnsubscribe: email.listUnsubscribe
+            )
+        }
+
+        // Now pass only value types to detached task
         Task.detached(priority: .utility) {
             let delay: Duration = deferHeavyWork ? .seconds(1) : .milliseconds(350)
             try? await Task.sleep(for: delay)
-            let candidates = emails.compactMap { email -> SummaryQueue.Candidate? in
-                guard let accountEmail = email.accountEmail else { return nil }
-                return SummaryQueue.Candidate(
-                    emailId: email.id,
-                    threadId: email.threadId,
-                    accountEmail: accountEmail,
-                    subject: email.subject,
-                    from: email.from,
-                    snippet: email.snippet,
-                    date: email.date,
-                    isUnread: email.isUnread,
-                    isStarred: email.isStarred,
-                    listUnsubscribe: email.listUnsubscribe
-                )
-            }
             await SummaryQueue.shared.enqueueCandidates(candidates)
         }
     }
@@ -1461,6 +1537,7 @@ final class InboxViewModel: ObservableObject {
         currentSearchQuery = ""
         isSearching = false
         localSearchResults = []
+        searchFilter = nil  // Clear local search filter
         // Cancel any in-flight search to prevent "ghost work" during transitions
         localSearchTask?.cancel()
         localSearchTask = nil
@@ -1480,32 +1557,40 @@ final class InboxViewModel: ObservableObject {
         }
 
         // Debounce: wait for user to stop typing + let UI animate
-        localSearchTask = Task { @MainActor in
+        localSearchTask = Task {
             try? await Task.sleep(for: .milliseconds(200))
             guard !Task.isCancelled else { return }
 
-            let accountEmail = currentMailbox == .allInboxes
-                ? nil
-                : AuthService.shared.currentAccount?.email.lowercased()
+            let accountEmail = await MainActor.run {
+                currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email.lowercased()
+            }
             do {
                 let ids = try await SearchIndexManager.shared.search(
                     query: trimmed,
                     accountEmail: accountEmail
                 )
-                guard !Task.isCancelled else { return }  // Check again after async work
+                guard !Task.isCancelled else { return }
 
                 // Cap IDs to prevent unbounded hydration if search behavior changes
                 let limitedIds = Array(ids.prefix(100))
-                let emails = EmailCacheManager.shared.loadCachedEmails(
+
+                // Hydrate on background context to avoid blocking main thread
+                let dtos = await EmailCacheManager.shared.loadCachedEmailDTOs(
                     by: limitedIds,
                     accountEmail: accountEmail
                 )
-                // Convert to DTOs for display - action handlers will look up by ID if needed
-                localSearchResults = emails.map { $0.toDTO() }
+                guard !Task.isCancelled else { return }
+
+                // Update UI on main
+                await MainActor.run {
+                    localSearchResults = dtos
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 logger.error("Local search failed: \(error.localizedDescription)")
-                localSearchResults = []
+                await MainActor.run {
+                    localSearchResults = []
+                }
             }
         }
     }

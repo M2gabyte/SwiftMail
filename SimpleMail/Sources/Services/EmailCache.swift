@@ -529,6 +529,40 @@ final class EmailCacheManager: ObservableObject {
         }
     }
 
+    /// Fetch emails by IDs on a background context and return DTOs immediately.
+    /// This avoids blocking the main thread with SwiftData queries.
+    nonisolated func loadCachedEmailDTOs(by ids: [String], accountEmail: String?) async -> [EmailDTO] {
+        guard !ids.isEmpty else { return [] }
+
+        // Get container on main actor
+        let container = await MainActor.run { self.modelContainer }
+        guard let container else { return [] }
+
+        // Create background context and fetch there
+        let backgroundContext = ModelContext(container)
+        backgroundContext.autosaveEnabled = false
+
+        let idSet = Set(ids)
+        var descriptor = FetchDescriptor<Email>(
+            predicate: #Predicate { email in
+                idSet.contains(email.id)
+            }
+        )
+        descriptor.fetchLimit = min(ids.count, 250)
+
+        do {
+            let results = try backgroundContext.fetch(descriptor)
+            let filtered = accountEmail == nil ? results : results.filter { $0.accountEmail?.lowercased() == accountEmail?.lowercased() }
+
+            // Convert to DTOs immediately while still on background context
+            let lookup = Dictionary(uniqueKeysWithValues: filtered.map { ($0.id, $0.toDTO()) })
+            return ids.compactMap { lookup[$0] }
+        } catch {
+            logger.error("Failed to load cached emails by ids (background): \(error.localizedDescription)")
+            return []
+        }
+    }
+
     // MARK: - Cleanup Helpers
 
     private func removeStaleInboxEmails(fetchedIds: Set<String>, since oldestDate: Date, accountEmail: String?) {

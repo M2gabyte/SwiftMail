@@ -38,7 +38,6 @@ struct InboxView: View {
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
-    @State private var didScheduleWebKitWarmup = false
     @State private var inboxScope: InboxLocationScope = .unified
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
@@ -57,7 +56,9 @@ struct InboxView: View {
         scrollOffset > 50
     }
 
-    /// Sections to display - either search results or filtered inbox
+    /// Sections to display - either search results or pre-filtered inbox
+    /// NOTE: Local search filtering is now done in InboxStoreWorker.computeState
+    /// using EmailSnapshot (value types), NOT here in the SwiftUI body.
     private var displaySections: [EmailSection] {
         // If server search is active, show search results
         if viewModel.isSearchActive {
@@ -66,16 +67,8 @@ struct InboxView: View {
             return [EmailSection(id: "search", title: "Search Results", emails: emails)]
         }
 
-        // Otherwise show normal inbox with local filtering
-        guard let filter = parsedSearchFilter else { return viewModel.emailSections }
-
-        return viewModel.emailSections.compactMap { section in
-            let filteredEmails = section.emails.filter { email in
-                filter.matches(email)
-            }
-            guard !filteredEmails.isEmpty else { return nil }
-            return EmailSection(id: section.id, title: section.title, emails: filteredEmails)
-        }
+        // Sections are already filtered in computeState via viewModel.searchFilter
+        return viewModel.emailSections
     }
 
     private var searchModeResults: [EmailDTO] {
@@ -109,6 +102,30 @@ struct InboxView: View {
         return SearchFilter.parse(query)
     }
 
+    /// Section view - extracted to help compiler with type inference
+    @ViewBuilder
+    private func sectionView(section: EmailSection, sectionIndex: Int) -> some View {
+        let sectionEmails = section.emails
+        Section {
+            ForEach(Array(sectionEmails.enumerated()), id: \.element.id) { emailIndex, email in
+                let previousEmail = emailIndex > 0 ? sectionEmails[emailIndex - 1] : nil
+                let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
+                let isFirst = !isContinuation
+
+                emailRowView(
+                    for: email,
+                    isSelectionMode: isSelectionMode,
+                    isContinuationInSenderRun: isContinuation,
+                    isFirstInSenderRun: isFirst
+                )
+                .tag(email.threadId)
+                .padding(.top, emailIndex == 0 ? 0 : 0)
+            }
+        } header: {
+            SectionHeaderRow(title: section.title, isFirst: sectionIndex == 0)
+        }
+    }
+
     /// Email row with all actions - extracted to help compiler
     @ViewBuilder
     private func emailRowView(for email: EmailDTO, isSelectionMode: Bool, isContinuationInSenderRun: Bool = false, isFirstInSenderRun: Bool = true) -> some View {
@@ -119,7 +136,6 @@ struct InboxView: View {
 
             EmailRow(
                 email: email,
-                display: viewModel.rowModel(for: email.id),
                 isCompact: listDensity == .compact,
                 showAvatars: showAvatars,
                 showAccountBadge: viewModel.currentMailbox == .allInboxes,
@@ -224,6 +240,9 @@ struct InboxView: View {
             }
             .onChange(of: debouncedSearchText) { _, newValue in
                 guard isSearchMode else { return }
+                // Update searchFilter on viewModel - filtering happens in computeState
+                let query = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                viewModel.searchFilter = query.isEmpty ? nil : SearchFilter.parse(query)
                 viewModel.performLocalSearch(query: newValue)
             }
             .onChange(of: viewModel.currentMailbox) { _, _ in
@@ -456,25 +475,8 @@ struct InboxView: View {
                 }
             }
 
-            ForEach(Array(displaySections.enumerated()), id: \.element.id) { index, section in
-                Section {
-                    ForEach(Array(section.emails.enumerated()), id: \.element.id) { index, email in
-                        let previousEmail = index > 0 ? section.emails[index - 1] : nil
-                        let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
-                        let isFirst = !isContinuation
-
-                        emailRowView(
-                            for: email,
-                            isSelectionMode: isSelectionMode,
-                            isContinuationInSenderRun: isContinuation,
-                            isFirstInSenderRun: isFirst
-                        )
-                        .tag(email.threadId)
-                        .padding(.top, index == 0 ? 0 : 0)
-                    }
-                } header: {
-                    SectionHeaderRow(title: section.title, isFirst: index == 0)
-                }
+            ForEach(Array(displaySections.enumerated()), id: \.element.id) { sectionIndex, section in
+                sectionView(section: section, sectionIndex: sectionIndex)
             }
 
             if !isSearchMode {
@@ -830,7 +832,9 @@ struct InboxView: View {
     }
 
     private func selectAllVisibleThreads() {
-        let visible = displaySections.flatMap { $0.emails.map(\.threadId) }
+        let visible = displaySections.flatMap { section in
+            section.emails.map(\.threadId)
+        }
         selectedThreadIds = Set(visible)
         if !selectedThreadIds.isEmpty {
             isSelectionMode = true
@@ -1088,11 +1092,8 @@ struct InboxView: View {
                 }
             )
         }
-        scheduleWebKitWarmup()
-    }
-
-    private func scheduleWebKitWarmup() {
-        // Temporarily disable pre-warming to avoid startup stalls; first HTML open will warm naturally.
+        // NOTE: WebKit warmup removed from here - now done lazily on first EmailDetail open
+        // to avoid injecting 1-2s GPU process startup stalls into inbox browsing
     }
 
     private func loadSettings() {
@@ -1430,7 +1431,6 @@ private enum DateFormatters {
 
 struct EmailRow: View {
     let email: EmailDTO
-    let display: InboxViewModel.DisplayModelWorker.RowModel?
     var isCompact: Bool = false
     var showAvatars: Bool = true
     var showAccountBadge: Bool = false

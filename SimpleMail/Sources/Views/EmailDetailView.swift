@@ -35,6 +35,21 @@ final class WKWebViewPool {
         }
     }
 
+    /// Idempotent one-time prime: creates a single WKWebView and triggers JS eval
+    /// to force WebContent/GPU process launch. Call after inbox is visible.
+    private var didPrime = false
+    func primeOnce() {
+        lock.lock()
+        guard !didPrime else { lock.unlock(); return }
+        didPrime = true
+        lock.unlock()
+
+        let webView = makeWebView()
+        // Load minimal HTML and run JS to trigger WebContent process launch
+        webView.loadHTMLString("<html><body style='margin:0;padding:0;'></body></html>", baseURL: nil)
+        webView.evaluateJavaScript("1") { _, _ in }
+    }
+
     func dequeue() -> WKWebView {
         lock.lock(); defer { lock.unlock() }
         if let webView = pool.popLast() {
@@ -69,23 +84,162 @@ final class WKWebViewPool {
     }
 
     private func reset(_ webView: WKWebView) {
+        webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.scrollView.setContentOffset(.zero, animated: false)
-        webView.loadHTMLString("<html><body style='margin:0;padding:0;'></body></html>", baseURL: nil)
+        // Don't loadHTMLString here - unnecessary navigation that adds churn.
+        // Real content will be loaded when the email body is set.
     }
 }
 
-// Background renderer for HTML/plaintext (scaffold for future hook-up)
+// Background renderer for HTML/plaintext - runs sanitization off main thread
 actor BodyRenderActor {
-    struct RenderedBody: Sendable {
-        let html: String
-        let plain: String
+    struct RenderSettings: Hashable, Sendable {
+        let blockImages: Bool
+        let blockTrackingPixels: Bool
+        let stripTrackingParameters: Bool
     }
-    func render(html: String) async -> RenderedBody {
-        let blocked = HTMLSanitizer.blockImages(html)
-        let plain = HTMLSanitizer.plainText(blocked)
-        return RenderedBody(html: blocked, plain: plain)
+
+    struct RenderedBody: Sendable {
+        let html: String          // Sanitized HTML (for fallback/caching)
+        let plain: String         // Plain text version
+        let styledHTML: String    // Complete styled HTML ready for WebView
+    }
+
+    func render(html: String, settings: RenderSettings) async -> RenderedBody {
+        // SECURITY: Sanitize HTML to prevent XSS attacks (done here, off main thread)
+        var safeHTML = HTMLSanitizer.sanitize(html)
+        // Remove zero-width characters that create empty space in marketing emails
+        safeHTML = HTMLSanitizer.removeZeroWidthCharacters(safeHTML)
+        let plain = HTMLSanitizer.plainText(safeHTML)
+
+        // Apply conditional transformations based on settings
+        var processedHTML = safeHTML
+        if settings.blockImages {
+            processedHTML = HTMLSanitizer.blockImages(processedHTML)
+        }
+        if settings.stripTrackingParameters {
+            processedHTML = HTMLSanitizer.stripTrackingParameters(processedHTML)
+        }
+
+        // Build the complete styled HTML (this avoids doing it on main thread)
+        let trackingCSS = settings.blockTrackingPixels ? """
+                /* Hide tracking pixels and tiny spacer images */
+                img[width="1"], img[height="1"],
+                img[width="0"], img[height="0"],
+                img[style*="display:none"], img[style*="display: none"] {
+                    display: none !important;
+                }
+        """ : ""
+
+        let styledHTML = Self.buildStyledHTML(body: processedHTML, trackingCSS: trackingCSS)
+        return RenderedBody(html: safeHTML, plain: plain, styledHTML: styledHTML)
+    }
+
+    /// Build the complete styled HTML document. All string work done off-main.
+    private static func buildStyledHTML(body: String, trackingCSS: String) -> String {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <style>
+                /* Base layout constraints - don't override email styling */
+                * { box-sizing: border-box; }
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    max-width: 100%;
+                    overflow-x: hidden;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                    font-size: 16px;
+                    line-height: 1.5;
+                    color: #1a1a1a;
+                    padding: 16px;
+                    padding-bottom: 96px;
+                    word-wrap: break-word;
+                    overflow-wrap: break-word;
+                }
+                @media (prefers-color-scheme: dark) {
+                    body { color: #f0f0f0; background-color: transparent; }
+                }
+                /* Constrain media to viewport without breaking table layouts */
+                img { max-width: 100% !important; height: auto !important; }
+                video, iframe, canvas { max-width: 100% !important; height: auto !important; }
+                td, th { word-break: break-word; }
+                a { color: #007AFF; }
+                /* Collapse empty elements that create whitespace */
+                div:empty, span:empty, td:empty, p:empty {
+                    display: none !important;
+                }
+                /* Reduce excessive spacing from marketing emails */
+                \(trackingCSS)
+                img[data-blocked-src] {
+                    display: none !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                }
+                blockquote {
+                    margin: 8px 0;
+                    padding-left: 12px;
+                    border-left: 3px solid #ccc;
+                    color: #666;
+                }
+                pre, code {
+                    background: #f5f5f5;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                }
+                @media (prefers-color-scheme: dark) {
+                    pre, code { background: #2a2a2a; }
+                    blockquote { border-left-color: #555; color: #aaa; }
+                }
+                .blocked-form { border: 1px dashed #ccc; padding: 8px; margin: 8px 0; }
+            </style>
+            <script>
+                var heightTimer = null;
+                function scheduleHeight() {
+                    if (heightTimer) clearTimeout(heightTimer);
+                    heightTimer = setTimeout(postHeight, 50);
+                }
+                function collapseEmptySpacers() {
+                    var elements = document.querySelectorAll('td, tr');
+                    elements.forEach(function(el) {
+                        var style = window.getComputedStyle(el);
+                        var height = parseFloat(style.height);
+                        if (height > 0 && height < 5 && el.textContent.trim() === '' && !el.querySelector('img, a, input, button')) {
+                            el.style.display = 'none';
+                        }
+                    });
+                }
+                function postHeight() {
+                    var body = document.body;
+                    var html = document.documentElement;
+                    var maxHeight = Math.max(
+                        body.scrollHeight, body.offsetHeight,
+                        html.clientHeight, html.scrollHeight, html.offsetHeight
+                    );
+                    window.webkit.messageHandlers.heightHandler.postMessage({ height: maxHeight });
+                }
+                window.onload = function() {
+                    collapseEmptySpacers();
+                    setTimeout(postHeight, 100);
+                };
+                window.addEventListener('resize', scheduleHeight);
+                var observer = new MutationObserver(scheduleHeight);
+                observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+            </script>
+        </head>
+        <body>\(body)</body>
+        </html>
+        """
     }
 }
 
@@ -169,7 +323,7 @@ struct EmailDetailView: View {
                     ForEach(viewModel.messages) { message in
                         EmailMessageCard(
                             message: message,
-                            renderedHTML: viewModel.bodyHTML(for: message),
+                            styledHTML: viewModel.styledHTML(for: message),
                             renderedPlain: viewModel.plainText(for: message),
                             isExpanded: viewModel.expandedMessageIds.contains(message.id),
                             onToggleExpand: { viewModel.toggleExpanded(message.id) }
@@ -281,6 +435,8 @@ struct EmailDetailView: View {
             }
         }
         .task {
+            // WebKit warmup now happens on row tap (before navigation starts)
+            // so it overlaps with the push animation instead of competing with it
             await viewModel.loadThread()
         }
         .toolbar(.hidden, for: .tabBar)
@@ -292,7 +448,7 @@ struct EmailDetailView: View {
 
 struct EmailMessageCard: View {
     let message: EmailDetail
-    let renderedHTML: String
+    let styledHTML: String      // Pre-rendered styled HTML ready for WebView
     let renderedPlain: String
     let isExpanded: Bool
     let onToggleExpand: () -> Void
@@ -345,7 +501,7 @@ struct EmailMessageCard: View {
                 Divider()
                     .padding(.leading)
 
-                EmailBodyView(html: renderedHTML, accountEmail: message.accountEmail, placeholderPlain: renderedPlain)
+                EmailBodyView(styledHTML: styledHTML)
                     .frame(minHeight: 100)
             }
         }
@@ -388,41 +544,16 @@ private enum MessageDateFormatters {
 // MARK: - Email Body View (WebView with dynamic height)
 
 struct EmailBodyView: View {
-    let html: String
-    let accountEmail: String?
-    let placeholderPlain: String
+    let styledHTML: String  // Pre-rendered styled HTML ready for WebView
     @State private var contentHeight: CGFloat = 200
-    @State private var isWebLoaded = false
-
-    private var settings: AppSettings {
-        let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
-        guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
-            return AppSettings()
-        }
-        return (try? JSONDecoder().decode(AppSettings.self, from: data)) ?? AppSettings()
-    }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            if !isWebLoaded {
-                Text(placeholderPlain.isEmpty ? " " : placeholderPlain)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-            }
-            EmailBodyWebView(
-                html: html,
-                contentHeight: $contentHeight,
-                blockImages: settings.blockRemoteImages,
-                blockTrackingPixels: settings.blockTrackingPixels,
-                stripTrackingParameters: settings.stripTrackingParameters,
-                onLoaded: { isWebLoaded = true }
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: contentHeight)
-            .opacity(isWebLoaded ? 1 : 0.01)
-        }
+        EmailBodyWebView(
+            styledHTML: styledHTML,
+            contentHeight: $contentHeight
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: contentHeight)
     }
 }
 
@@ -562,12 +693,30 @@ enum HTMLSanitizer {
 
     /// Very lightweight plain-text extractor for logging/preview.
     static func plainText(_ html: String) -> String {
-        let stripped = html.replacingOccurrences(
-            of: "<[^>]+>",
-            with: " ",
-            options: .regularExpression
-        )
-        let collapsed = stripped.replacingOccurrences(
+        var text = html
+
+        // Remove style/script blocks first
+        text = text.replacingOccurrences(of: "<style[^>]*>[\\s\\S]*?</style>", with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: "<script[^>]*>[\\s\\S]*?</script>", with: "", options: .regularExpression)
+
+        // Strip HTML tags
+        text = text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+
+        // Decode common HTML entities (must do before collapsing whitespace)
+        text = text.replacingOccurrences(of: "&nbsp;", with: " ")
+        text = text.replacingOccurrences(of: "&amp;", with: "&")
+        text = text.replacingOccurrences(of: "&lt;", with: "<")
+        text = text.replacingOccurrences(of: "&gt;", with: ">")
+        text = text.replacingOccurrences(of: "&quot;", with: "\"")
+        text = text.replacingOccurrences(of: "&#39;", with: "'")
+        text = text.replacingOccurrences(of: "&apos;", with: "'")
+        text = text.replacingOccurrences(of: "&zwnj;", with: "")
+        text = text.replacingOccurrences(of: "&zwj;", with: "")
+        text = text.replacingOccurrences(of: "&#160;", with: " ")
+        text = text.replacingOccurrences(of: "&#8203;", with: "") // zero-width space
+
+        // Collapse whitespace
+        let collapsed = text.replacingOccurrences(
             of: "\\s+",
             with: " ",
             options: .regularExpression
@@ -682,14 +831,13 @@ enum HTMLSanitizer {
     }
 }
 
+/// Simplified WebView that loads pre-rendered styled HTML.
+/// All heavy processing (sanitization, image blocking, tracking removal, styling)
+/// is done off-main in BodyRenderActor before reaching this view.
 struct EmailBodyWebView: UIViewRepresentable {
-    let html: String
+    let styledHTML: String      // Pre-rendered complete HTML document
     @Binding var contentHeight: CGFloat
-    var blockImages: Bool = true
-    var blockTrackingPixels: Bool = true
-    var stripTrackingParameters: Bool = true
     var webViewPool = WKWebViewPool.shared
-    var onLoaded: () -> Void = {}
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = webViewPool.dequeue()
@@ -700,249 +848,38 @@ struct EmailBodyWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        // Only reload if HTML or blockImages changed
-        let cacheKey = "\(html)_\(blockImages)_\(blockTrackingPixels)_\(stripTrackingParameters)"
-        guard context.coordinator.lastHTML != cacheKey else { return }
-        context.coordinator.lastHTML = cacheKey
+        // Use object identity of the string to detect changes
+        // (styledHTML is immutable and comes from pre-rendered cache)
+        let key = ObjectIdentifier(styledHTML as NSString)
+        guard context.coordinator.lastKey != key else { return }
+        context.coordinator.lastKey = key
         context.coordinator.contentHeight = $contentHeight
 
-        // SECURITY: Sanitize HTML to prevent XSS attacks
-        var safeHTML = HTMLSanitizer.sanitize(html)
+        // HTML is already fully processed - just load it
+        webView.loadHTMLString(styledHTML, baseURL: nil)
+    }
 
-        // Remove zero-width characters that create empty space in marketing emails
-        safeHTML = HTMLSanitizer.removeZeroWidthCharacters(safeHTML)
-
-        // Block remote images to prevent tracking (unless user opted in)
-        if blockImages {
-            safeHTML = HTMLSanitizer.blockImages(safeHTML)
-        }
-        if stripTrackingParameters {
-            safeHTML = HTMLSanitizer.stripTrackingParameters(safeHTML)
-        }
-
-        let trackingCSS = blockTrackingPixels ? """
-                /* Hide tracking pixels and tiny spacer images */
-                img[width="1"], img[height="1"],
-                img[width="0"], img[height="0"],
-                img[style*="display:none"], img[style*="display: none"] {
-                    display: none !important;
-                }
-        """ : ""
-
-        let styledHTML = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <style>
-                /* Base layout constraints - don't override email styling */
-                * { box-sizing: border-box; }
-                html, body {
-                    margin: 0;
-                    padding: 0;
-                    width: 100%;
-                    max-width: 100%;
-                    overflow-x: hidden;
-                }
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                    font-size: 16px;
-                    line-height: 1.5;
-                    color: #1a1a1a;
-                    padding: 16px;
-                    padding-bottom: 96px;
-                    word-wrap: break-word;
-                    overflow-wrap: break-word;
-                }
-                @media (prefers-color-scheme: dark) {
-                    body { color: #f0f0f0; background-color: transparent; }
-                }
-                /* Constrain media to viewport without breaking table layouts */
-                img { max-width: 100% !important; height: auto !important; }
-                video, iframe, canvas { max-width: 100% !important; height: auto !important; }
-                td, th { word-break: break-word; }
-                a { color: #007AFF; }
-                /* Collapse empty elements that create whitespace */
-                div:empty, span:empty, td:empty, p:empty {
-                    display: none !important;
-                }
-                /* Reduce excessive spacing from marketing emails */
-                \(trackingCSS)
-                img[data-blocked-src] {
-                    display: none !important;
-                    width: 0 !important;
-                    height: 0 !important;
-                }
-                blockquote {
-                    margin: 8px 0;
-                    padding-left: 12px;
-                    border-left: 3px solid #ccc;
-                    color: #666;
-                }
-                pre, code {
-                    background: #f5f5f5;
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                    font-size: 14px;
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                }
-                @media (prefers-color-scheme: dark) {
-                    pre, code { background: #2a2a2a; }
-                    blockquote { border-left-color: #555; color: #aaa; }
-                }
-                .blocked-form { border: 1px dashed #ccc; padding: 8px; margin: 8px 0; }
-            </style>
-            <script>
-                var heightTimer = null;
-                function scheduleHeight() {
-                    if (heightTimer) {
-                        clearTimeout(heightTimer);
-                    }
-                    heightTimer = setTimeout(postHeight, 50);
-                }
-                function collapseEmptySpacers() {
-                    var elements = document.querySelectorAll('td, tr');
-                    elements.forEach(function(el) {
-                        var text = (el.textContent || '').replace(/\\u00a0/g, '').trim();
-                        var hasMedia = el.querySelector('img, svg, video, iframe, a, button, input, textarea, select');
-                        if (!hasMedia && text.length === 0) {
-                            el.style.display = 'none';
-                            el.style.height = '0';
-                            el.style.minHeight = '0';
-                            el.style.padding = '0';
-                            el.style.margin = '0';
-                        }
-                    });
-                }
-                function postHeight() {
-                    var height = Math.max(
-                        document.body.scrollHeight,
-                        document.body.offsetHeight,
-                        document.documentElement.scrollHeight,
-                        document.documentElement.offsetHeight
-                    );
-                    window.webkit.messageHandlers.heightHandler.postMessage(height);
-                }
-                function parseRGB(value) {
-                    var match = value.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/i);
-                    if (!match) { return null; }
-                    return { r: parseInt(match[1], 10), g: parseInt(match[2], 10), b: parseInt(match[3], 10) };
-                }
-                function luminance(rgb) {
-                    var a = [rgb.r, rgb.g, rgb.b].map(function(v) {
-                        v /= 255;
-                        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-                    });
-                    return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
-                }
-                function contrastRatio(l1, l2) {
-                    var light = Math.max(l1, l2);
-                    var dark = Math.min(l1, l2);
-                    return (light + 0.05) / (dark + 0.05);
-                }
-                function getBackgroundRGB(el, isDarkMode) {
-                    var node = el;
-                    while (node && node !== document.documentElement) {
-                        var bg = getComputedStyle(node).backgroundColor;
-                        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
-                            return parseRGB(bg);
-                        }
-                        node = node.parentElement;
-                    }
-                    // Check body's computed background
-                    var bodyBg = parseRGB(getComputedStyle(document.body).backgroundColor);
-                    if (bodyBg && (bodyBg.r > 10 || bodyBg.g > 10 || bodyBg.b > 10)) {
-                        return bodyBg;
-                    }
-                    // No explicit background found - use system default based on color scheme
-                    // In dark mode, the app's dark UI shows through the transparent WebView
-                    return isDarkMode ? { r: 28, g: 28, b: 30 } : { r: 255, g: 255, b: 255 };
-                }
-                // Improve readability by fixing low-contrast text colors.
-                // Only adjusts text that would be unreadable against the actual visible background.
-                function adjustLowContrastText() {
-                    var isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    var elements = document.querySelectorAll('p, span, td, div, li, a, h1, h2, h3, h4, h5, h6, th, label, strong, em, b, i');
-                    elements.forEach(function(el) {
-                        if (!el.textContent || el.textContent.trim().length === 0) { return; }
-                        if (el.dataset && el.dataset.smContrastAdjusted === '1') { return; }
-                        var style = getComputedStyle(el);
-                        var color = parseRGB(style.color);
-                        if (!color) { return; }
-                        var bg = getBackgroundRGB(el, isDarkMode);
-                        var ratio = contrastRatio(luminance(color), luminance(bg));
-                        // Fix text with contrast below 3:1 (minimum for readability)
-                        if (ratio < 3.0) {
-                            var bgLum = luminance(bg);
-                            var newColor = bgLum > 0.5 ? '#1a1a1a' : '#f0f0f0';
-                            el.style.setProperty('color', newColor, 'important');
-                        }
-                        if (el.dataset) { el.dataset.smContrastAdjusted = '1'; }
-                    });
-                }
-                function setupImageListeners() {
-                    document.querySelectorAll('img').forEach(function(img) {
-                        if (img.complete) {
-                            scheduleHeight();
-                        } else {
-                            img.addEventListener('load', scheduleHeight);
-                            img.addEventListener('error', scheduleHeight);
-                        }
-                    });
-                }
-                // Post height after load and after images load
-                // Run on load and after DOM mutations to handle dynamic email content.
-                window.onload = function() {
-                    collapseEmptySpacers();
-                    setupImageListeners();
-                    adjustLowContrastText();
-                    scheduleHeight();
-                    // Recheck after delays for dynamic content and slow-loading images
-                    setTimeout(scheduleHeight, 100);
-                    setTimeout(scheduleHeight, 300);
-                    setTimeout(scheduleHeight, 600);
-                    setTimeout(scheduleHeight, 1000);
-                    setTimeout(scheduleHeight, 2000);
-                };
-                // Also post height when DOM is ready
-                document.addEventListener('DOMContentLoaded', function() {
-                    collapseEmptySpacers();
-                    setupImageListeners();
-                    adjustLowContrastText();
-                    scheduleHeight();
-                });
-                // Avoid Resize/Mutation observers to prevent scroll jitter in long emails.
-            </script>
-        </head>
-        <body>
-            \(safeHTML)
-        </body>
-        </html>
-        """
-
-        // Add message handler for height updates (using weak wrapper to prevent retain cycle)
-        let contentController = webView.configuration.userContentController
-        contentController.removeScriptMessageHandler(forName: "heightHandler")
-        let weakHandler = WeakScriptMessageHandler(coordinator: context.coordinator)
-        contentController.add(weakHandler, name: "heightHandler")
-        context.coordinator.onLoaded = onLoaded
-
-        // Use a real baseURL to allow loading remote images
-        webView.loadHTMLString(styledHTML, baseURL: URL(string: "https://mail.google.com"))
+    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.stopLoading()
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightHandler")
+        WKWebViewPool.shared.recycle(webView)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(contentHeight: $contentHeight)
     }
 
     class Coordinator: NSObject, WKNavigationDelegate {
-        var lastHTML: String = ""
+        var lastKey: ObjectIdentifier?
         var contentHeight: Binding<CGFloat>?
-        var onLoaded: (() -> Void)?
+        var didCallOnLoaded = false
+
+        init(contentHeight: Binding<CGFloat>) {
+            self.contentHeight = contentHeight
+            super.init()
+        }
 
         func handleHeightMessage(_ body: Any) {
-            // JavaScript numbers come as NSNumber, need to convert properly
             let height: CGFloat
             if let doubleValue = body as? Double {
                 height = CGFloat(doubleValue)
@@ -955,18 +892,16 @@ struct EmailBodyWebView: UIViewRepresentable {
             }
 
             DispatchQueue.main.async {
-                // Add padding for safety margin and minimum height
                 self.contentHeight?.wrappedValue = max(100, height + 40)
             }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Fallback: get height via JavaScript if message handler didn't fire
+            // Get height via JavaScript
             webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
                 guard let result = result else { return }
                 self?.handleHeightMessage(result)
             }
-            onLoaded?()
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -977,24 +912,6 @@ struct EmailBodyWebView: UIViewRepresentable {
             } else {
                 decisionHandler(.allow)
             }
-        }
-    }
-}
-
-// MARK: - Weak Script Message Handler (prevents retain cycle)
-
-/// WKScriptMessageHandler creates a strong reference cycle.
-/// This wrapper breaks the cycle by holding a weak reference to the actual handler.
-class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
-    weak var coordinator: EmailBodyWebView.Coordinator?
-
-    init(coordinator: EmailBodyWebView.Coordinator) {
-        self.coordinator = coordinator
-    }
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        if message.name == "heightHandler" {
-            coordinator?.handleHeightMessage(message.body)
         }
     }
 }
@@ -1644,17 +1561,30 @@ class EmailDetailViewModel: ObservableObject {
     }
 
     var trackingProtectionEnabled: Bool {
+        renderSettings.blockTrackingPixels
+    }
+
+    /// Get render settings from AppSettings (used for background HTML processing)
+    private var renderSettings: BodyRenderActor.RenderSettings {
         let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
         guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
-            return true
+            return BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
         }
         do {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
-            return settings.blockTrackingPixels
+            return BodyRenderActor.RenderSettings(
+                blockImages: settings.blockRemoteImages,
+                blockTrackingPixels: settings.blockTrackingPixels,
+                stripTrackingParameters: settings.stripTrackingParameters
+            )
         } catch {
-            detailLogger.warning("Failed to decode app settings for tracking protection: \(error.localizedDescription)")
-            return true
+            return BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
         }
+    }
+
+    /// Get pre-rendered styled HTML ready for WebView (all processing done off-main)
+    func styledHTML(for message: EmailDetail) -> String {
+        renderedBodies[message.id]?.styledHTML ?? message.body
     }
 
     func bodyHTML(for message: EmailDetail) -> String {
@@ -1779,15 +1709,19 @@ class EmailDetailViewModel: ObservableObject {
                     self.trackersBlocked = trackerNamesSorted.count
                 }
 
-                // Render sanitized HTML for each message
+                // Get render settings on main actor
+                let settings = await MainActor.run { [weak self] in
+                    self?.renderSettings ?? BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
+                }
+
+                // Render sanitized + styled HTML for each message (all heavy work off-main)
                 for snapshot in dtoSnapshots {
-                    let rendered = await renderActor.render(html: snapshot.body)
+                    let rendered = await renderActor.render(html: snapshot.body, settings: settings)
                     await MainActor.run { [weak self] in
                         guard let self else { return }
+                        // Only update renderedBodies - styledHTML(for:) reads from here
+                        // Don't mutate messages[].body to avoid triggering WebView reload flash
                         self.renderedBodies[snapshot.id] = rendered
-                        if let idx = self.messages.firstIndex(where: { $0.id == snapshot.id }) {
-                            self.messages[idx].body = rendered.html
-                        }
                         if !self.didLogBodySwap {
                             StallLogger.mark("EmailDetail.bodySwap")
                             self.didLogBodySwap = true
