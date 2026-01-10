@@ -481,39 +481,20 @@ struct InboxFilterEngine {
         classification: Classification,
         currentAccountEmail: String?
     ) -> Bool {
+        // User override takes precedence
         if let override = senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
             return override == .primary
         }
 
         let labelIds = Set(email.labelIdsKey.split(separator: "|").map(String.init))
 
-        for rule in PrimaryRule.allCases {
-            if isPrimaryRuleEnabledSync(rule) == false { continue }
-            switch rule {
-            case .people:
-                if classification.isPeople { return true }
-            case .vip:
-                if isVIPSender(email) { return true }
-            case .security:
-                if classification.isSecurity { return true }
-            case .money:
-                if classification.isMoney { return true }
-            case .deadlines:
-                if classification.isDeadline { return true }
-            case .newsletters:
-                if classification.isNewsletter { return true }
-            case .promotions:
-                if labelIds.contains("CATEGORY_PROMOTIONS") { return true }
-            case .social:
-                if labelIds.contains("CATEGORY_SOCIAL") { return true }
-            case .forums:
-                if labelIds.contains("CATEGORY_FORUMS") { return true }
-            case .updates:
-                if labelIds.contains("CATEGORY_UPDATES") { return true }
-            }
-        }
+        // Match Gmail's Primary: CATEGORY_PERSONAL or no category label
+        // Gmail puts emails in Primary if they have CATEGORY_PERSONAL,
+        // or if they don't have any of the other category labels
+        let nonPrimaryCategories = ["CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]
+        let hasNonPrimaryCategory = nonPrimaryCategories.contains { labelIds.contains($0) }
 
-        return false
+        return !hasNonPrimaryCategory
     }
 
     private static func matchesPinned(
