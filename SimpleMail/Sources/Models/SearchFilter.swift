@@ -156,6 +156,56 @@ struct SearchFilter {
         return true
     }
 
+    /// Check if an EmailSnapshot matches this filter (for background filtering)
+    func matches(_ snapshot: EmailSnapshot) -> Bool {
+        // Check from filter
+        if let from = fromFilter, !from.isEmpty {
+            let matchesFrom = snapshot.senderName.localizedCaseInsensitiveContains(from) ||
+                              snapshot.senderEmail.localizedCaseInsensitiveContains(from)
+            if !matchesFrom { return false }
+        }
+
+        // Check subject filter
+        if let subject = subjectFilter, !subject.isEmpty {
+            if !snapshot.subject.localizedCaseInsensitiveContains(subject) {
+                return false
+            }
+        }
+
+        // Check body filter (matches against snippet)
+        if let body = bodyFilter, !body.isEmpty {
+            if !snapshot.snippet.localizedCaseInsensitiveContains(body) {
+                return false
+            }
+        }
+
+        // Check unread status
+        if let isUnread = isUnread {
+            if snapshot.isUnread != isUnread { return false }
+        }
+
+        // Check starred status
+        if let isStarred = isStarred {
+            if snapshot.isStarred != isStarred { return false }
+        }
+
+        // Check attachments
+        if let hasAttachment = hasAttachment, hasAttachment {
+            if !snapshot.hasAttachments { return false }
+        }
+
+        // Check general query against all fields
+        if let query = generalQuery, !query.isEmpty {
+            let matchesAny = snapshot.senderName.localizedCaseInsensitiveContains(query) ||
+                             snapshot.senderEmail.localizedCaseInsensitiveContains(query) ||
+                             snapshot.subject.localizedCaseInsensitiveContains(query) ||
+                             snapshot.snippet.localizedCaseInsensitiveContains(query)
+            if !matchesAny { return false }
+        }
+
+        return true
+    }
+
     /// Get the search terms for highlighting
     var highlightTerms: [String] {
         var terms: [String] = []

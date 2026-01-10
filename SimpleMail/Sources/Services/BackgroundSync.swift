@@ -21,6 +21,9 @@ final class BackgroundSyncManager {
     // MARK: - Registration
 
     func registerBackgroundTasks() {
+        // Verify identifiers are whitelisted in Info.plist before registering to avoid BGTaskScheduler warnings.
+        let permitted = (Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String]) ?? []
+
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: syncTaskIdentifier,
             using: nil
@@ -57,16 +60,20 @@ final class BackgroundSyncManager {
             self.handleSummaryTask(processingTask)
         }
 
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: outboxTaskIdentifier,
-            using: nil
-        ) { task in
-            guard let processingTask = task as? BGProcessingTask else {
-                logger.error("Unexpected task type for outbox task")
-                task.setTaskCompleted(success: false)
-                return
+        if permitted.contains(outboxTaskIdentifier) {
+            BGTaskScheduler.shared.register(
+                forTaskWithIdentifier: outboxTaskIdentifier,
+                using: nil
+            ) { task in
+                guard let processingTask = task as? BGProcessingTask else {
+                    logger.error("Unexpected task type for outbox task")
+                    task.setTaskCompleted(success: false)
+                    return
+                }
+                self.handleOutboxTask(processingTask)
             }
-            self.handleOutboxTask(processingTask)
+        } else {
+            logger.warning("Outbox task identifier \(self.outboxTaskIdentifier) not in BGTaskSchedulerPermittedIdentifiers; skipping registration.")
         }
     }
 

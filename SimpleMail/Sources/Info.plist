@@ -81,6 +81,7 @@
 		<string>com.simplemail.app.sync</string>
 		<string>com.simplemail.app.notification</string>
 		<string>com.simplemail.app.summaries</string>
+		<string>com.simplemail.app.outbox</string>
 	</array>
 
 	<!-- OAuth Configuration (set via build settings for production) -->

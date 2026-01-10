@@ -424,7 +424,11 @@ final class AuthService: NSObject, ObservableObject, ASWebAuthenticationPresenta
     private func saveAccounts() {
         do {
             let data = try JSONCoding.encoder.encode(accounts)
-            keychain.save(key: "accounts", data: data)
+            let keychain = self.keychain
+            // Move expensive keychain write off main thread
+            Task.detached(priority: .utility) {
+                keychain.save(key: "accounts", data: data)
+            }
             logger.debug("Saved \(self.accounts.count) accounts to keychain")
         } catch {
             logger.error("Failed to encode accounts for keychain: \(error.localizedDescription)")

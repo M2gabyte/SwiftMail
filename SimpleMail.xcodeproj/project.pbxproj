@@ -7,19 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2E979ED05361A363494B8C8F /* EmailSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99DE39A09AF391CBAFDC05DA /* EmailSnapshot.swift */; };
 		6B84FE21D7C346B2 /* PendingSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3582BDA6D42420A /* PendingSendManager.swift */; };
 		A1000001 /* SimpleMailApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001 /* SimpleMailApp.swift */; };
 		A1000002 /* Email.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* Email.swift */; };
 		A1000003 /* Briefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Briefing.swift */; };
-		A10000AB /* BriefingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AB /* BriefingViewModel.swift */; };
-		A10000AC /* BriefingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AC /* BriefingView.swift */; };
-		A10000AD /* BriefingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AD /* BriefingService.swift */; };
-		A1000060 /* InboxTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000060 /* InboxTab.swift */; };
-		A1000061 /* PinnedTabOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000061 /* PinnedTabOption.swift */; };
-		A1000062 /* PrimaryRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* PrimaryRule.swift */; };
-		A1000063 /* InboxPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000063 /* InboxPreferences.swift */; };
-		A1000064 /* PrimaryInboxRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000064 /* PrimaryInboxRulesView.swift */; };
-		A1000065 /* PinnedTabSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000065 /* PinnedTabSettingsView.swift */; };
 		A1000005 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000005 /* InboxView.swift */; };
 		A1000007 /* EmailDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000007 /* EmailDetailView.swift */; };
 		A1000008 /* ComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000008 /* ComposeView.swift */; };
@@ -46,7 +38,6 @@
 		A1000032 /* brand_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = B1000032 /* brand_registry.json */; };
 		A1000033 /* EmailFilters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000033 /* EmailFilters.swift */; };
 		A1000034 /* AccountDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000034 /* AccountDefaults.swift */; };
-		A1000099 /* EmailPreviewParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000099 /* EmailPreviewParser.swift */; };
 		A1000035 /* ScheduledSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000035 /* ScheduledSendManager.swift */; };
 		A1000036 /* NetworkRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000036 /* NetworkRetry.swift */; };
 		A1000037 /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000037 /* ErrorBanner.swift */; };
@@ -62,18 +53,28 @@
 		A1000048 /* BodyPrefetchQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000048 /* BodyPrefetchQueue.swift */; };
 		A1000049 /* QueuedEmail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000049 /* QueuedEmail.swift */; };
 		A1000050 /* EmailPreviewNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000050 /* EmailPreviewNormalizer.swift */; };
+		A1000051 /* BottomCommandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000051 /* BottomCommandSurface.swift */; };
+		A1000052 /* SwipeActionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000052 /* SwipeActionRow.swift */; };
+		A1000060 /* InboxTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000060 /* InboxTab.swift */; };
+		A1000061 /* PinnedTabOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000061 /* PinnedTabOption.swift */; };
+		A1000062 /* PrimaryRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* PrimaryRule.swift */; };
+		A1000063 /* InboxPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000063 /* InboxPreferences.swift */; };
+		A1000064 /* PrimaryInboxRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000064 /* PrimaryInboxRulesView.swift */; };
+		A1000065 /* PinnedTabSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000065 /* PinnedTabSettingsView.swift */; };
+		A1000099 /* EmailPreviewParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000099 /* EmailPreviewParser.swift */; };
 		A10000A0 /* InboxViewModelCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A0 /* InboxViewModelCacheTests.swift */; };
 		A10000A1 /* EmailSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A1 /* EmailSection.swift */; };
 		A10000A3 /* InboxViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A3 /* InboxViewState.swift */; };
 		A10000A4 /* InboxFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A4 /* InboxFilterEngine.swift */; };
 		A10000A5 /* InboxStoreWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A5 /* InboxStoreWorker.swift */; };
-		A1000051 /* BottomCommandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000051 /* BottomCommandSurface.swift */; };
-		A1000052 /* SwipeActionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000052 /* SwipeActionRow.swift */; };
 		A10000A6 /* SearchIndexManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A6 /* SearchIndexManager.swift */; };
 		A10000A7 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000A7 /* libsqlite3.tbd */; };
 		A10000A8 /* StartupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A8 /* StartupCoordinator.swift */; };
 		A10000A9 /* AccountSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A9 /* AccountSnapshotStore.swift */; };
 		A10000AA /* AccountWarmupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AA /* AccountWarmupCoordinator.swift */; };
+		A10000AB /* BriefingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AB /* BriefingViewModel.swift */; };
+		A10000AC /* BriefingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AC /* BriefingView.swift */; };
+		A10000AD /* BriefingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AD /* BriefingService.swift */; };
 		A10000AE /* MainThreadWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000AE /* MainThreadWatchdog.swift */; };
 /* End PBXBuildFile section */
 
@@ -89,20 +90,11 @@
 
 /* Begin PBXFileReference section */
 		4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMailUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		99DE39A09AF391CBAFDC05DA /* EmailSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EmailSnapshot.swift; path = SimpleMail/Sources/ViewModels/EmailSnapshot.swift; sourceTree = "<group>"; };
 		B0000001 /* SimpleMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000001 /* SimpleMailApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleMailApp.swift; sourceTree = "<group>"; };
 		B1000002 /* Email.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Email.swift; sourceTree = "<group>"; };
 		B1000003 /* Briefing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Briefing.swift; sourceTree = "<group>"; };
-		B10000AB /* BriefingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingViewModel.swift; sourceTree = "<group>"; };
-		B10000AC /* BriefingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingView.swift; sourceTree = "<group>"; };
-		B10000AD /* BriefingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingService.swift; sourceTree = "<group>"; };
-		B10000AE /* MainThreadWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainThreadWatchdog.swift; sourceTree = "<group>"; };
-		B1000060 /* InboxTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxTab.swift; sourceTree = "<group>"; };
-		B1000061 /* PinnedTabOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabOption.swift; sourceTree = "<group>"; };
-		B1000062 /* PrimaryRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryRule.swift; sourceTree = "<group>"; };
-		B1000063 /* InboxPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxPreferences.swift; sourceTree = "<group>"; };
-		B1000064 /* PrimaryInboxRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryInboxRulesView.swift; sourceTree = "<group>"; };
-		B1000065 /* PinnedTabSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabSettingsView.swift; sourceTree = "<group>"; };
 		B1000005 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
 		B1000007 /* EmailDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailDetailView.swift; sourceTree = "<group>"; };
 		B1000008 /* ComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeView.swift; sourceTree = "<group>"; };
@@ -131,7 +123,6 @@
 		B1000032 /* brand_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = brand_registry.json; sourceTree = "<group>"; };
 		B1000033 /* EmailFilters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailFilters.swift; sourceTree = "<group>"; };
 		B1000034 /* AccountDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDefaults.swift; sourceTree = "<group>"; };
-		B1000099 /* EmailPreviewParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailPreviewParser.swift; sourceTree = "<group>"; };
 		B1000035 /* ScheduledSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledSendManager.swift; sourceTree = "<group>"; };
 		B1000036 /* NetworkRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkRetry.swift; sourceTree = "<group>"; };
 		B1000037 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
@@ -146,24 +137,45 @@
 		B1000047 /* OutboxManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboxManager.swift; sourceTree = "<group>"; };
 		B1000048 /* BodyPrefetchQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyPrefetchQueue.swift; sourceTree = "<group>"; };
 		B1000049 /* QueuedEmail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedEmail.swift; sourceTree = "<group>"; };
-		B10000A6 /* SearchIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchIndexManager.swift; sourceTree = "<group>"; };
-		B10000A7 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
-		B10000A8 /* StartupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupCoordinator.swift; sourceTree = "<group>"; };
-		B10000A9 /* AccountSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSnapshotStore.swift; sourceTree = "<group>"; };
-		B10000AA /* AccountWarmupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWarmupCoordinator.swift; sourceTree = "<group>"; };
 		B1000050 /* EmailPreviewNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailPreviewNormalizer.swift; sourceTree = "<group>"; };
+		B1000051 /* BottomCommandSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomCommandSurface.swift; sourceTree = "<group>"; };
+		B1000052 /* SwipeActionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeActionRow.swift; sourceTree = "<group>"; };
+		B1000060 /* InboxTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxTab.swift; sourceTree = "<group>"; };
+		B1000061 /* PinnedTabOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabOption.swift; sourceTree = "<group>"; };
+		B1000062 /* PrimaryRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryRule.swift; sourceTree = "<group>"; };
+		B1000063 /* InboxPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxPreferences.swift; sourceTree = "<group>"; };
+		B1000064 /* PrimaryInboxRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryInboxRulesView.swift; sourceTree = "<group>"; };
+		B1000065 /* PinnedTabSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabSettingsView.swift; sourceTree = "<group>"; };
+		B1000099 /* EmailPreviewParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailPreviewParser.swift; sourceTree = "<group>"; };
 		B10000A0 /* InboxViewModelCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxViewModelCacheTests.swift; sourceTree = "<group>"; };
 		B10000A1 /* EmailSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSection.swift; sourceTree = "<group>"; };
 		B10000A3 /* InboxViewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxViewState.swift; sourceTree = "<group>"; };
 		B10000A4 /* InboxFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFilterEngine.swift; sourceTree = "<group>"; };
 		B10000A5 /* InboxStoreWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxStoreWorker.swift; sourceTree = "<group>"; };
-		B1000051 /* BottomCommandSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomCommandSurface.swift; sourceTree = "<group>"; };
-		B1000052 /* SwipeActionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeActionRow.swift; sourceTree = "<group>"; };
+		B10000A6 /* SearchIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchIndexManager.swift; sourceTree = "<group>"; };
+		B10000A7 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
+		B10000A8 /* StartupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupCoordinator.swift; sourceTree = "<group>"; };
+		B10000A9 /* AccountSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSnapshotStore.swift; sourceTree = "<group>"; };
+		B10000AA /* AccountWarmupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWarmupCoordinator.swift; sourceTree = "<group>"; };
+		B10000AB /* BriefingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingViewModel.swift; sourceTree = "<group>"; };
+		B10000AC /* BriefingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingView.swift; sourceTree = "<group>"; };
+		B10000AD /* BriefingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingService.swift; sourceTree = "<group>"; };
+		B10000AE /* MainThreadWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainThreadWatchdog.swift; sourceTree = "<group>"; };
 		B3582BDA6D42420A /* PendingSendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		4DC2BDD12F063BC300D0267A /* SimpleMailUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SimpleMailUITests; sourceTree = "<group>"; };
+		4DC2BDD12F063BC300D0267A /* SimpleMailUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = SimpleMailUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -185,16 +197,41 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		5819721FF19BF1AE5A87CC1D /* SimpleMail */ = {
+			isa = PBXGroup;
+			children = (
+				CA3EE77BA10E7FF2B4DF775F /* Sources */,
+			);
+			name = SimpleMail;
+			sourceTree = "<group>";
+		};
+		B0A9A103E76912F9B5EDB294 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				99DE39A09AF391CBAFDC05DA /* EmailSnapshot.swift */,
+			);
+			name = ViewModels;
+			sourceTree = "<group>";
+		};
+		CA3EE77BA10E7FF2B4DF775F /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				B0A9A103E76912F9B5EDB294 /* ViewModels */,
+			);
+			name = Sources;
+			sourceTree = "<group>";
+		};
 		D0000001 = {
 			isa = PBXGroup;
 			children = (
-				D0000002 /* SimpleMail/Sources */,
+				D0000002 /* Sources */,
 				4DC2BDD12F063BC300D0267A /* SimpleMailUITests */,
 				D0000003 /* Products */,
+				5819721FF19BF1AE5A87CC1D /* SimpleMail */,
 			);
 			sourceTree = "<group>";
 		};
-		D0000002 /* SimpleMail/Sources */ = {
+		D0000002 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
 				B1000001 /* SimpleMailApp.swift */,
@@ -363,8 +400,6 @@
 				4DC2BDD12F063BC300D0267A /* SimpleMailUITests */,
 			);
 			name = SimpleMailUITests;
-			packageProductDependencies = (
-			);
 			productName = SimpleMailUITests;
 			productReference = 4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -520,6 +555,7 @@
 				A10000A5 /* InboxStoreWorker.swift in Sources */,
 				A1000051 /* BottomCommandSurface.swift in Sources */,
 				A1000052 /* SwipeActionRow.swift in Sources */,
+				2E979ED05361A363494B8C8F /* EmailSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -540,6 +576,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.simplemail.app.sync com.simplemail.app.notification com.simplemail.app.summaries com.simplemail.app.outbox";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.M2gabyte.SimpleMailUITests;
@@ -560,6 +597,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.simplemail.app.sync com.simplemail.app.notification com.simplemail.app.summaries com.simplemail.app.outbox";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.M2gabyte.SimpleMailUITests;

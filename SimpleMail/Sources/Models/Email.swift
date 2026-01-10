@@ -80,6 +80,37 @@ final class Email: Identifiable {
     var messagesCount: Int
     var accountEmail: String?
 
+    // Cached sender info (computed once from `from` to avoid regex on every access)
+    // Default empty string allows SwiftData migration; accessor returns computed fallback if empty
+    private var _senderEmail: String = ""
+    private var _senderName: String = ""
+
+    var senderEmail: String {
+        get {
+            if _senderEmail.isEmpty {
+                // Compute and cache for future accesses
+                let computed = EmailParser.extractSenderEmail(from: from)
+                _senderEmail = computed
+                return computed
+            }
+            return _senderEmail
+        }
+        set { _senderEmail = newValue }
+    }
+
+    var senderName: String {
+        get {
+            if _senderName.isEmpty {
+                // Compute and cache for future accesses
+                let computed = EmailParser.extractSenderName(from: from)
+                _senderName = computed
+                return computed
+            }
+            return _senderName
+        }
+        set { _senderName = newValue }
+    }
+
     // Bulk detection headers (for briefing classification)
     var listUnsubscribe: String?
     var listId: String?
@@ -120,6 +151,9 @@ final class Email: Identifiable {
         self.listId = listId
         self.precedence = precedence
         self.autoSubmitted = autoSubmitted
+        // Compute sender info once at creation time
+        self._senderEmail = EmailParser.extractSenderEmail(from: from)
+        self._senderName = EmailParser.extractSenderName(from: from)
     }
 }
 
@@ -234,21 +268,12 @@ final class SenderPreference: Identifiable {
 // MARK: - Helper Extensions
 
 extension Email {
-    var senderEmail: String {
-        EmailParser.extractSenderEmail(from: from)
-    }
-
-    var senderName: String {
-        EmailParser.extractSenderName(from: from)
-    }
-
     var senderInitials: String {
-        let name = senderName
-        let words = name.split(separator: " ")
+        let words = senderName.split(separator: " ")
         if words.count >= 2 {
             return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
         }
-        return String(name.prefix(2)).uppercased()
+        return String(senderName.prefix(2)).uppercased()
     }
 }
 

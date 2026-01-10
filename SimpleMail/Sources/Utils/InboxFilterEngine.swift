@@ -34,6 +34,22 @@ struct InboxFilterEngine {
         let classifications: [String: Classification]
     }
 
+    // MARK: - Static Formatters (avoid per-call creation)
+
+    private static let weekdayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = .current
+        f.dateFormat = "EEEE"
+        return f
+    }()
+
+    private static let monthFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = .current
+        f.dateFormat = "MMMM yyyy"
+        return f
+    }()
+
     private static let needsReplyPatterns: [NSRegularExpression] = {
         let patterns = [
             "can\\s+you", "could\\s+you", "would\\s+you", "are\\s+you\\s+able",
@@ -63,7 +79,7 @@ struct InboxFilterEngine {
     }
 
     static func buildClassificationCache(
-        emails: [EmailDTO],
+        emails: [EmailSnapshot],
         existingCache: [String: CacheEntry],
         currentAccountEmail: String?
     ) -> CacheResult {
@@ -90,7 +106,7 @@ struct InboxFilterEngine {
     }
 
     static func recomputeFilterCounts(
-        from emails: [EmailDTO],
+        from emails: [EmailSnapshot],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
         currentAccountEmail: String?,
@@ -130,13 +146,13 @@ struct InboxFilterEngine {
     }
 
     static func applyFilters(
-        _ emails: [EmailDTO],
+        _ emails: [EmailSnapshot],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
         activeFilter: InboxFilter?,
         currentAccountEmail: String?,
         classifications: [String: Classification]
-    ) -> [EmailDTO] {
+    ) -> [EmailSnapshot] {
         let blocked = blockedSendersSync(for: currentAccountEmail)
         var filtered = emails.filter { email in
             !blocked.contains(email.senderEmail.lowercased())
@@ -224,20 +240,6 @@ struct InboxFilterEngine {
         }
 
         var sections: [EmailSection] = []
-        let weekdayFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.locale = .current
-            formatter.calendar = calendar
-            formatter.dateFormat = "EEEE"
-            return formatter
-        }()
-        let monthFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.locale = .current
-            formatter.calendar = calendar
-            formatter.dateFormat = "MMMM yyyy"
-            return formatter
-        }()
 
         if !today.isEmpty {
             sections.append(EmailSection(id: "today", title: "Today", emails: today))
@@ -266,8 +268,10 @@ struct InboxFilterEngine {
         return sections
     }
 
-    private static func isNeedsReplyCandidate(_ email: EmailDTO) -> Bool {
-        if email.labelIds.contains("SENT") {
+    private static func isNeedsReplyCandidate(_ email: EmailSnapshot) -> Bool {
+        let labelIds = email.labelIdsKey.split(separator: "|").map(String.init)
+
+        if labelIds.contains("SENT") {
             return false
         }
 
@@ -284,10 +288,10 @@ struct InboxFilterEngine {
             }
         }
 
-        if EmailFilters.isBulk(email) {
+        if isBulkSnapshot(email) {
             return false
         }
-        if !EmailFilters.looksLikeHumanSender(email) {
+        if !looksLikeHumanSenderSnapshot(email) {
             return false
         }
 
@@ -316,11 +320,11 @@ struct InboxFilterEngine {
         stringArraySync(for: "alwaysOtherSenders", accountEmail: accountEmail)
     }
 
-    private static func accountEmail(for email: EmailDTO, fallback: String?) -> String? {
+    private static func accountEmail(for email: EmailSnapshot, fallback: String?) -> String? {
         email.accountEmail ?? fallback
     }
 
-    private static func senderOverride(for email: EmailDTO, currentAccountEmail: String?) -> InboxTab? {
+    private static func senderOverride(for email: EmailSnapshot, currentAccountEmail: String?) -> InboxTab? {
         let accountEmail = accountEmail(for: email, fallback: currentAccountEmail)
         let sender = email.senderEmail.lowercased()
 
@@ -333,28 +337,29 @@ struct InboxFilterEngine {
         return nil
     }
 
-    private static func isVIPSender(_ email: EmailDTO) -> Bool {
+    private static func isVIPSender(_ email: EmailSnapshot) -> Bool {
         let vipSenders = stringArraySync(for: "vipSenders", accountEmail: email.accountEmail)
         return vipSenders.contains(email.senderEmail.lowercased())
     }
 
-    private static func isNewsletter(_ email: EmailDTO) -> Bool {
-        email.labelIds.contains("CATEGORY_PROMOTIONS") || email.listUnsubscribe != nil
+    private static func isNewsletter(_ email: EmailSnapshot) -> Bool {
+        let labelIds = email.labelIdsKey.split(separator: "|").map(String.init)
+        return labelIds.contains("CATEGORY_PROMOTIONS") || email.listUnsubscribe != nil
     }
 
-    private static func isMoney(_ email: EmailDTO) -> Bool {
+    private static func isMoney(_ email: EmailSnapshot) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         return text.contains("receipt") || text.contains("order") ||
             text.contains("payment") || text.contains("invoice")
     }
 
-    private static func isDeadline(_ email: EmailDTO) -> Bool {
+    private static func isDeadline(_ email: EmailSnapshot) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         return text.contains("today") || text.contains("tomorrow") ||
             text.contains("urgent") || text.contains("deadline")
     }
 
-    private static func isSecurity(_ email: EmailDTO) -> Bool {
+    private static func isSecurity(_ email: EmailSnapshot) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         let keywords = [
             "security alert", "new sign-in", "sign-in", "password",
@@ -364,18 +369,123 @@ struct InboxFilterEngine {
         return keywords.contains { text.contains($0) }
     }
 
-    private static func isPeople(_ email: EmailDTO) -> Bool {
-        EmailFilters.looksLikeHumanSender(email) && !EmailFilters.isBulk(email)
+    // MARK: - Snapshot-based EmailFilters replacements
+
+    private static let personalEmailDomains: Set<String> = [
+        "gmail.com", "googlemail.com",
+        "yahoo.com", "ymail.com",
+        "hotmail.com", "outlook.com", "live.com", "msn.com",
+        "icloud.com", "me.com", "mac.com",
+        "aol.com",
+        "protonmail.com", "proton.me",
+        "fastmail.com",
+        "zoho.com",
+    ]
+
+    private static let noReplyPatterns: [NSRegularExpression] = {
+        let patterns = [
+            "no-?reply", "noreply", "do-?not-?reply", "donotreply",
+            "notifications?@", "notify@", "alerts?@", "mailer@",
+            "bounce@", "auto@", "automated@", "system@", "info@",
+            "support@", "help@", "contact@", "hello@", "team@",
+            "news@", "updates?@", "marketing@", "promo@", "sales@",
+            "billing@", "service@", "admin@",
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    }()
+
+    private static let bulkCategoryLabels: Set<String> = [
+        "CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS",
+    ]
+
+    private static let bulkPrecedenceValues: Set<String> = ["bulk", "list", "junk"]
+
+    private static func looksLikeHumanSenderSnapshot(_ email: EmailSnapshot) -> Bool {
+        let senderEmail = email.senderEmail.lowercased()
+        let senderName = email.senderName
+        let domain = senderEmail.split(separator: "@").last.map(String.init) ?? ""
+
+        // Strong negative: no-reply patterns
+        let emailRange = NSRange(senderEmail.startIndex..., in: senderEmail)
+        for pattern in noReplyPatterns {
+            if pattern.firstMatch(in: senderEmail, range: emailRange) != nil {
+                return false
+            }
+        }
+
+        // Strong positive: personal email domain
+        if personalEmailDomains.contains(domain) {
+            return true
+        }
+
+        // Moderate positive: name has a space (First Last pattern)
+        if senderName.contains(" ") {
+            let words = senderName.split(separator: " ")
+            if words.count >= 2 && words.count <= 4 {
+                let firstWord = String(words[0]).lowercased()
+                let nonNameWords: Set<String> = ["the", "a", "an", "my", "your", "our", "team", "support", "news"]
+                if !nonNameWords.contains(firstWord) {
+                    return true
+                }
+            }
+        }
+
+        // Single-word names are likely org/brand
+        if !senderName.contains(" ") && senderName.count > 3 {
+            return false
+        }
+
+        return false
+    }
+
+    private static func isBulkSnapshot(_ email: EmailSnapshot) -> Bool {
+        let labelIds = Set(email.labelIdsKey.split(separator: "|").map(String.init))
+
+        // Bulk category labels
+        if !bulkCategoryLabels.isDisjoint(with: labelIds) { return true }
+
+        // List-Unsubscribe or List-ID headers
+        if email.listUnsubscribe != nil { return true }
+        if email.listId != nil { return true }
+
+        // Precedence header
+        if let precedence = email.precedence?.lowercased() {
+            if bulkPrecedenceValues.contains(where: { precedence.contains($0) }) {
+                return true
+            }
+        }
+
+        // Auto-Submitted header
+        if let autoSubmitted = email.autoSubmitted?.lowercased(), autoSubmitted != "no" {
+            return true
+        }
+
+        // No-reply sender patterns
+        let senderEmail = email.senderEmail.lowercased()
+        let emailRange = NSRange(senderEmail.startIndex..., in: senderEmail)
+        for pattern in noReplyPatterns {
+            if pattern.firstMatch(in: senderEmail, range: emailRange) != nil {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func isPeople(_ email: EmailSnapshot) -> Bool {
+        looksLikeHumanSenderSnapshot(email) && !isBulkSnapshot(email)
     }
 
     private static func isPrimary(
-        _ email: EmailDTO,
+        _ email: EmailSnapshot,
         classification: Classification,
         currentAccountEmail: String?
     ) -> Bool {
         if let override = senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
             return override == .primary
         }
+
+        let labelIds = Set(email.labelIdsKey.split(separator: "|").map(String.init))
 
         for rule in PrimaryRule.allCases {
             if isPrimaryRuleEnabledSync(rule) == false { continue }
@@ -393,13 +503,13 @@ struct InboxFilterEngine {
             case .newsletters:
                 if classification.isNewsletter { return true }
             case .promotions:
-                if email.labelIds.contains("CATEGORY_PROMOTIONS") { return true }
+                if labelIds.contains("CATEGORY_PROMOTIONS") { return true }
             case .social:
-                if email.labelIds.contains("CATEGORY_SOCIAL") { return true }
+                if labelIds.contains("CATEGORY_SOCIAL") { return true }
             case .forums:
-                if email.labelIds.contains("CATEGORY_FORUMS") { return true }
+                if labelIds.contains("CATEGORY_FORUMS") { return true }
             case .updates:
-                if email.labelIds.contains("CATEGORY_UPDATES") { return true }
+                if labelIds.contains("CATEGORY_UPDATES") { return true }
             }
         }
 
@@ -407,7 +517,7 @@ struct InboxFilterEngine {
     }
 
     private static func matchesPinned(
-        _ email: EmailDTO,
+        _ email: EmailSnapshot,
         pinnedTabOption: PinnedTabOption,
         currentAccountEmail: String?,
         classifications: [String: Classification]
@@ -432,12 +542,12 @@ struct InboxFilterEngine {
     }
 
     private static func applyTabContext(
-        _ emails: [EmailDTO],
+        _ emails: [EmailSnapshot],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
         currentAccountEmail: String?,
         classifications: [String: Classification]
-    ) -> [EmailDTO] {
+    ) -> [EmailSnapshot] {
         var filtered = emails
         switch currentTab {
         case .all:
@@ -462,15 +572,14 @@ struct InboxFilterEngine {
     }
 
     private static func classificationSignature(
-        for email: EmailDTO,
+        for email: EmailSnapshot,
         currentAccountEmail: String?
     ) -> ClassificationSignature {
-        let labelKey = email.labelIds.sorted().joined(separator: "|")
         return ClassificationSignature(
             subject: email.subject,
             snippet: email.snippet,
-            from: email.from,
-            labelKey: labelKey,
+            from: email.senderEmail,
+            labelKey: email.labelIdsKey,
             listUnsubscribe: email.listUnsubscribe,
             listId: email.listId,
             precedence: email.precedence,
@@ -481,11 +590,11 @@ struct InboxFilterEngine {
     }
 
     private static func classify(
-        _ email: EmailDTO,
+        _ email: EmailSnapshot,
         currentAccountEmail: String?
     ) -> Classification {
-        let isBulk = EmailFilters.isBulk(email)
-        let isPeople = EmailFilters.looksLikeHumanSender(email) && !isBulk
+        let isBulk = isBulkSnapshot(email)
+        let isPeople = looksLikeHumanSenderSnapshot(email) && !isBulk
         let isMoney = isMoney(email)
         let isDeadline = isDeadline(email)
         let isSecurity = isSecurity(email)

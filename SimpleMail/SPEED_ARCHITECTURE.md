@@ -274,12 +274,83 @@ private func makeWebView() -> WKWebView {
 
 ---
 
+## Deferred WebKit Mount (Latest Optimization)
+
+The first email open was taking ~5 seconds due to:
+1. WebKit processes launching (~1.4s GPU + ~1.4s WebContent)
+2. HTML processing happening sequentially for ALL messages
+3. WebView mounted immediately, stalling during process launch
+
+### New Approach: Skeleton + Deferred Mount
+
+```swift
+struct EmailBodyView: View {
+    let styledHTML: String?  // nil = not ready yet
+    @State private var showSkeleton = false
+    @State private var webViewReady = false
+
+    var body: some View {
+        ZStack {
+            // Skeleton: shown after 250ms delay if HTML not ready
+            if showSkeleton && styledHTML == nil {
+                EmailBodySkeleton()
+            }
+
+            // WebView: only mounted when HTML is ready
+            if let html = styledHTML {
+                EmailBodyWebView(styledHTML: html, onDidFinish: { webViewReady = true })
+                    .opacity(webViewReady ? 1 : 0)  // Fade in after didFinish
+            }
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(250))
+            if styledHTML == nil { showSkeleton = true }
+        }
+    }
+}
+```
+
+### Key Changes
+
+1. **Skeleton placeholder** - Shimmering gray lines, not plain text
+2. **250ms delay threshold** - Don't show skeleton if HTML arrives fast
+3. **Deferred WebView mount** - Only create WKWebView when HTML is ready
+4. **Fade-in after didFinish** - No white flash or partial render
+5. **Render selected message first** - Latest/expanded message renders before collapsed ones
+
+### Render Priority in loadThread()
+
+```swift
+// PRIORITY: Render the latest/selected message FIRST
+if let latestSnapshot = dtoSnapshots.first(where: { $0.id == latestMessageId }) {
+    let rendered = await renderActor.render(html: latestSnapshot.body, settings: settings)
+    await MainActor.run { renderedBodies[latestSnapshot.id] = rendered }
+}
+
+// Then render remaining messages (collapsed, not immediately visible)
+for snapshot in dtoSnapshots where snapshot.id != latestMessageId {
+    // ... render in background
+}
+```
+
+### Expected Behavior
+
+| Scenario | What User Sees |
+|----------|----------------|
+| Fast path (<250ms) | Email body appears directly, no skeleton |
+| Slow path (WebKit cold) | Brief skeleton shimmer, then smooth fade-in |
+| Thread with many messages | Selected message loads first, others in background |
+
+---
+
 ## Summary
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Email detail load | ✅ Fast | 190-260ms appear→bodySwap |
-| WebKit warmup | ✅ Removed | Was net negative (1s stall, no benefit) |
+| Email detail load | ✅ Fast | Skeleton → fade-in, no frozen UI |
+| WebKit mount | ✅ Deferred | Only when HTML ready |
+| Selected message priority | ✅ Enabled | Renders first, not sequentially |
+| WebKit warmup | ✅ Removed | Was net negative |
 | Pool reset | ✅ Fixed | No longer loads unnecessary HTML |
 | SwiftData isolation | ✅ Fixed | Value types before Task.detached |
 | HTML processing | ✅ Off-main | BodyRenderActor does all work |
@@ -291,8 +362,8 @@ private func makeWebView() -> WKWebView {
 
 ## Future Considerations
 
-1. **Loading shimmer:** Show email detail skeleton immediately, render body when ready. Perceived performance may be better than waiting.
+1. **Measure first-email-open:** Track in analytics to understand real-world cold-start impact.
 
-2. **Measure first-email-open:** Track in analytics to understand real-world cold-start impact.
+2. **WebView pool size:** Currently maxSize=3. May need tuning based on memory pressure.
 
-3. **WebView pool size:** Currently maxSize=3. May need tuning based on memory pressure.
+3. **Remaining inbox stalls:** The 1060ms + 557ms stalls during `preloadCachedEmails` are SwiftUI list construction / SwiftData loading, separate from WebKit.

@@ -18,6 +18,13 @@ actor PeopleService {
     private var cachedContactsByAccount: [String: [Contact]] = [:]
     private var lastCacheTimeByAccount: [String: Date] = [:]
     private let cacheExpiryInterval: TimeInterval = TimeoutConfig.contactCacheExpiry
+    /// Once a permission error is seen, avoid hammering the API for the rest of the session.
+    private var disableContactsForSession = false
+    private var didLogPermissionDenied = false
+    /// Deduplicate concurrent fetches per account.
+    private var inflightFetchByAccount: [String: Task<[Contact], Error>] = [:]
+    /// Single-flight preload task to prevent repeated API calls
+    private var preloadTask: Task<Void, Never>?
 
     // MARK: - Contact Model
 
@@ -73,6 +80,7 @@ actor PeopleService {
 
     /// Fetches all contacts with email addresses from Google People API
     func fetchContacts(forceRefresh: Bool = false) async throws -> [Contact] {
+        if disableContactsForSession { return [] }
         guard let accountKey = await currentAccountKey() else {
             throw PeopleError.notAuthenticated
         }
@@ -86,35 +94,52 @@ actor PeopleService {
             return cached
         }
 
-        logger.info("Fetching contacts from People API")
+        // Deduplicate concurrent fetches
+        if let inflight = inflightFetchByAccount[accountKey] {
+            return try await inflight.value
+        }
 
-        let token = try await getAccessToken()
+        let task = Task<[Contact], Error> {
+            logger.info("Fetching contacts from People API")
 
-        var allContacts: [Contact] = []
-        var nextPageToken: String?
+            let token = try await getAccessToken()
 
-        // Paginate through all contacts
-        repeat {
-            let (contacts, pageToken) = try await fetchContactsPage(token: token, pageToken: nextPageToken)
-            allContacts.append(contentsOf: contacts)
-            nextPageToken = pageToken
-        } while nextPageToken != nil
+            var allContacts: [Contact] = []
+            var nextPageToken: String?
 
-        // Also fetch "other contacts" (people you've emailed but aren't in contacts)
-        let otherContacts = try await fetchOtherContacts(token: token)
-        allContacts.append(contentsOf: otherContacts)
+            // Paginate through all contacts
+            repeat {
+                let (contacts, pageToken) = try await fetchContactsPage(token: token, pageToken: nextPageToken)
+                allContacts.append(contentsOf: contacts)
+                nextPageToken = pageToken
+            } while nextPageToken != nil
 
-        // Deduplicate by email
-        let uniqueContacts = Array(Set(allContacts))
+            // Also fetch "other contacts" (people you've emailed but aren't in contacts)
+            let otherContacts = try await fetchOtherContacts(token: token)
+            allContacts.append(contentsOf: otherContacts)
 
-        // Sort by name
-        let sorted = uniqueContacts.sorted { $0.displayName.lowercased() < $1.displayName.lowercased() }
-        cachedContactsByAccount[accountKey] = sorted
-        lastCacheTimeByAccount[accountKey] = Date()
+            // Deduplicate by email
+            let uniqueContacts = Array(Set(allContacts))
 
-        logger.info("Cached \(sorted.count) contacts")
+            // Sort by name
+            let sorted = uniqueContacts.sorted { $0.displayName.lowercased() < $1.displayName.lowercased() }
+            cachedContactsByAccount[accountKey] = sorted
+            lastCacheTimeByAccount[accountKey] = Date()
 
-        return sorted
+            logger.info("Cached \(sorted.count) contacts")
+
+            return sorted
+        }
+
+        inflightFetchByAccount[accountKey] = task
+        defer { inflightFetchByAccount[accountKey] = nil }
+        return try await task.value
+    }
+
+    private func markPermissionDeniedIfNeeded(_ error: Error) {
+        if let peopleError = error as? PeopleError, case .permissionDenied = peopleError {
+            disableContactsForSession = true
+        }
     }
 
     private func fetchContactsPage(token: String, pageToken: String?) async throws -> (contacts: [Contact], nextPageToken: String?) {
@@ -170,6 +195,7 @@ actor PeopleService {
 
     /// Searches contacts by name or email
     func searchContacts(query: String) async -> [Contact] {
+        if disableContactsForSession { return [] }
         let lowercasedQuery = query.lowercased().trimmingCharacters(in: .whitespaces)
 
         guard !lowercasedQuery.isEmpty else {
@@ -185,6 +211,7 @@ actor PeopleService {
             do {
                 _ = try await fetchContacts()
             } catch {
+                markPermissionDeniedIfNeeded(error)
                 logger.warning("Failed to fetch contacts for search: \(error.localizedDescription)")
                 // Continue with empty cache - user may need to re-authenticate
             }
@@ -198,40 +225,51 @@ actor PeopleService {
         }
     }
 
-    /// Preloads contacts in the background
+    /// Preloads contacts in the background (single-flight)
     func preloadContacts() async {
-        do {
-            guard await AuthService.shared.isAuthenticated else { return }
-            _ = try await fetchContacts()
-            logger.info("Contacts preloaded successfully")
-        } catch {
-            logger.warning("Failed to preload contacts: \(error.localizedDescription)")
+        // Already disabled for session (permission denied)
+        if disableContactsForSession { return }
+        // Already running a preload task
+        guard preloadTask == nil else { return }
+
+        preloadTask = Task {
+            defer { preloadTask = nil }
+
+            do {
+                guard await AuthService.shared.isAuthenticated else { return }
+                _ = try await fetchContacts()
+                logger.info("Contacts preloaded successfully")
+            } catch {
+                markPermissionDeniedIfNeeded(error)
+                if disableContactsForSession {
+                    logger.warning("Contacts scope denied; disabling contacts fetch for this session.")
+                } else {
+                    logger.warning("Failed to preload contacts: \(error.localizedDescription)")
+                }
+            }
         }
+        await preloadTask?.value
     }
 
     // MARK: - Photo Lookup
 
-    /// Gets the photo URL for a specific email address
+    /// Gets the photo URL for a specific email address.
+    /// CACHE-ONLY: does not fetch contacts on-demand (Inbox avatar rendering must not cause network).
     func getPhotoURL(for email: String) async -> URL? {
+        if disableContactsForSession { return nil }
         let lowercasedEmail = email.lowercased()
 
-        // Try to get from cached contacts
         guard let accountKey = await currentAccountKey() else {
             return nil
         }
 
-        // If cache is empty, try to fetch contacts
-        if cachedContactsByAccount[accountKey]?.isEmpty ?? true {
-            do {
-                _ = try await fetchContacts()
-            } catch {
-                logger.warning("Failed to fetch contacts for photo lookup: \(error.localizedDescription)")
-            }
+        // Cache-only: return nil if contacts not yet loaded
+        guard let contacts = cachedContactsByAccount[accountKey], !contacts.isEmpty else {
+            return nil
         }
 
         // Find matching contact
-        let cached = cachedContactsByAccount[accountKey] ?? []
-        if let contact = cached.first(where: { $0.email.lowercased() == lowercasedEmail }) {
+        if let contact = contacts.first(where: { $0.email.lowercased() == lowercasedEmail }) {
             if let photoURLString = contact.photoURL, let url = URL(string: photoURLString) {
                 return url
             }
@@ -240,27 +278,24 @@ actor PeopleService {
         return nil
     }
 
-    /// Gets photo URLs for multiple email addresses (batch lookup)
+    /// Gets photo URLs for multiple email addresses (batch lookup).
+    /// CACHE-ONLY: does not fetch contacts on-demand.
     func getPhotoURLs(for emails: [String]) async -> [String: URL] {
+        if disableContactsForSession { return [:] }
         var results: [String: URL] = [:]
 
         guard let accountKey = await currentAccountKey() else {
             return results
         }
 
-        // If cache is empty, try to fetch contacts
-        if cachedContactsByAccount[accountKey]?.isEmpty ?? true {
-            do {
-                _ = try await fetchContacts()
-            } catch {
-                logger.warning("Failed to fetch contacts for batch photo lookup: \(error.localizedDescription)")
-            }
+        // Cache-only: return empty if contacts not yet loaded
+        guard let contacts = cachedContactsByAccount[accountKey], !contacts.isEmpty else {
+            return results
         }
 
-        let cached = cachedContactsByAccount[accountKey] ?? []
         let lowercasedEmails = Set(emails.map { $0.lowercased() })
 
-        for contact in cached {
+        for contact in contacts {
             let lowerEmail = contact.email.lowercased()
             if lowercasedEmails.contains(lowerEmail) {
                 if let photoURLString = contact.photoURL, let url = URL(string: photoURLString) {
@@ -356,7 +391,11 @@ actor PeopleService {
             logger.warning("Authentication required for \(url.path)")
             throw PeopleError.notAuthenticated
         case 403:
-            logger.warning("Permission denied - contacts scope may not be granted")
+            if !disableContactsForSession && !didLogPermissionDenied {
+                logger.warning("Permission denied - contacts scope may not be granted")
+                didLogPermissionDenied = true
+            }
+            disableContactsForSession = true
             throw PeopleError.permissionDenied
         case 429:
             logger.warning("Rate limited on \(url.path)")
