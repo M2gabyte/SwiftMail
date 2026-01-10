@@ -6,6 +6,23 @@ import OSLog
 
 private let logger = Logger(subsystem: "com.simplemail.app", category: "EmailFilters")
 
+/// Protocol for email types used in filtering (both Email and EmailDTO conform)
+protocol EmailFilterable {
+    var senderEmail: String { get }
+    var senderName: String { get }
+    var labelIds: [String] { get }
+    var listUnsubscribe: String? { get }
+    var listId: String? { get }
+    var precedence: String? { get }
+    var autoSubmitted: String? { get }
+}
+
+// Conformance for Email
+extension Email: EmailFilterable {}
+
+// Conformance for EmailDTO
+extension EmailDTO: EmailFilterable {}
+
 enum EmailFilters {
 
     // MARK: - Personal Email Domains
@@ -128,7 +145,7 @@ enum EmailFilters {
     /// Check if sender looks like a real person (human gate)
     /// Positive signals: personal domain, First Last name pattern
     /// Negative signals: no-reply patterns, brand names, via patterns
-    static func looksLikeHumanSender(_ email: Email) -> Bool {
+    static func looksLikeHumanSender(_ email: some EmailFilterable) -> Bool {
         let senderEmail = email.senderEmail.lowercased()
         let senderName = email.senderName
         let domain = senderEmail.split(separator: "@").last.map(String.init) ?? ""
@@ -178,7 +195,7 @@ enum EmailFilters {
 
     /// Check if email is bulk/newsletter/automated
     /// Uses Gmail categories, headers, and sender patterns
-    static func isBulk(_ email: Email) -> Bool {
+    static func isBulk(_ email: some EmailFilterable) -> Bool {
         // Strong signals - immediate bulk
         if hasBulkCategoryLabel(email) { return true }
         if hasBulkHeaders(email) { return true }
@@ -238,11 +255,11 @@ enum EmailFilters {
         return hasNoSpace || matchesOrgPattern
     }
 
-    private static func hasBulkCategoryLabel(_ email: Email) -> Bool {
+    private static func hasBulkCategoryLabel(_ email: some EmailFilterable) -> Bool {
         return !bulkCategoryLabels.isDisjoint(with: email.labelIds)
     }
 
-    private static func hasBulkHeaders(_ email: Email) -> Bool {
+    private static func hasBulkHeaders(_ email: some EmailFilterable) -> Bool {
         // List-Unsubscribe header
         if email.listUnsubscribe != nil { return true }
 
@@ -264,12 +281,12 @@ enum EmailFilters {
         return false
     }
 
-    private static func hasBulkSenderPattern(_ email: Email) -> Bool {
+    private static func hasBulkSenderPattern(_ email: some EmailFilterable) -> Bool {
         let senderEmail = email.senderEmail.lowercased()
         return matchesAnyPattern(senderEmail, patterns: noReplyPatterns)
     }
 
-    private static func isMarketingPlatformDomain(_ email: Email) -> Bool {
+    private static func isMarketingPlatformDomain(_ email: some EmailFilterable) -> Bool {
         let senderEmail = email.senderEmail.lowercased()
         let domain = senderEmail.split(separator: "@").last.map(String.init) ?? ""
 

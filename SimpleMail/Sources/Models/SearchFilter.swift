@@ -106,6 +106,56 @@ struct SearchFilter {
         return true
     }
 
+    /// Check if an EmailDTO matches this filter
+    func matches(_ email: EmailDTO) -> Bool {
+        // Check from filter
+        if let from = fromFilter, !from.isEmpty {
+            let matchesFrom = email.senderName.localizedCaseInsensitiveContains(from) ||
+                              email.senderEmail.localizedCaseInsensitiveContains(from)
+            if !matchesFrom { return false }
+        }
+
+        // Check subject filter
+        if let subject = subjectFilter, !subject.isEmpty {
+            if !email.subject.localizedCaseInsensitiveContains(subject) {
+                return false
+            }
+        }
+
+        // Check body filter
+        if let body = bodyFilter, !body.isEmpty {
+            if !email.snippet.localizedCaseInsensitiveContains(body) {
+                return false
+            }
+        }
+
+        // Check unread status
+        if let isUnread = isUnread {
+            if email.isUnread != isUnread { return false }
+        }
+
+        // Check starred status
+        if let isStarred = isStarred {
+            if email.isStarred != isStarred { return false }
+        }
+
+        // Check attachments
+        if let hasAttachment = hasAttachment, hasAttachment {
+            if !email.hasAttachments { return false }
+        }
+
+        // Check general query against all fields
+        if let query = generalQuery, !query.isEmpty {
+            let matchesAny = email.senderName.localizedCaseInsensitiveContains(query) ||
+                             email.senderEmail.localizedCaseInsensitiveContains(query) ||
+                             email.subject.localizedCaseInsensitiveContains(query) ||
+                             email.snippet.localizedCaseInsensitiveContains(query)
+            if !matchesAny { return false }
+        }
+
+        return true
+    }
+
     /// Get the search terms for highlighting
     var highlightTerms: [String] {
         var terms: [String] = []

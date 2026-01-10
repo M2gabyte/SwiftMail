@@ -63,7 +63,7 @@ struct InboxFilterEngine {
     }
 
     static func buildClassificationCache(
-        emails: [Email],
+        emails: [EmailDTO],
         existingCache: [String: CacheEntry],
         currentAccountEmail: String?
     ) -> CacheResult {
@@ -90,7 +90,7 @@ struct InboxFilterEngine {
     }
 
     static func recomputeFilterCounts(
-        from emails: [Email],
+        from emails: [EmailDTO],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
         currentAccountEmail: String?,
@@ -130,13 +130,13 @@ struct InboxFilterEngine {
     }
 
     static func applyFilters(
-        _ emails: [Email],
+        _ emails: [EmailDTO],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
         activeFilter: InboxFilter?,
         currentAccountEmail: String?,
         classifications: [String: Classification]
-    ) -> [Email] {
+    ) -> [EmailDTO] {
         let blocked = blockedSendersSync(for: currentAccountEmail)
         var filtered = emails.filter { email in
             !blocked.contains(email.senderEmail.lowercased())
@@ -168,7 +168,7 @@ struct InboxFilterEngine {
         return filtered
     }
 
-    static func groupEmailsByDate(_ emails: [Email]) -> [EmailSection] {
+    static func groupEmailsByDate(_ emails: [EmailDTO]) -> [EmailSection] {
         let calendar = Calendar.current
         let now = Date()
         let weekInterval = calendar.dateInterval(of: .weekOfYear, for: now)
@@ -176,14 +176,14 @@ struct InboxFilterEngine {
             calendar.dateInterval(of: .weekOfYear, for: interval.start.addingTimeInterval(-1))
         }
 
-        var today: [Email] = []
-        var yesterday: [Email] = []
-        var weekdayBuckets: [Int: [Email]] = [:]
+        var today: [EmailDTO] = []
+        var yesterday: [EmailDTO] = []
+        var weekdayBuckets: [Int: [EmailDTO]] = [:]
         var orderedWeekdays: [Int] = []
-        var lastWeek: [Email] = []
-        var monthBuckets: [String: [Email]] = [:]
+        var lastWeek: [EmailDTO] = []
+        var monthBuckets: [String: [EmailDTO]] = [:]
         var orderedMonths: [String] = []
-        var yearBuckets: [String: [Email]] = [:]
+        var yearBuckets: [String: [EmailDTO]] = [:]
         var orderedYears: [String] = []
         let oneYearAgo = calendar.date(byAdding: .year, value: -1, to: now)
 
@@ -266,7 +266,7 @@ struct InboxFilterEngine {
         return sections
     }
 
-    private static func isNeedsReplyCandidate(_ email: Email) -> Bool {
+    private static func isNeedsReplyCandidate(_ email: EmailDTO) -> Bool {
         if email.labelIds.contains("SENT") {
             return false
         }
@@ -316,11 +316,11 @@ struct InboxFilterEngine {
         stringArraySync(for: "alwaysOtherSenders", accountEmail: accountEmail)
     }
 
-    private static func accountEmail(for email: Email, fallback: String?) -> String? {
+    private static func accountEmail(for email: EmailDTO, fallback: String?) -> String? {
         email.accountEmail ?? fallback
     }
 
-    private static func senderOverride(for email: Email, currentAccountEmail: String?) -> InboxTab? {
+    private static func senderOverride(for email: EmailDTO, currentAccountEmail: String?) -> InboxTab? {
         let accountEmail = accountEmail(for: email, fallback: currentAccountEmail)
         let sender = email.senderEmail.lowercased()
 
@@ -333,28 +333,28 @@ struct InboxFilterEngine {
         return nil
     }
 
-    private static func isVIPSender(_ email: Email) -> Bool {
+    private static func isVIPSender(_ email: EmailDTO) -> Bool {
         let vipSenders = stringArraySync(for: "vipSenders", accountEmail: email.accountEmail)
         return vipSenders.contains(email.senderEmail.lowercased())
     }
 
-    private static func isNewsletter(_ email: Email) -> Bool {
+    private static func isNewsletter(_ email: EmailDTO) -> Bool {
         email.labelIds.contains("CATEGORY_PROMOTIONS") || email.listUnsubscribe != nil
     }
 
-    private static func isMoney(_ email: Email) -> Bool {
+    private static func isMoney(_ email: EmailDTO) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         return text.contains("receipt") || text.contains("order") ||
             text.contains("payment") || text.contains("invoice")
     }
 
-    private static func isDeadline(_ email: Email) -> Bool {
+    private static func isDeadline(_ email: EmailDTO) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         return text.contains("today") || text.contains("tomorrow") ||
             text.contains("urgent") || text.contains("deadline")
     }
 
-    private static func isSecurity(_ email: Email) -> Bool {
+    private static func isSecurity(_ email: EmailDTO) -> Bool {
         let text = "\(email.subject) \(email.snippet)".lowercased()
         let keywords = [
             "security alert", "new sign-in", "sign-in", "password",
@@ -364,12 +364,12 @@ struct InboxFilterEngine {
         return keywords.contains { text.contains($0) }
     }
 
-    private static func isPeople(_ email: Email) -> Bool {
+    private static func isPeople(_ email: EmailDTO) -> Bool {
         EmailFilters.looksLikeHumanSender(email) && !EmailFilters.isBulk(email)
     }
 
     private static func isPrimary(
-        _ email: Email,
+        _ email: EmailDTO,
         classification: Classification,
         currentAccountEmail: String?
     ) -> Bool {
@@ -407,7 +407,7 @@ struct InboxFilterEngine {
     }
 
     private static func matchesPinned(
-        _ email: Email,
+        _ email: EmailDTO,
         pinnedTabOption: PinnedTabOption,
         currentAccountEmail: String?,
         classifications: [String: Classification]
@@ -432,12 +432,12 @@ struct InboxFilterEngine {
     }
 
     private static func applyTabContext(
-        _ emails: [Email],
+        _ emails: [EmailDTO],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
         currentAccountEmail: String?,
         classifications: [String: Classification]
-    ) -> [Email] {
+    ) -> [EmailDTO] {
         var filtered = emails
         switch currentTab {
         case .all:
@@ -462,7 +462,7 @@ struct InboxFilterEngine {
     }
 
     private static func classificationSignature(
-        for email: Email,
+        for email: EmailDTO,
         currentAccountEmail: String?
     ) -> ClassificationSignature {
         let labelKey = email.labelIds.sorted().joined(separator: "|")
@@ -481,7 +481,7 @@ struct InboxFilterEngine {
     }
 
     private static func classify(
-        _ email: Email,
+        _ email: EmailDTO,
         currentAccountEmail: String?
     ) -> Classification {
         let isBulk = EmailFilters.isBulk(email)

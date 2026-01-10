@@ -196,7 +196,7 @@ struct BatchActionButton: View {
 // MARK: - Selectable Email Row
 
 struct SelectableEmailRow: View {
-    let email: Email
+    let email: EmailDTO
     let isSelected: Bool
     let onToggle: () -> Void
     let onTap: () -> Void
@@ -222,7 +222,7 @@ struct SelectableEmailRow: View {
 }
 
 struct EmailRowContent: View {
-    let email: Email
+    let email: EmailDTO
 
     var body: some View {
         HStack(spacing: 10) {

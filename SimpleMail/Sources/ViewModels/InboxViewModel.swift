@@ -124,10 +124,10 @@ final class InboxViewModel: ObservableObject {
     // MARK: - Search State
 
     var isSearchActive = false
-    var searchResults: [Email] = []
+    var searchResults: [EmailDTO] = []
     var isSearching = false
     var currentSearchQuery = ""
-    var localSearchResults: [Email] = []
+    var localSearchResults: [EmailDTO] = []
 
     // MARK: - Bulk Actions Toast
 
@@ -332,23 +332,33 @@ final class InboxViewModel: ObservableObject {
     }
 
     private func scheduleRecompute() {
-        let emailsSnapshot = emails
+        StallLogger.mark("InboxViewModel.scheduleRecompute.start")
+
+        // Convert SwiftData Email models to Sendable EmailDTO snapshots on main actor
+        // CRITICAL: This prevents cross-actor SwiftData access that causes main thread stalls
+        let emailDTOs = emails.map { $0.toDTO() }
+        let emailsSnapshot = emails  // Keep for saveSnapshotIfNeeded
         let currentTabSnapshot = currentTab
         let pinnedSnapshot = pinnedTabOption
         let activeFilterSnapshot = activeFilter
         let accountSnapshot = currentAccountEmail
         let mailboxSnapshot = currentMailbox
         let pageTokenSnapshot = nextPageToken
+
+        StallLogger.mark("InboxViewModel.scheduleRecompute.dtosReady")
+
         recomputeTask?.cancel()
         recomputeTask = Task { [weak self] in
             guard let self else { return }
+            StallLogger.mark("InboxViewModel.computeState.start")
             let state = await inboxWorker.computeState(
-                emails: emailsSnapshot,
+                emails: emailDTOs,
                 currentTab: currentTabSnapshot,
                 pinnedTabOption: pinnedSnapshot,
                 activeFilter: activeFilterSnapshot,
                 currentAccountEmail: accountSnapshot
             )
+            StallLogger.mark("InboxViewModel.computeState.end")
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 viewState = state
@@ -601,12 +611,16 @@ final class InboxViewModel: ObservableObject {
     // Each page returns unique threads - no deduplication needed, pagination just works.
 
     func loadMoreIfNeeded(currentEmail: Email) async {
+        await loadMoreIfNeeded(currentEmailId: currentEmail.id)
+    }
+
+    func loadMoreIfNeeded(currentEmailId: String) async {
         guard hasMoreEmails, !isLoadingMore else { return }
 
         // Prefetch threshold: trigger loading when within 15 items of the end
         // This prevents the "hit bottom, pause, load" pattern
         let allEmails = viewState.sections.flatMap(\.emails)
-        guard let currentIndex = allEmails.firstIndex(where: { $0.id == currentEmail.id }) else { return }
+        guard let currentIndex = allEmails.firstIndex(where: { $0.id == currentEmailId }) else { return }
 
         let remainingItems = allEmails.count - currentIndex - 1
         let prefetchThreshold = 15
@@ -792,8 +806,9 @@ final class InboxViewModel: ObservableObject {
 
 #if DEBUG
     func refreshViewStateForTests() async -> InboxViewState {
+        let emailDTOs = emails.map { $0.toDTO() }
         let state = await inboxWorker.computeState(
-            emails: emails,
+            emails: emailDTOs,
             currentTab: currentTab,
             pinnedTabOption: pinnedTabOption,
             activeFilter: activeFilter,
@@ -1085,6 +1100,12 @@ final class InboxViewModel: ObservableObject {
         }
     }
 
+    /// ID-based overload for use with EmailDTO views
+    func archiveEmail(id: String) {
+        guard let email = emails.first(where: { $0.id == id }) else { return }
+        archiveEmail(email)
+    }
+
     func undoArchive() {
         // Cancel the pending archive task
         clearUndoState()
@@ -1250,6 +1271,12 @@ final class InboxViewModel: ObservableObject {
         }
     }
 
+    /// ID-based overload for use with EmailDTO views
+    func toggleRead(emailId: String) {
+        guard let email = emails.first(where: { $0.id == emailId }) else { return }
+        toggleRead(email)
+    }
+
     func blockSender(_ email: Email) {
         let senderEmail = email.senderEmail.lowercased()
 
@@ -1361,6 +1388,12 @@ final class InboxViewModel: ObservableObject {
         }
     }
 
+    /// ID-based overload for use with EmailDTO views
+    func openEmail(id: String) {
+        guard let email = emails.first(where: { $0.id == id }) else { return }
+        openEmail(email)
+    }
+
     func openSearch() {
         // Handled by navigation in InboxView
     }
@@ -1391,10 +1424,27 @@ final class InboxViewModel: ObservableObject {
                 query: query,
                 maxResults: 50
             )
+            // Keep as DTOs for display - action handlers will look up by ID if needed
             searchResults = results.map { dto in
-                let email = Email(dto: dto)
-                email.accountEmail = account?.email ?? ""
-                return email
+                // Create a new DTO with accountEmail set
+                EmailDTO(
+                    id: dto.id,
+                    threadId: dto.threadId,
+                    snippet: dto.snippet,
+                    subject: dto.subject,
+                    from: dto.from,
+                    date: dto.date,
+                    isUnread: dto.isUnread,
+                    isStarred: dto.isStarred,
+                    hasAttachments: dto.hasAttachments,
+                    labelIds: dto.labelIds,
+                    messagesCount: dto.messagesCount,
+                    accountEmail: account?.email,
+                    listUnsubscribe: dto.listUnsubscribe,
+                    listId: dto.listId,
+                    precedence: dto.precedence,
+                    autoSubmitted: dto.autoSubmitted
+                )
             }
             isSearchActive = true
         } catch {
@@ -1446,10 +1496,12 @@ final class InboxViewModel: ObservableObject {
 
                 // Cap IDs to prevent unbounded hydration if search behavior changes
                 let limitedIds = Array(ids.prefix(100))
-                localSearchResults = EmailCacheManager.shared.loadCachedEmails(
+                let emails = EmailCacheManager.shared.loadCachedEmails(
                     by: limitedIds,
                     accountEmail: accountEmail
                 )
+                // Convert to DTOs for display - action handlers will look up by ID if needed
+                localSearchResults = emails.map { $0.toDTO() }
             } catch {
                 guard !Task.isCancelled else { return }
                 logger.error("Local search failed: \(error.localizedDescription)")

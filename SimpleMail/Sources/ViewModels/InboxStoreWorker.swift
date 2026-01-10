@@ -3,8 +3,11 @@ import Foundation
 actor InboxStoreWorker {
     private var classificationCache: [String: InboxFilterEngine.CacheEntry] = [:]
 
+    /// Compute inbox view state from EmailDTO snapshots.
+    /// IMPORTANT: Takes EmailDTO (Sendable) instead of Email (SwiftData model)
+    /// to avoid cross-actor SwiftData access issues that cause main thread stalls.
     func computeState(
-        emails: [Email],
+        emails: [EmailDTO],
         currentTab: InboxTab,
         pinnedTabOption: PinnedTabOption,
         activeFilter: InboxFilter?,

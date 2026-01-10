@@ -1,7 +1,7 @@
 import Foundation
 
-struct EmailSection: Identifiable {
+struct EmailSection: Identifiable, Sendable {
     let id: String
     let title: String
-    let emails: [Email]
+    let emails: [EmailDTO]
 }

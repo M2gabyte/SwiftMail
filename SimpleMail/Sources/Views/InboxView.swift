@@ -78,7 +78,7 @@ struct InboxView: View {
         }
     }
 
-    private var searchModeResults: [Email] {
+    private var searchModeResults: [EmailDTO] {
         if viewModel.isSearchActive {
             return viewModel.searchResults
         }
@@ -111,7 +111,7 @@ struct InboxView: View {
 
     /// Email row with all actions - extracted to help compiler
     @ViewBuilder
-    private func emailRowView(for email: Email, isSelectionMode: Bool, isContinuationInSenderRun: Bool = false, isFirstInSenderRun: Bool = true) -> some View {
+    private func emailRowView(for email: EmailDTO, isSelectionMode: Bool, isContinuationInSenderRun: Bool = false, isFirstInSenderRun: Bool = true) -> some View {
         HStack(spacing: 12) {
             if isSelectionMode {
                 SelectionIndicator(isSelected: selectedThreadIds.contains(email.threadId))
@@ -134,14 +134,14 @@ struct InboxView: View {
         .listRowSeparator(.visible)
         .listRowSeparatorTint(Color(.separator).opacity(0.35))
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button { viewModel.toggleRead(email) } label: {
+            Button { viewModel.toggleRead(emailId: email.id) } label: {
                 Label(email.isUnread ? "Read" : "Unread",
                       systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
             }
             .tint(Color.accentColor)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { viewModel.archiveEmail(email) } label: {
+            Button { viewModel.archiveEmail(id: email.id) } label: {
                 Label("Archive", systemImage: "archivebox")
             }
             .tint(.green)
@@ -155,14 +155,14 @@ struct InboxView: View {
                     searchFieldFocused = false
                 }
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    viewModel.openEmail(email)
+                    viewModel.openEmail(id: email.id)
                 }
             }
         }
         .onLongPressGesture {
             enterSelectionMode(selecting: email.threadId)
         }
-        .onAppear { Task { await viewModel.loadMoreIfNeeded(currentEmail: email) } }
+        .onAppear { Task { await viewModel.loadMoreIfNeeded(currentEmailId: email.id) } }
     }
 
     var body: some View {
@@ -509,10 +509,10 @@ struct InboxView: View {
         let searchHistory: SearchHistoryManager
         let isSelectionMode: Bool
         let isSearching: Bool
-        let results: [Email]
+        let results: [EmailDTO]
         let onSelectRecent: (String) -> Void
         let onTapBackground: () -> Void
-        let emailRowView: (Email) -> Row
+        let emailRowView: (EmailDTO) -> Row
 
         var body: some View {
             ZStack {
@@ -543,9 +543,9 @@ struct InboxView: View {
         @Binding var debouncedSearchText: String
         let searchHistory: SearchHistoryManager
         let isSearching: Bool
-        let results: [Email]
+        let results: [EmailDTO]
         let onSelectRecent: (String) -> Void
-        let emailRowView: (Email) -> Row
+        let emailRowView: (EmailDTO) -> Row
 
         var body: some View {
             ZStack {
@@ -1429,7 +1429,7 @@ private enum DateFormatters {
 // MARK: - Email Row
 
 struct EmailRow: View {
-    let email: Email
+    let email: EmailDTO
     let display: InboxViewModel.DisplayModelWorker.RowModel?
     var isCompact: Bool = false
     var showAvatars: Bool = true
@@ -1450,11 +1450,11 @@ struct EmailRow: View {
     }
 
     private var accountColor: Color {
-        guard let email = email.accountEmail?.lowercased() else {
+        guard let accountEmail = email.accountEmail?.lowercased() else {
             return .secondary
         }
         let palette: [Color] = [.blue, .green, .orange, .pink, .purple, .teal, .indigo]
-        let hash = email.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        let hash = accountEmail.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return palette[hash % palette.count]
     }
 
