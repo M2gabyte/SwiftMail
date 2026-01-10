@@ -114,12 +114,22 @@ final class InboxViewModel: ObservableObject {
         emails = newEmails
     }
 
+    /// Flag to suppress scheduleRecompute during batched updates
+    @ObservationIgnored private var isBatchingUpdates = false
+
     /// Apply email update without animation (for staged batch updates)
-    private func applyEmailUpdateNoAnim(_ newEmails: [Email]) {
+    /// When isFinal=false, skips scheduleRecompute to avoid redundant work
+    private func applyEmailUpdateNoAnim(_ newEmails: [Email], isFinal: Bool = false) {
         var txn = Transaction()
         txn.disablesAnimations = true
+        if !isFinal {
+            isBatchingUpdates = true
+        }
         withTransaction(txn) {
             applyEmailUpdate(newEmails)
+        }
+        if !isFinal {
+            isBatchingUpdates = false
         }
     }
 
@@ -356,6 +366,9 @@ final class InboxViewModel: ObservableObject {
     }
 
     private func scheduleRecompute() {
+        // Skip during batched updates - only final batch triggers recompute
+        guard !isBatchingUpdates else { return }
+
         recomputeGeneration += 1
         let generation = recomputeGeneration
 
@@ -617,20 +630,21 @@ final class InboxViewModel: ObservableObject {
                 let deduped = dedupeByThread(emailModels)
 
                 // STAGED RENDERING: 3 batches to spread List build work across frames
+                // Only the final batch triggers scheduleRecompute (isFinal: true)
                 let batch1 = min(8, deduped.count)
                 let batch2 = min(20, deduped.count)
 
                 if batch1 > 0 {
-                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)))
+                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)), isFinal: false)
                 }
                 await Task.yield()
 
                 if batch2 > batch1 {
-                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)))
+                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)), isFinal: false)
                 }
                 await Task.yield()
 
-                applyEmailUpdateNoAnim(deduped)
+                applyEmailUpdateNoAnim(deduped, isFinal: true)
 
                 // Unified inbox uses date-based pagination, use placeholder to enable it
                 let token: String? = fetchedEmails.count >= 50 ? "unified_date_cursor" : nil
@@ -655,20 +669,21 @@ final class InboxViewModel: ObservableObject {
                 let deduped = dedupeByThread(emailModels)
 
                 // STAGED RENDERING: 3 batches to spread List build work across frames
+                // Only the final batch triggers scheduleRecompute (isFinal: true)
                 let batch1 = min(8, deduped.count)
                 let batch2 = min(20, deduped.count)
 
                 if batch1 > 0 {
-                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)))
+                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)), isFinal: false)
                 }
                 await Task.yield()
 
                 if batch2 > batch1 {
-                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)))
+                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)), isFinal: false)
                 }
                 await Task.yield()
 
-                applyEmailUpdateNoAnim(deduped)
+                applyEmailUpdateNoAnim(deduped, isFinal: true)
 
                 self.nextPageToken = pageToken
                 updateCachePagingAnchor()
@@ -823,7 +838,7 @@ final class InboxViewModel: ObservableObject {
 
             // Only apply visible window to avoid rebuilding a much larger List
             let batch1 = min(visibleWindowSize, merged.count)
-            applyEmailUpdateNoAnim(Array(merged.prefix(batch1)))
+            applyEmailUpdateNoAnim(Array(merged.prefix(batch1)), isFinal: true)
             trimVisibleWindow()
 
             cachePagingState.oldestLoadedDate = emails.map(\.date).min()
@@ -975,22 +990,23 @@ final class InboxViewModel: ObservableObject {
             StallLogger.mark("InboxViewModel.preloadCachedEmails.cacheReady")
 
             // STAGED RENDERING: 3 batches (8 → 20 → full) to spread List build work across frames
+            // Only the final batch triggers scheduleRecompute (isFinal: true)
             let batch1 = min(8, deduped.count)
             let batch2 = min(20, deduped.count)
 
             if batch1 > 0 {
-                applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)))
+                applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)), isFinal: false)
             }
             try? await Task.sleep(for: .milliseconds(80))
             guard !Task.isCancelled else { return }
 
             if batch2 > batch1 {
-                applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)))
+                applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)), isFinal: false)
             }
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
 
-            applyEmailUpdateNoAnim(deduped)
+            applyEmailUpdateNoAnim(deduped, isFinal: true)
 
             // Enable pagination until first real fetch
             nextPageToken = "cached_placeholder"
