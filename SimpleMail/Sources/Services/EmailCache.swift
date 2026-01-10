@@ -51,9 +51,14 @@ final class EmailCacheManager: ObservableObject {
 
     func configureIfNeeded() {
         guard modelContext == nil else { return }
-        // Log warning instead of creating a potentially inconsistent context
-        logger.warning("EmailCache accessed before configure() was called - operations will be skipped")
+        // Avoid noisy repeated logs; operations will no-op until configure(with:) is called.
+        if !hasLoggedMissingContext {
+            logger.warning("EmailCache accessed before configure() was called - operations will be skipped")
+            hasLoggedMissingContext = true
+        }
     }
+
+    @ObservationIgnored private var hasLoggedMissingContext = false
 
     /// Whether the cache is properly configured
     var isConfigured: Bool {
@@ -630,7 +635,6 @@ final class EmailCacheManager: ObservableObject {
     private func labelIdsForMailbox(_ mailbox: Mailbox) -> [String] {
         switch mailbox {
         case .allInboxes: return ["INBOX"]  // Unified inbox shows INBOX from all accounts
-        case .briefingBeta: return ["INBOX"]
         case .inbox: return ["INBOX"]
         case .sent: return ["SENT"]
         case .archive: return []

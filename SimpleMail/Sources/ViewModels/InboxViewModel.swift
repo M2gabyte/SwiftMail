@@ -2,6 +2,25 @@ import Foundation
 import SwiftUI
 import SwiftData
 import OSLog
+import Combine
+import Foundation
+
+// Background helper to keep network + parsing off the main actor.
+actor InboxFetchWorker {
+    func fetchPage(
+        query: String?,
+        pageToken: String?,
+        pageSize: Int,
+        labelIds: [String]
+    ) async throws -> ([EmailDTO], String?) {
+        try await GmailService.shared.fetchInbox(
+            query: query,
+            maxResults: pageSize,
+            pageToken: pageToken,
+            labelIds: labelIds
+        )
+    }
+}
 
 // MARK: - Inbox ViewModel
 
@@ -17,7 +36,7 @@ extension Notification.Name {
 
 @MainActor
 @Observable
-final class InboxViewModel {
+final class InboxViewModel: ObservableObject {
     // MARK: - Shared Instance
 
     /// Singleton instance to prevent multiple ViewModels from being created
@@ -200,8 +219,59 @@ final class InboxViewModel {
         var oldestLoadedDate: Date?
         var isExhausted = false
     }
+
+    // Off-main display model builder for inbox rows.
+    actor DisplayModelWorker {
+        struct RowModel: Sendable {
+            let id: String
+            let threadId: String
+            let subject: String
+            let snippet: String
+            let senderName: String
+            let senderEmail: String
+            let dateText: String
+            let isUnread: Bool
+            let isStarred: Bool
+            let accountEmail: String?
+        }
+
+        private let dateFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateStyle = .medium
+            f.timeStyle = .short
+            return f
+        }()
+
+        func buildRowModels(from emails: [Email]) -> [String: RowModel] {
+            var result: [String: RowModel] = [:]
+            for email in emails {
+                let senderEmail = EmailParser.extractSenderEmail(from: email.from)
+                let senderName = EmailParser.extractSenderName(from: email.from)
+                let dateText = dateFormatter.string(from: email.date)
+                let model = RowModel(
+                    id: email.id,
+                    threadId: email.threadId,
+                    subject: email.subject,
+                    snippet: email.snippet,
+                    senderName: senderName,
+                    senderEmail: senderEmail,
+                    dateText: dateText,
+                    isUnread: email.isUnread,
+                    isStarred: email.isStarred,
+                    accountEmail: email.accountEmail
+                )
+                result[email.id] = model
+            }
+            return result
+        }
+    }
+
     private let cachePageSize = 120
     private var lastFooterTrigger: Date?
+    private let visibleWindowSize = 600
+    private let fetchWorker = InboxFetchWorker()
+    private let displayWorker = DisplayModelWorker()
+    private var rowModels: [String: DisplayModelWorker.RowModel] = [:]
 
     struct PagingDebugState {
         var path: String = "idle"
@@ -219,12 +289,8 @@ final class InboxViewModel {
     private func preferredPageSize() -> Int {
         if let cached = preferredPageSizeCache { return cached }
         let size: Int
-        switch NetworkMonitor.shared.connectionType {
-        case .cellular:
-            size = 50
-        default:
-            size = 100
-        }
+        // Favor smaller pages to reduce main-thread work; networking handles batching.
+        size = 50
         preferredPageSizeCache = size
         return size
     }
@@ -234,6 +300,12 @@ final class InboxViewModel {
     var emailSections: [EmailSection] {
         viewState.sections
     }
+
+    func rowModel(for id: String) -> DisplayModelWorker.RowModel? {
+        rowModels[id]
+    }
+
+
 
     /// Last visible email after filtering (for pagination trigger)
     private var lastVisibleEmailId: String? {
@@ -468,8 +540,10 @@ final class InboxViewModel {
                 )
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
+                rebuildDisplayModels()
                 // Unified inbox uses date-based pagination, use placeholder to enable it
-                self.nextPageToken = fetchedEmails.count >= 50 ? "unified_date_cursor" : nil
+                let token: String? = fetchedEmails.count >= 50 ? "unified_date_cursor" : nil
+                self.nextPageToken = token
                 updateCachePagingAnchor()
                 EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: false)
                 scheduleSummaryCandidates(for: emails, deferHeavyWork: deferHeavyWork)
@@ -479,24 +553,22 @@ final class InboxViewModel {
                 let query = mailboxQuery(for: currentMailbox)
 
                 let pageSize = preferredPageSize()
-                let (fetchedEmails, pageToken) = try await GmailService.shared.fetchInbox(
+                let (fetchedEmails, pageToken) = try await fetchWorker.fetchPage(
                     query: query,
-                    maxResults: pageSize,
+                    pageToken: nil,
+                    pageSize: pageSize,
                     labelIds: labelIds
                 )
 
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 self.emails = dedupeByThread(emailModels)
+                rebuildDisplayModels()
                 self.nextPageToken = pageToken
                 updateCachePagingAnchor()
                 EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: currentMailbox == .inbox && pageToken == nil)
                 scheduleSummaryCandidates(for: emails, deferHeavyWork: deferHeavyWork)
 
-                // Aggressive prefetch: keep loading until we have a large buffer
-                // This ensures smooth scrolling like Mail.app
-                if pageToken != nil {
-                    startPrefetch()
-                }
+                // No aggressive prefetch on initial load; we page on demand.
             }
         } catch {
             logger.error("Failed to fetch emails: \(error.localizedDescription)")
@@ -538,7 +610,8 @@ final class InboxViewModel {
 
     func loadMoreFromFooter() async {
         guard hasMoreEmails, !isLoadingMore else { return }
-        // When user reaches footer, load more and continue prefetching
+        // Footer tap loads a single page; background prefetch then tops up one more page
+        _ = await loadMoreEmails()
         startPrefetch()
     }
 
@@ -553,7 +626,8 @@ final class InboxViewModel {
     /// This prevents the "scroll to bottom, pause, load more" pattern
     /// Note: GmailService handles rate limiting, so we don't need to add delays here
     private func prefetchUntilBuffer() async {
-        let targetBuffer = 500 // Keep loading until we have this many emails
+        // Keep at most one extra page beyond what is already loaded
+        let targetBuffer = emails.count + preferredPageSize()
         var consecutiveErrors = 0
         let maxErrors = 5
 
@@ -602,10 +676,10 @@ final class InboxViewModel {
             let query = mailboxQuery(for: currentMailbox)
 
             let pageSize = preferredPageSize()
-            let (fetchedEmails, newPageToken) = try await GmailService.shared.fetchInbox(
+            let (fetchedEmails, newPageToken) = try await fetchWorker.fetchPage(
                 query: query,
-                maxResults: pageSize,
                 pageToken: pageToken,
+                pageSize: pageSize,
                 labelIds: labelIds
             )
 
@@ -623,6 +697,8 @@ final class InboxViewModel {
             var allEmails = emails
             allEmails.append(contentsOf: fetchedModels)
             emails = dedupeByThread(allEmails)
+            rebuildDisplayModels()
+            trimVisibleWindow()
 
             cachePagingState.oldestLoadedDate = emails.map(\.date).min()
             updateFilterCounts()
@@ -642,7 +718,6 @@ final class InboxViewModel {
     private func labelIdsForMailbox(_ mailbox: Mailbox) -> [String] {
         switch mailbox {
         case .allInboxes: return ["INBOX"]
-        case .briefingBeta: return ["INBOX"]
         case .inbox: return ["INBOX"]
         case .sent: return ["SENT"]
         case .archive: return []
@@ -657,8 +732,6 @@ final class InboxViewModel {
         case .archive:
             return "-in:inbox -in:trash -in:spam"
         case .allInboxes:
-            return nil
-        case .briefingBeta:
             return nil
         default:
             return nil
@@ -681,6 +754,26 @@ final class InboxViewModel {
             result.append(email)
         }
         return result
+    }
+
+    /// Keep only the most recent visibleWindowSize emails in-memory; older stay in cache.
+    private func trimVisibleWindow() {
+        guard emails.count > visibleWindowSize else { return }
+        emails = Array(emails.prefix(visibleWindowSize))
+        Task { [weak self, emails] in
+            guard let self else { return }
+            let models = await self.displayWorker.buildRowModels(from: emails)
+            await MainActor.run { self.rowModels = models }
+        }
+    }
+
+    private func rebuildDisplayModels() {
+        let currentEmails = emails
+        Task { [weak self] in
+            guard let self else { return }
+            let models = await displayWorker.buildRowModels(from: currentEmails)
+            await MainActor.run { self.rowModels = models }
+        }
     }
 
     // MARK: - Filter Counts
@@ -706,7 +799,6 @@ final class InboxViewModel {
     // MARK: - Actions
 
     func refresh() async {
-        if currentMailbox == .briefingBeta { return }
         await loadEmails(force: true)
     }
 
@@ -786,6 +878,8 @@ final class InboxViewModel {
             var allEmails = emails
             allEmails.append(contentsOf: fetchedModels)
             emails = dedupeByThread(allEmails)
+            rebuildDisplayModels()
+            trimVisibleWindow()
 
             // Update cursor for next iteration
             if let oldestFetched = fetched.map(\.date).min() {
@@ -1199,7 +1293,6 @@ final class InboxViewModel {
         guard mailbox != currentMailbox else { return }
         currentMailbox = mailbox
         emails = []
-        if mailbox == .briefingBeta { return }
         Task { await loadEmails() }
     }
 

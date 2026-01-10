@@ -5,6 +5,90 @@ import OSLog
 import FoundationModels
 #endif
 
+#if DEBUG
+struct StallLogger {
+    private static let start = Date()
+    private static let logger = Logger(subsystem: "com.simplemail.app", category: "Stall")
+    static func mark(_ label: String) {
+        let delta = Date().timeIntervalSince(start)
+        logger.info("STALL \(label, privacy: .public) t=\(delta, format: .fixed(precision: 3))s")
+    }
+}
+#else
+struct StallLogger { static func mark(_ label: String) { } }
+#endif
+
+// MARK: - Shared WebView Pool (local to this file to avoid target config issues)
+final class WKWebViewPool {
+    static let shared = WKWebViewPool()
+    private var pool: [WKWebView] = []
+    private let maxSize = 3
+    private let lock = NSLock()
+
+    private init() {}
+
+    func warm(count: Int = 2) {
+        lock.lock(); defer { lock.unlock() }
+        guard pool.isEmpty else { return }
+        for _ in 0..<min(count, maxSize) {
+            pool.append(makeWebView())
+        }
+    }
+
+    func dequeue() -> WKWebView {
+        lock.lock(); defer { lock.unlock() }
+        if let webView = pool.popLast() {
+            reset(webView)
+            return webView
+        }
+        return makeWebView()
+    }
+
+    func recycle(_ webView: WKWebView) {
+        lock.lock(); defer { lock.unlock() }
+        reset(webView)
+        if pool.count < maxSize {
+            pool.append(webView)
+        }
+    }
+
+    private func makeWebView() -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.dataDetectorTypes = [.link, .phoneNumber, .address]
+        let preferences = WKWebpagePreferences()
+        preferences.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = preferences
+        let controller = WKUserContentController()
+        config.userContentController = controller
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        return webView
+    }
+
+    private func reset(_ webView: WKWebView) {
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        webView.scrollView.setContentOffset(.zero, animated: false)
+        webView.loadHTMLString("<html><body style='margin:0;padding:0;'></body></html>", baseURL: nil)
+    }
+}
+
+// Background renderer for HTML/plaintext (scaffold for future hook-up)
+actor BodyRenderActor {
+    struct RenderedBody: Sendable {
+        let html: String
+        let plain: String
+    }
+    func render(html: String) async -> RenderedBody {
+        let blocked = HTMLSanitizer.blockImages(html)
+        let plain = HTMLSanitizer.plainText(blocked)
+        return RenderedBody(html: blocked, plain: plain)
+    }
+}
+
 private let detailLogger = Logger(subsystem: "com.simplemail.app", category: "EmailDetail")
 
 // MARK: - Email Detail View
@@ -85,6 +169,8 @@ struct EmailDetailView: View {
                     ForEach(viewModel.messages) { message in
                         EmailMessageCard(
                             message: message,
+                            renderedHTML: viewModel.bodyHTML(for: message),
+                            renderedPlain: viewModel.plainText(for: message),
                             isExpanded: viewModel.expandedMessageIds.contains(message.id),
                             onToggleExpand: { viewModel.toggleExpanded(message.id) }
                         )
@@ -198,6 +284,7 @@ struct EmailDetailView: View {
             await viewModel.loadThread()
         }
         .toolbar(.hidden, for: .tabBar)
+        .onAppear { StallLogger.mark("EmailDetail.appear") }
     }
 }
 
@@ -205,6 +292,8 @@ struct EmailDetailView: View {
 
 struct EmailMessageCard: View {
     let message: EmailDetail
+    let renderedHTML: String
+    let renderedPlain: String
     let isExpanded: Bool
     let onToggleExpand: () -> Void
 
@@ -256,7 +345,7 @@ struct EmailMessageCard: View {
                 Divider()
                     .padding(.leading)
 
-                EmailBodyView(html: message.body, accountEmail: message.accountEmail)
+                EmailBodyView(html: renderedHTML, accountEmail: message.accountEmail, placeholderPlain: renderedPlain)
                     .frame(minHeight: 100)
             }
         }
@@ -301,7 +390,9 @@ private enum MessageDateFormatters {
 struct EmailBodyView: View {
     let html: String
     let accountEmail: String?
+    let placeholderPlain: String
     @State private var contentHeight: CGFloat = 200
+    @State private var isWebLoaded = false
 
     private var settings: AppSettings {
         let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
@@ -312,15 +403,26 @@ struct EmailBodyView: View {
     }
 
     var body: some View {
-        EmailBodyWebView(
-            html: html,
-            contentHeight: $contentHeight,
-            blockImages: settings.blockRemoteImages,
-            blockTrackingPixels: settings.blockTrackingPixels,
-            stripTrackingParameters: settings.stripTrackingParameters
-        )
+        ZStack(alignment: .topLeading) {
+            if !isWebLoaded {
+                Text(placeholderPlain.isEmpty ? " " : placeholderPlain)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+            }
+            EmailBodyWebView(
+                html: html,
+                contentHeight: $contentHeight,
+                blockImages: settings.blockRemoteImages,
+                blockTrackingPixels: settings.blockTrackingPixels,
+                stripTrackingParameters: settings.stripTrackingParameters,
+                onLoaded: { isWebLoaded = true }
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: contentHeight)
+            .opacity(isWebLoaded ? 1 : 0.01)
+        }
     }
 }
 
@@ -458,6 +560,29 @@ enum HTMLSanitizer {
         return result
     }
 
+    /// Very lightweight plain-text extractor for logging/preview.
+    static func plainText(_ html: String) -> String {
+        let stripped = html.replacingOccurrences(
+            of: "<[^>]+>",
+            with: " ",
+            options: .regularExpression
+        )
+        let collapsed = stripped.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+        return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Simple inline HTML for quick plaintext-first rendering.
+    static func inlinePlainHTML(_ text: String) -> String {
+        let escaped = text.htmlEscaped()
+        return """
+        <html><body style="font-family:-apple-system;font-size:16px;padding:12px;">\(escaped)</body></html>
+        """
+    }
+
     /// Block remote images by converting img src to data-src
     static func blockImages(_ html: String) -> String {
         var result = html
@@ -563,29 +688,14 @@ struct EmailBodyWebView: UIViewRepresentable {
     var blockImages: Bool = true
     var blockTrackingPixels: Bool = true
     var stripTrackingParameters: Bool = true
+    var webViewPool = WKWebViewPool.shared
+    var onLoaded: () -> Void = {}
 
     func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.dataDetectorTypes = [.link, .phoneNumber, .address]
-
-        // JavaScript is needed for height calculation, but HTML is sanitized
-        // to remove malicious scripts, event handlers, and javascript: URLs
-        let preferences = WKWebpagePreferences()
-        preferences.allowsContentJavaScript = true
-        config.defaultWebpagePreferences = preferences
-
-        // Add message handler for height updates
-        let contentController = WKUserContentController()
-        contentController.add(WeakScriptMessageHandler(coordinator: context.coordinator), name: "heightHandler")
-        config.userContentController = contentController
-
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
+        let webView = webViewPool.dequeue()
+        webView.navigationDelegate = context.coordinator
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
-        webView.navigationDelegate = context.coordinator
-
         return webView
     }
 
@@ -787,20 +897,20 @@ struct EmailBodyWebView: UIViewRepresentable {
                     collapseEmptySpacers();
                     setupImageListeners();
                     adjustLowContrastText();
-                    postHeight();
+                    scheduleHeight();
                     // Recheck after delays for dynamic content and slow-loading images
-                    setTimeout(postHeight, 100);
-                    setTimeout(postHeight, 300);
-                    setTimeout(postHeight, 600);
-                    setTimeout(postHeight, 1000);
-                    setTimeout(postHeight, 2000);
+                    setTimeout(scheduleHeight, 100);
+                    setTimeout(scheduleHeight, 300);
+                    setTimeout(scheduleHeight, 600);
+                    setTimeout(scheduleHeight, 1000);
+                    setTimeout(scheduleHeight, 2000);
                 };
                 // Also post height when DOM is ready
                 document.addEventListener('DOMContentLoaded', function() {
                     collapseEmptySpacers();
                     setupImageListeners();
                     adjustLowContrastText();
-                    postHeight();
+                    scheduleHeight();
                 });
                 // Avoid Resize/Mutation observers to prevent scroll jitter in long emails.
             </script>
@@ -816,6 +926,7 @@ struct EmailBodyWebView: UIViewRepresentable {
         contentController.removeScriptMessageHandler(forName: "heightHandler")
         let weakHandler = WeakScriptMessageHandler(coordinator: context.coordinator)
         contentController.add(weakHandler, name: "heightHandler")
+        context.coordinator.onLoaded = onLoaded
 
         // Use a real baseURL to allow loading remote images
         webView.loadHTMLString(styledHTML, baseURL: URL(string: "https://mail.google.com"))
@@ -828,6 +939,7 @@ struct EmailBodyWebView: UIViewRepresentable {
     class Coordinator: NSObject, WKNavigationDelegate {
         var lastHTML: String = ""
         var contentHeight: Binding<CGFloat>?
+        var onLoaded: (() -> Void)?
 
         func handleHeightMessage(_ body: Any) {
             // JavaScript numbers come as NSNumber, need to convert properly
@@ -854,6 +966,7 @@ struct EmailBodyWebView: UIViewRepresentable {
                 guard let result = result else { return }
                 self?.handleHeightMessage(result)
             }
+            onLoaded?()
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -883,6 +996,18 @@ class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
         if message.name == "heightHandler" {
             coordinator?.handleHeightMessage(message.body)
         }
+    }
+}
+
+// MARK: - HTML escaping
+
+private extension String {
+    func htmlEscaped() -> String {
+        replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 }
 
@@ -1425,6 +1550,7 @@ class EmailDetailViewModel: ObservableObject {
     @Published var unsubscribeURL: URL?
     @Published var trackersBlocked: Int = 0
     @Published var trackerNames: [String] = []
+    @Published private var renderedBodies: [String: BodyRenderActor.RenderedBody] = [:]
 
     // Known tracker domains (common email tracking pixels)
     private static let trackerDomains: [String: String] = [
@@ -1461,6 +1587,14 @@ class EmailDetailViewModel: ObservableObject {
         "mixpanel.com": "Mixpanel",
         "segment.io": "Segment"
     ]
+
+    // Precomputed lowercased domains for O(1) contains checks
+    private static let trackerDomainsLowercased: [(domain: String, name: String)] = {
+        trackerDomains.map { (domain: $0.key.lowercased(), name: $0.value) }
+    }()
+
+    // Short-circuit keywords to skip expensive regex if no trackers likely present
+    private static let trackerHintKeywords = ["pixel", "track", "beacon", "open", "click"]
 
     var subject: String {
         messages.first?.subject ?? ""
@@ -1523,6 +1657,14 @@ class EmailDetailViewModel: ObservableObject {
         }
     }
 
+    func bodyHTML(for message: EmailDetail) -> String {
+        renderedBodies[message.id]?.html ?? message.body
+    }
+
+    func plainText(for message: EmailDetail) -> String {
+        renderedBodies[message.id]?.plain ?? HTMLSanitizer.plainText(message.body)
+    }
+
     private func accountForThread() -> AuthService.Account? {
         guard let accountEmail = messages.first?.accountEmail?.lowercased() else {
             return AuthService.shared.currentAccount
@@ -1534,32 +1676,43 @@ class EmailDetailViewModel: ObservableObject {
         self.threadId = threadId
         self.accountEmail = accountEmail
     }
+    private let renderActor = BodyRenderActor()
+    private var didLogBodySwap = false
 
-    // Detect tracking pixels in email HTML
-    private func detectTrackers(in html: String) -> [String] {
+    // Detect tracking pixels in email HTML (optimized: lowercase once, precomputed domains)
+    nonisolated private static func detectTrackers(in html: String) -> [String] {
         var foundTrackers = Set<String>()
 
-        // Pattern for 1x1 pixel images (common tracker format)
-        let pixelPatterns = [
-            "<img[^>]*width\\s*=\\s*[\"']?1[\"']?[^>]*height\\s*=\\s*[\"']?1[\"']?[^>]*>",
-            "<img[^>]*height\\s*=\\s*[\"']?1[\"']?[^>]*width\\s*=\\s*[\"']?1[\"']?[^>]*>",
-            "<img[^>]*style\\s*=\\s*[\"'][^\"']*display\\s*:\\s*none[^\"']*[\"'][^>]*>"
-        ]
+        // Lowercase ONCE, then check all domains against the lowercased string
+        let lower = html.lowercased()
 
-        // Check for known tracker domains in image URLs
-        for (domain, name) in Self.trackerDomains {
-            if html.lowercased().contains(domain) {
+        // Check for known tracker domains (using precomputed lowercased domains)
+        for (domain, name) in trackerDomainsLowercased {
+            if lower.contains(domain) {
                 foundTrackers.insert(name)
             }
         }
 
-        // Count 1x1 pixel images
-        for pattern in pixelPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                let range = NSRange(html.startIndex..., in: html)
-                let matches = regex.numberOfMatches(in: html, range: range)
-                if matches > 0 && foundTrackers.isEmpty {
-                    foundTrackers.insert("Tracking Pixel")
+        // Short-circuit: only run expensive regex if hint keywords suggest trackers might be present
+        let hasHintKeyword = trackerHintKeywords.contains { lower.contains($0) }
+
+        // Count 1x1 pixel images (only if we haven't found domain-based trackers or hints suggest pixels)
+        if foundTrackers.isEmpty || hasHintKeyword {
+            // Pattern for 1x1 pixel images (common tracker format)
+            let pixelPatterns = [
+                "<img[^>]*width\\s*=\\s*[\"']?1[\"']?[^>]*height\\s*=\\s*[\"']?1[\"']?[^>]*>",
+                "<img[^>]*height\\s*=\\s*[\"']?1[\"']?[^>]*width\\s*=\\s*[\"']?1[\"']?[^>]*>",
+                "<img[^>]*style\\s*=\\s*[\"'][^\"']*display\\s*:\\s*none[^\"']*[\"'][^>]*>"
+            ]
+
+            for pattern in pixelPatterns {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                    let range = NSRange(html.startIndex..., in: html)
+                    let matches = regex.numberOfMatches(in: html, range: range)
+                    if matches > 0 && foundTrackers.isEmpty {
+                        foundTrackers.insert("Tracking Pixel")
+                        break // Found one, no need to check other patterns
+                    }
                 }
             }
         }
@@ -1579,41 +1732,84 @@ class EmailDetailViewModel: ObservableObject {
             } else {
                 messageDTOs = try await GmailService.shared.fetchThread(threadId: threadId)
             }
-            messages = messageDTOs.map(EmailDetail.init(dto:))
+
+            // FAST PATH: Show minimal placeholders immediately WITHOUT HTML processing on main
+            // Use snippet (already available) as placeholder text to avoid HTMLSanitizer.plainText() on main
+            let placeholders = messageDTOs.map { dto -> EmailDetail in
+                var detail = EmailDetail(dto: dto)
+                // Use snippet as quick placeholder - real HTML will be swapped in from background
+                detail.body = HTMLSanitizer.inlinePlainHTML(dto.snippet)
+                return detail
+            }
+            messages = placeholders
+            StallLogger.mark("EmailDetail.threadLoaded")
+
             // Expand the latest message by default
             if let lastId = messages.last?.id {
                 expandedMessageIds.insert(lastId)
             }
 
-            // Parse unsubscribe URL from latest message
+            // Parse unsubscribe URL from latest message (cheap string parsing, OK on main)
             if let unsubscribeHeader = messages.last?.listUnsubscribe {
                 unsubscribeURL = parseUnsubscribeURL(from: unsubscribeHeader)
             }
 
-            if trackingProtectionEnabled {
-                // Detect trackers in all message bodies
+            // Extract data to value types BEFORE crossing threads (SwiftData objects can't cross)
+            let dtoSnapshots = messageDTOs.map { (id: $0.id, body: $0.body, snippet: $0.snippet) }
+            let shouldDetectTrackers = trackingProtectionEnabled
+
+            // BACKGROUND: Heavy work - tracker detection, HTML sanitization, plaintext extraction
+            Task.detached(priority: .userInitiated) { [weak self, renderActor] in
+                guard let self else { return }
+
+                // Tracker detection (runs once per thread, not blocking UI)
                 var allTrackers = Set<String>()
-                for message in messages {
-                    let found = detectTrackers(in: message.body)
-                    allTrackers.formUnion(found)
+                if shouldDetectTrackers {
+                    for snapshot in dtoSnapshots {
+                        let found = Self.detectTrackers(in: snapshot.body)
+                        allTrackers.formUnion(found)
+                    }
                 }
-                trackerNames = Array(allTrackers).sorted()
-                trackersBlocked = trackerNames.count
-            } else {
-                trackerNames = []
-                trackersBlocked = 0
+                let trackerNamesSorted = Array(allTrackers).sorted()
+
+                // Update tracker badge on main (non-blocking UI update)
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.trackerNames = trackerNamesSorted
+                    self.trackersBlocked = trackerNamesSorted.count
+                }
+
+                // Render sanitized HTML for each message
+                for snapshot in dtoSnapshots {
+                    let rendered = await renderActor.render(html: snapshot.body)
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        self.renderedBodies[snapshot.id] = rendered
+                        if let idx = self.messages.firstIndex(where: { $0.id == snapshot.id }) {
+                            self.messages[idx].body = rendered.html
+                        }
+                        if !self.didLogBodySwap {
+                            StallLogger.mark("EmailDetail.bodySwap")
+                            self.didLogBodySwap = true
+                        }
+                    }
+                }
             }
 
-            // Mark as read
-            for message in messages where message.isUnread {
-                do {
-                    if let account = accountForThread() {
-                        try await GmailService.shared.markAsRead(messageId: message.id, account: account)
-                    } else {
-                        try await GmailService.shared.markAsRead(messageId: message.id)
+            // Mark as read (fire off async, don't block)
+            let unreadIds = messages.filter(\.isUnread).map(\.id)
+            let account = accountForThread()
+            for messageId in unreadIds {
+                Task {
+                    do {
+                        if let account {
+                            try await GmailService.shared.markAsRead(messageId: messageId, account: account)
+                        } else {
+                            try await GmailService.shared.markAsRead(messageId: messageId)
+                        }
+                    } catch {
+                        detailLogger.error("Failed to mark message as read: \(error.localizedDescription)")
                     }
-                } catch {
-                    detailLogger.error("Failed to mark message as read: \(error.localizedDescription)")
                 }
             }
         } catch {

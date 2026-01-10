@@ -51,20 +51,25 @@ final class OutboxManager {
             throw OutboxError.notConfigured
         }
 
-        // Save attachments to disk
-        var queuedAttachments: [QueuedAttachment] = []
-        for attachment in attachments {
-            let relativePath = try QueuedAttachmentStorage.save(
-                data: attachment.data,
-                filename: attachment.filename
-            )
-            queuedAttachments.append(QueuedAttachment(
-                filename: attachment.filename,
-                mimeType: attachment.mimeType,
-                fileURL: relativePath
-            ))
-        }
+        // Save attachments to disk on background thread (file I/O)
+        let attachmentInputs = attachments.map { (data: $0.data, filename: $0.filename, mimeType: $0.mimeType) }
+        let queuedAttachments: [QueuedAttachment] = try await Task.detached(priority: .utility) {
+            var results: [QueuedAttachment] = []
+            for input in attachmentInputs {
+                let relativePath = try QueuedAttachmentStorage.save(
+                    data: input.data,
+                    filename: input.filename
+                )
+                results.append(QueuedAttachment(
+                    filename: input.filename,
+                    mimeType: input.mimeType,
+                    fileURL: relativePath
+                ))
+            }
+            return results
+        }.value
 
+        // SwiftData operations stay on main
         let queuedEmail = QueuedEmail(
             accountEmail: accountEmail,
             to: to,
@@ -180,9 +185,13 @@ final class OutboxManager {
             return
         }
 
-        // Clean up attachment files
-        QueuedAttachmentStorage.deleteAttachments(email.attachments)
+        // Fire-and-forget file deletion (don't block on disk I/O)
+        let attachmentsToDelete = email.attachments
+        Task.detached(priority: .utility) {
+            QueuedAttachmentStorage.deleteAttachments(attachmentsToDelete)
+        }
 
+        // SwiftData cleanup stays on main
         context.delete(email)
         try? context.save()
 
@@ -235,18 +244,22 @@ final class OutboxManager {
                 throw OutboxError.accountNotFound
             }
 
-            // Load attachments from disk
-            var mimeAttachments: [MIMEAttachment] = []
-            for attachment in email.attachments {
-                let data = try QueuedAttachmentStorage.load(relativePath: attachment.fileURL)
-                mimeAttachments.append(MIMEAttachment(
-                    filename: attachment.filename,
-                    mimeType: attachment.mimeType,
-                    data: data
-                ))
-            }
+            // Extract attachment info from SwiftData object BEFORE crossing threads
+            let attachmentInfo = email.attachments.map { (filename: $0.filename, mimeType: $0.mimeType, fileURL: $0.fileURL) }
 
-            // Send the email
+            // Load attachments from disk on background thread (user tapped send = .userInitiated)
+            let mimeAttachments: [MIMEAttachment] = try await Task.detached(priority: .userInitiated) {
+                try attachmentInfo.map { info in
+                    let data = try QueuedAttachmentStorage.load(relativePath: info.fileURL)
+                    return MIMEAttachment(
+                        filename: info.filename,
+                        mimeType: info.mimeType,
+                        data: data
+                    )
+                }
+            }.value
+
+            // Send the email (network is async, fine on main)
             _ = try await GmailService.shared.sendEmail(
                 to: email.toRecipients,
                 cc: email.ccRecipients,
@@ -260,8 +273,13 @@ final class OutboxManager {
                 account: account
             )
 
-            // Success - clean up
-            QueuedAttachmentStorage.deleteAttachments(email.attachments)
+            // Success - fire-and-forget file deletion (don't block on disk I/O)
+            let attachmentsToDelete = email.attachments
+            Task.detached(priority: .utility) {
+                QueuedAttachmentStorage.deleteAttachments(attachmentsToDelete)
+            }
+
+            // SwiftData cleanup stays on main
             context.delete(email)
             try? context.save()
 

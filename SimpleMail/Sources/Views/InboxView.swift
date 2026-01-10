@@ -15,14 +15,13 @@ private struct ScrollOffsetKey: PreferenceKey {
 // MARK: - Inbox View
 
 struct InboxView: View {
-    @Bindable private var viewModel = InboxViewModel.shared
+    @StateObject private var viewModel = InboxViewModel.shared
     @State private var showingCompose = false
     @State private var listDensity: ListDensity = .comfortable
     @State private var showingSettings = false
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
     @StateObject private var searchHistory = SearchHistoryManager.shared
-    @StateObject private var briefingViewModel = BriefingViewModel()
     @Environment(\.isSearching) private var isSearching
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.displayScale) private var displayScale
@@ -47,6 +46,11 @@ struct InboxView: View {
     /// Computed active filter label for bottom command surface
     private var activeFilterLabel: String? {
         viewModel.activeFilter?.rawValue
+    }
+
+    /// Cached VIP senders set - computed once per view update, not per-row
+    private var cachedVIPSenders: Set<String> {
+        Set(AccountDefaults.stringArray(for: "vipSenders", accountEmail: AuthService.shared.currentAccount?.email).map { $0.lowercased() })
     }
 
     private var isHeaderCollapsed: Bool {
@@ -115,11 +119,13 @@ struct InboxView: View {
 
             EmailRow(
                 email: email,
+                display: viewModel.rowModel(for: email.id),
                 isCompact: listDensity == .compact,
                 showAvatars: showAvatars,
                 showAccountBadge: viewModel.currentMailbox == .allInboxes,
                 highlightTerms: highlightTerms,
-                isContinuationInSenderRun: isContinuationInSenderRun
+                isContinuationInSenderRun: isContinuationInSenderRun,
+                vipSenders: cachedVIPSenders
             )
         }
         .background(Color(.systemBackground))
@@ -160,163 +166,148 @@ struct InboxView: View {
     }
 
     var body: some View {
-        baseView
-    }
-
-    private var baseView: AnyView {
-        var view: AnyView = AnyView(baseContentView)
-        view = AnyView(view.sheet(isPresented: $showingSettings) { SettingsView() })
-        view = AnyView(view.sheet(isPresented: $showingCompose) { ComposeView() })
-        view = AnyView(view.sheet(item: $restoredComposeMode) { mode in
-            ComposeView(mode: mode)
-        })
-        view = AnyView(view.sheet(isPresented: $showingLocationSheet) {
-            LocationSheetView(
-                selectedMailbox: $viewModel.currentMailbox,
-                onSelectMailbox: { mailbox in
-                    viewModel.selectMailbox(mailbox)
-                },
-                onSelectScope: { scope in
-                    handleScopeSelection(scope)
-                }
-            )
-        })
-        view = AnyView(view.sheet(isPresented: $showingBulkSnooze) {
-            SnoozePickerSheet { date in
-                performBulkSnooze(until: date)
+        baseContentView
+            // MARK: - Sheets
+            .sheet(isPresented: $showingSettings) { SettingsView() }
+            .sheet(isPresented: $showingCompose) { ComposeView() }
+            .sheet(item: $restoredComposeMode) { mode in
+                ComposeView(mode: mode)
             }
-        })
-        view = AnyView(view.sheet(isPresented: $showingFilterSheet) {
-            FilterSheet(
-                activeFilter: $viewModel.activeFilter,
-                filterCounts: viewModel.filterCounts
-            )
-            .presentationDetents([.medium])
-        })
-        view = AnyView(view.confirmationDialog("Move to", isPresented: $showingMoveDialog) {
-            Button("Inbox") { performBulkMove(to: .inbox) }
-            Button("Archive") { performBulkArchive() }
-            Button("Trash", role: .destructive) { performBulkTrash() }
-            Button("Cancel", role: .cancel) { }
-        })
-        view = AnyView(view.navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination })
-        view = AnyView(view.refreshable {
-            if viewModel.currentMailbox == .briefingBeta {
-                await briefingViewModel.refresh()
-            } else {
+            .sheet(isPresented: $showingLocationSheet) {
+                LocationSheetView(
+                    selectedMailbox: $viewModel.currentMailbox,
+                    onSelectMailbox: { mailbox in
+                        viewModel.selectMailbox(mailbox)
+                    },
+                    onSelectScope: { scope in
+                        handleScopeSelection(scope)
+                    }
+                )
+            }
+            .sheet(isPresented: $showingBulkSnooze) {
+                SnoozePickerSheet { date in
+                    performBulkSnooze(until: date)
+                }
+            }
+            .sheet(isPresented: $showingFilterSheet) {
+                FilterSheet(
+                    activeFilter: $viewModel.activeFilter,
+                    filterCounts: viewModel.filterCounts
+                )
+                .presentationDetents([.medium])
+            }
+            // MARK: - Dialogs & Navigation
+            .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
+                Button("Inbox") { performBulkMove(to: .inbox) }
+                Button("Archive") { performBulkArchive() }
+                Button("Trash", role: .destructive) { performBulkTrash() }
+                Button("Cancel", role: .cancel) { }
+            }
+            .navigationDestination(isPresented: $viewModel.showingEmailDetail) { detailDestination }
+            .refreshable {
                 await viewModel.refresh()
             }
-        })
-        view = AnyView(view.task(id: searchText) { await debounceSearch() })
-        view = AnyView(view.onChange(of: searchText) { _, newValue in
-            if newValue.isEmpty && viewModel.isSearchActive {
-                viewModel.clearSearch()
-            } else if viewModel.isSearchActive && newValue != viewModel.currentSearchQuery {
-                viewModel.clearSearch()
-            }
-            if isSearchMode {
-                Task {
-                    try? await Task.sleep(for: .milliseconds(250))
-                    debouncedSearchText = newValue
+            // MARK: - Tasks & onChange handlers
+            .task(id: searchText) { await debounceSearch() }
+            .onChange(of: searchText) { _, newValue in
+                if newValue.isEmpty && viewModel.isSearchActive {
+                    viewModel.clearSearch()
+                } else if viewModel.isSearchActive && newValue != viewModel.currentSearchQuery {
+                    viewModel.clearSearch()
                 }
-            }
-        })
-        view = AnyView(view.onChange(of: debouncedSearchText) { _, newValue in
-            guard isSearchMode else { return }
-            Task {
-                await viewModel.performLocalSearch(query: newValue)
-            }
-        })
-        view = AnyView(view.onChange(of: viewModel.currentMailbox) { _, _ in
-            exitSelectionMode()
-            if viewModel.currentMailbox == .briefingBeta {
-                isSearchMode = false
-                searchFieldFocused = false
-            }
-            briefingViewModel.accountEmail = currentBriefingAccountEmail()
-            briefingViewModel.loadCached()
-        })
-        view = AnyView(view.onChange(of: viewModel.activeFilter) { oldValue, newValue in
-            exitSelectionMode()
-            // Haptic feedback for filter changes
-            if newValue != nil {
-                HapticFeedback.light()
-            } else if oldValue != nil {
-                HapticFeedback.selection()
-            }
-        })
-        view = AnyView(view.onChange(of: viewModel.emails) { _, _ in
-            let valid = Set(viewModel.emails.map { $0.threadId })
-            selectedThreadIds = selectedThreadIds.intersection(valid)
-            if selectedThreadIds.isEmpty && isSelectionMode {
-                exitSelectionMode()
-            }
-        })
-        view = AnyView(view.onChange(of: scenePhase) { oldPhase, newPhase in
-            if newPhase == .background {
-                exitSelectionMode()
-            } else if newPhase == .active && oldPhase == .background {
-                Task {
-                    if viewModel.currentMailbox == .briefingBeta {
-                        await briefingViewModel.refresh()
-                    } else {
-                        await viewModel.refresh()
+                if isSearchMode {
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(250))
+                        debouncedSearchText = newValue
                     }
                 }
             }
-        })
-        view = AnyView(view.onChange(of: pendingSendManager.hasRestoredDraft) { _, hasRestored in
-            if hasRestored, let draft = pendingSendManager.restoredDraft {
-                restoredComposeMode = .restoredDraft(
-                    draftId: draft.draftId,
-                    to: draft.to,
-                    cc: draft.cc,
-                    bcc: draft.bcc,
-                    subject: draft.subject,
-                    body: draft.body,
-                    bodyHtml: draft.bodyHtml,
-                    inReplyTo: draft.inReplyTo,
-                    threadId: draft.threadId
-                )
-                pendingSendManager.clearRestoredDraft()
-            }
-        })
-        view = AnyView(view.onChange(of: isSearchMode) { _, newValue in
-            if !newValue {
-                withAnimation(.easeOut(duration: 0.15)) {
-                    searchFieldFocused = false
+            .onChange(of: debouncedSearchText) { _, newValue in
+                guard isSearchMode else { return }
+                Task {
+                    await viewModel.performLocalSearch(query: newValue)
                 }
             }
-        })
-        view = AnyView(view.onChange(of: searchFieldFocused) { _, focused in
-            if focused {
-                withAnimation(.snappy(duration: 0.22)) {
-                    isSearchMode = true
+            .onChange(of: viewModel.currentMailbox) { _, _ in
+                exitSelectionMode()
+                isSearchMode = false
+                searchFieldFocused = false
+            }
+            .onChange(of: viewModel.activeFilter) { oldValue, newValue in
+                exitSelectionMode()
+                // Haptic feedback for filter changes
+                if newValue != nil {
+                    HapticFeedback.light()
+                } else if oldValue != nil {
+                    HapticFeedback.selection()
                 }
             }
-        })
-        view = AnyView(view.onAppear { handleAppear() })
-        view = AnyView(view.onAppear {
-            if !hasPrewarmedSearch {
-                DispatchQueue.main.async {
-                    hasPrewarmedSearch = true
+            .onChange(of: viewModel.emails) { _, _ in
+                let valid = Set(viewModel.emails.map { $0.threadId })
+                selectedThreadIds = selectedThreadIds.intersection(valid)
+                if selectedThreadIds.isEmpty && isSelectionMode {
+                    exitSelectionMode()
                 }
             }
-            MainThreadWatchdog.start(thresholdMs: 250)
-        })
-        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() })
-        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() })
-        view = AnyView(view.onChange(of: viewModel.bulkToastMessage) { _, newValue in
-            // Haptic feedback for bulk action results
-            if newValue != nil {
-                if viewModel.bulkToastIsError {
-                    HapticFeedback.error()
-                } else {
-                    HapticFeedback.success()
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                if newPhase == .background {
+                    exitSelectionMode()
+                } else if newPhase == .active && oldPhase == .background {
+                    Task { await viewModel.refresh() }
                 }
             }
-        })
-        return view
+            .onChange(of: pendingSendManager.hasRestoredDraft) { _, hasRestored in
+                if hasRestored, let draft = pendingSendManager.restoredDraft {
+                    restoredComposeMode = .restoredDraft(
+                        draftId: draft.draftId,
+                        to: draft.to,
+                        cc: draft.cc,
+                        bcc: draft.bcc,
+                        subject: draft.subject,
+                        body: draft.body,
+                        bodyHtml: draft.bodyHtml,
+                        inReplyTo: draft.inReplyTo,
+                        threadId: draft.threadId
+                    )
+                    pendingSendManager.clearRestoredDraft()
+                }
+            }
+            .onChange(of: isSearchMode) { _, newValue in
+                if !newValue {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        searchFieldFocused = false
+                    }
+                }
+            }
+            .onChange(of: searchFieldFocused) { _, focused in
+                if focused {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        isSearchMode = true
+                    }
+                }
+            }
+            // MARK: - Lifecycle
+            .onAppear {
+                handleAppear()
+                if !hasPrewarmedSearch {
+                    DispatchQueue.main.async {
+                        hasPrewarmedSearch = true
+                    }
+                }
+                MainThreadWatchdog.start(thresholdMs: 250)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in loadSettings() }
+            .onReceive(NotificationCenter.default.publisher(for: .accountDidChange)) { _ in loadSettings() }
+            .onChange(of: viewModel.bulkToastMessage) { _, newValue in
+                // Haptic feedback for bulk action results
+                if newValue != nil {
+                    if viewModel.bulkToastIsError {
+                        HapticFeedback.error()
+                    } else {
+                        HapticFeedback.success()
+                    }
+                }
+            }
     }
 
     private var baseContentView: some View {
@@ -424,18 +415,7 @@ struct InboxView: View {
     // MARK: - Extracted View Components
 
     private var inboxList: some View {
-        Group {
-            if viewModel.currentMailbox == .briefingBeta {
-                BriefingView(
-                    viewModel: briefingViewModel,
-                    onOpenEmail: { email in
-                        viewModel.openEmail(email)
-                    }
-                )
-            } else {
-                mailList
-            }
-        }
+        mailList
     }
 
     private var mailList: some View {
@@ -679,9 +659,7 @@ struct InboxView: View {
         inboxScope = scope
         switch scope {
         case .unified:
-            if viewModel.currentMailbox != .briefingBeta {
-                viewModel.selectMailbox(.allInboxes)
-            }
+            viewModel.selectMailbox(.allInboxes)
         case .account(let account):
             AuthService.shared.switchAccount(to: account)
             if viewModel.currentMailbox == .allInboxes {
@@ -690,7 +668,6 @@ struct InboxView: View {
                 viewModel.selectMailbox(viewModel.currentMailbox)
             }
         }
-        briefingViewModel.accountEmail = currentBriefingAccountEmail()
     }
 
     private var selectedEmails: [Email] {
@@ -1031,7 +1008,7 @@ struct InboxView: View {
                     .buttonStyle(.borderedProminent)
                 }
                 .padding()
-            } else if viewModel.currentMailbox != .briefingBeta {
+            } else {
                 if displaySections.isEmpty && !viewModel.hasCompletedInitialLoad {
                     // Still loading initial data - show spinner, not empty state
                     VStack(spacing: 16) {
@@ -1096,6 +1073,7 @@ struct InboxView: View {
     }
 
     private func handleAppear() {
+        StallLogger.mark("InboxView.appear")
         loadSettings()
         if viewModel.currentMailbox == .allInboxes {
             inboxScope = .unified
@@ -1104,30 +1082,19 @@ struct InboxView: View {
         } else {
             inboxScope = .unified
         }
-        briefingViewModel.accountEmail = currentBriefingAccountEmail()
-
-        if viewModel.currentMailbox != .briefingBeta {
-            Task.detached(priority: .utility) {
-                await viewModel.preloadCachedEmails(
-                    mailbox: await MainActor.run { viewModel.currentMailbox },
-                    accountEmail: await MainActor.run {
-                        viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
-                    }
-                )
-            }
+        Task.detached(priority: .utility) {
+            await viewModel.preloadCachedEmails(
+                mailbox: await MainActor.run { viewModel.currentMailbox },
+                accountEmail: await MainActor.run {
+                    viewModel.currentMailbox == .allInboxes ? nil : AuthService.shared.currentAccount?.email
+                }
+            )
         }
         scheduleWebKitWarmup()
     }
 
     private func scheduleWebKitWarmup() {
-        guard !didScheduleWebKitWarmup else { return }
-        didScheduleWebKitWarmup = true
-        Task.detached(priority: .utility) {
-            try? await Task.sleep(for: .seconds(1))
-            await MainActor.run {
-                StartupCoordinator.shared.prewarmWebKitIfNeeded()
-            }
-        }
+        // Temporarily disable pre-warming to avoid startup stalls; first HTML open will warm naturally.
     }
 
     private func loadSettings() {
@@ -1152,15 +1119,6 @@ struct InboxView: View {
             }
         } catch {
             logger.warning("Failed to decode app settings: \(error.localizedDescription)")
-        }
-    }
-
-    private func currentBriefingAccountEmail() -> String? {
-        switch inboxScope {
-        case .unified:
-            return nil
-        case .account(let account):
-            return account.email
         }
     }
 
@@ -1474,15 +1432,16 @@ private enum DateFormatters {
 
 struct EmailRow: View {
     let email: Email
+    let display: InboxViewModel.DisplayModelWorker.RowModel?
     var isCompact: Bool = false
     var showAvatars: Bool = true
     var showAccountBadge: Bool = false
     var highlightTerms: [String] = []
     var isContinuationInSenderRun: Bool = false
+    var vipSenders: Set<String> = []
 
     private var isVIPSender: Bool {
-        let vipSenders = AccountDefaults.stringArray(for: "vipSenders", accountEmail: email.accountEmail)
-        return vipSenders.contains(email.senderEmail.lowercased())
+        vipSenders.contains(email.senderEmail.lowercased())
     }
 
     private var accountLabel: String? {
@@ -1656,7 +1615,6 @@ struct EmailRow: View {
 
 enum Mailbox: String, CaseIterable {
     case allInboxes = "All Inboxes"
-    case briefingBeta = "Briefing (Beta)"
     case inbox = "Inbox"
     case sent = "Sent"
     case archive = "Archive"
@@ -1667,7 +1625,6 @@ enum Mailbox: String, CaseIterable {
     var icon: String {
         switch self {
         case .allInboxes: return "tray.full"
-        case .briefingBeta: return "sparkles"
         case .inbox: return "tray"
         case .sent: return "paperplane"
         case .archive: return "archivebox"

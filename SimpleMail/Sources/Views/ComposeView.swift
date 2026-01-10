@@ -205,12 +205,11 @@ struct ComposeView: View {
                     dismiss()
                 }
                 Button("Save Draft") {
-                    Task.detached(priority: .utility) {
+                    Task {
+                        // saveDraft() handles running network call off-main internally
                         await viewModel.saveDraft()
-                        await MainActor.run {
-                            viewModel.cancelAutoSave()
-                            dismiss()
-                        }
+                        viewModel.cancelAutoSave()
+                        dismiss()
                     }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -1599,6 +1598,19 @@ final class RichTextContext: ObservableObject {
 // MARK: - Growing Text View
 
 class GrowingTextView: UITextView {
+    /// Initialize with explicit TextKit 1 stack to prevent mid-use compatibility mode switches.
+    /// UITextView defaults to TextKit 2 but switches to TextKit 1 when certain attributes are used,
+    /// which causes "switching to TextKit 1 compatibility mode" warnings and potential glitches.
+    convenience init() {
+        let textStorage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        textContainer.widthTracksTextView = true
+        layoutManager.addTextContainer(textContainer)
+        self.init(frame: .zero, textContainer: textContainer)
+    }
+
     override var intrinsicContentSize: CGSize {
         let fallbackWidth = superview?.bounds.width ?? 320
         let fixedWidth = frame.width > 0 ? frame.width : fallbackWidth
@@ -2011,18 +2023,195 @@ class ComposeViewModel: ObservableObject {
     }
 
     /// Load deferred rich body (HTML or quoted email) to avoid publish during view update.
+    /// Heavy HTML parsing is done on background thread to avoid blocking main.
     func loadDeferredBody() async -> NSAttributedString? {
-        if let html = pendingHTMLBody {
-            pendingHTMLBody = nil
-            if let rich = attributedBody(fromHTML: html) {
-                return rich
-            }
+        // Extract data to value types BEFORE crossing threads
+        let htmlToProcess = pendingHTMLBody
+        pendingHTMLBody = nil
+
+        let emailToQuote = pendingQuotedEmail
+        pendingQuotedEmail = nil
+
+        // Early exit if nothing to process
+        guard htmlToProcess != nil || emailToQuote != nil else { return nil }
+
+        // Extract email data needed for quote building (don't capture EmailDetail across threads)
+        let quoteInputs: (from: String, date: Date, body: String, subject: String)?
+        if let email = emailToQuote {
+            quoteInputs = (from: email.from, date: email.date, body: email.body, subject: email.subject)
+        } else {
+            quoteInputs = nil
         }
-        if let email = pendingQuotedEmail {
-            pendingQuotedEmail = nil
-            return buildQuotedReply(email)
+
+        // Heavy work on background thread
+        let result = await Task.detached(priority: .userInitiated) { [htmlToProcess, quoteInputs] () -> NSAttributedString? in
+            // Process pending HTML body
+            if let html = htmlToProcess {
+                if let rich = Self.parseHTMLToAttributed(html) {
+                    return rich
+                }
+            }
+
+            // Build quoted reply
+            if let inputs = quoteInputs {
+                return Self.buildQuotedReplyBackground(
+                    from: inputs.from,
+                    date: inputs.date,
+                    body: inputs.body,
+                    subject: inputs.subject
+                )
+            }
+
+            return nil
+        }.value
+
+        return result
+    }
+
+    /// Thread-safe HTML parsing (can be called from background)
+    nonisolated private static func parseHTMLToAttributed(_ html: String) -> NSAttributedString? {
+        let trimmed = html.count > 250_000 ? String(html.prefix(250_000)) : html
+        guard let data = trimmed.data(using: .utf8) else { return nil }
+
+        // Check cache first (NSCache is thread-safe)
+        if let cached = htmlCache.object(forKey: trimmed as NSString) {
+            return cached
+        }
+
+        let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
+            .documentType: NSAttributedString.DocumentType.html,
+            .characterEncoding: String.Encoding.utf8.rawValue
+        ]
+        if let parsed = try? NSAttributedString(data: data, options: options, documentAttributes: nil) {
+            htmlCache.setObject(parsed, forKey: trimmed as NSString)
+            return parsed
         }
         return nil
+    }
+
+    /// Thread-safe quoted reply builder (can be called from background)
+    nonisolated private static func buildQuotedReplyBackground(from: String, date: Date, body: String, subject: String) -> NSAttributedString {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+        let dateStr = dateFormatter.string(from: date)
+
+        let senderName = EmailParser.extractSenderName(from: from)
+        let header = "On \(dateStr), \(senderName) wrote:"
+
+        let bodyHTML: String
+        if isLikelyHTMLStatic(body) {
+            bodyHTML = sanitizeHTMLForQuoteStatic(body)
+        } else {
+            bodyHTML = escapeHTMLStatic(body).replacingOccurrences(of: "\n", with: "<br>")
+        }
+
+        let html = """
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system; font-size: 16px; color: #111; }
+            blockquote {
+              margin: 8px 0 0 0;
+              padding-left: 12px;
+              border-left: 2px solid #d0d0d0;
+              color: #555;
+            }
+            blockquote, blockquote * {
+              text-align: left !important;
+              margin-left: 0 !important;
+            }
+            img { max-width: 100%; height: auto; }
+          </style>
+        </head>
+        <body>
+          <div><br><br></div>
+          <div>\(escapeHTMLStatic(header))</div>
+          <blockquote><div class="quoted">\(bodyHTML)</div></blockquote>
+        </body>
+        </html>
+        """
+
+        if let attributed = parseHTMLToAttributed(html) {
+            return attributed
+        }
+
+        // Fallback to plain text quote
+        let plainBody = plainTextFromHTMLStatic(body)
+        let quotePreview = summarizeForQuoteStatic(plainBody)
+        let fallback = "\n\n\(header)\n> \(quotePreview.replacingOccurrences(of: "\n", with: "\n> "))"
+        return attributedBody(from: fallback)
+    }
+
+    // MARK: - Static helper methods for background thread use (nonisolated)
+
+    nonisolated private static func isLikelyHTMLStatic(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("<html") ||
+            lower.contains("<body") ||
+            lower.contains("<div") ||
+            lower.contains("<table") ||
+            lower.contains("<img")
+    }
+
+    nonisolated private static func sanitizeHTMLForQuoteStatic(_ html: String) -> String {
+        var result = html
+        if result.count > 250_000 {
+            result = String(result.prefix(250_000))
+        }
+        result = result.replacingOccurrences(of: "<script[\\s\\S]*?</script>", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "<style[\\s\\S]*?</style>", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "</?(html|head|body)[^>]*>", with: "", options: .regularExpression)
+        return result
+    }
+
+    nonisolated private static func escapeHTMLStatic(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
+    }
+
+    nonisolated private static func plainTextFromHTMLStatic(_ html: String) -> String {
+        var text = html
+        if text.count > 200_000 {
+            text = String(text.prefix(200_000))
+        }
+        while let start = text.range(of: "<style", options: .caseInsensitive),
+              let end = text.range(of: "</style>", options: .caseInsensitive, range: start.upperBound..<text.endIndex) {
+            text.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        while let start = text.range(of: "<script", options: .caseInsensitive),
+              let end = text.range(of: "</script>", options: .caseInsensitive, range: start.upperBound..<text.endIndex) {
+            text.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        text = text
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text
+    }
+
+    nonisolated private static func summarizeForQuoteStatic(_ text: String) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let lines = normalized
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let previewLines = lines.prefix(4)
+        var preview = previewLines.joined(separator: "\n")
+        if preview.count > 320 {
+            preview = String(preview.prefix(320))
+        }
+        if lines.count > previewLines.count || normalized.count > preview.count {
+            preview += "…"
+        }
+        return preview
     }
 
     func send() async -> Bool {
@@ -2064,13 +2253,22 @@ class ComposeViewModel: ObservableObject {
     }
 
     func saveDraft() async {
+        // Extract data on main actor (fast - just reading properties)
+        let toRecipients = to
+        let emailSubject = subject
+        let emailBody = plainBody()
+        let existingDraftId = draftId
+
+        // Perform actual save OFF the main actor to avoid blocking UI
         do {
-            _ = try await GmailService.shared.saveDraft(
-                to: to,
-                subject: subject,
-                body: plainBody(),
-                existingDraftId: draftId
-            )
+            _ = try await Task.detached(priority: .utility) {
+                try await GmailService.shared.saveDraft(
+                    to: toRecipients,
+                    subject: emailSubject,
+                    body: emailBody,
+                    existingDraftId: existingDraftId
+                )
+            }.value
         } catch {
             self.error = error
         }
@@ -2123,6 +2321,7 @@ class ComposeViewModel: ObservableObject {
             try? await Task.sleep(for: .seconds(3))
             guard let self, !Task.isCancelled else { return }
             if self.hasContent {
+                // saveDraft() internally handles running the network call off-main
                 await self.saveDraft()
             }
         }
@@ -2461,7 +2660,7 @@ class ComposeViewModel: ObservableObject {
         }
     }
 
-    private static func attributedBody(from text: String) -> NSAttributedString {
+    nonisolated private static func attributedBody(from text: String) -> NSAttributedString {
         let font = UIFont.preferredFont(forTextStyle: .body)
         return NSAttributedString(string: text, attributes: [.font: font])
     }

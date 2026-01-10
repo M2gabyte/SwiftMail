@@ -20,17 +20,36 @@ final class StartupCoordinator {
         guard !didStart else { return }
         didStart = true
 
-        // Stage 1: critical path (off main where possible)
-        Task.detached(priority: .userInitiated) { @MainActor in
-            EmailCacheManager.shared.configure(with: modelContext, deferIndexRebuild: true)
-            SnoozeManager.shared.configure(with: modelContext)
-            OutboxManager.shared.configure(with: modelContext)
-            NetworkMonitor.shared.start()
-        }
+        // Stage 1: critical path (do synchronously so caches are ready before UI work)
+        EmailCacheManager.shared.configure(with: modelContext, deferIndexRebuild: true)
+        SnoozeManager.shared.configure(with: modelContext)
+        OutboxManager.shared.configure(with: modelContext)
+        NetworkMonitor.shared.start()
 
         // Stage 2: warmups happen on-demand (first email open)
+        prewarmWebKitIfNeeded()
+        WKWebViewPool.shared.warm(count: 4)
 
-        // Stage 3: disabled for now to avoid background hitches
+        // Stage 3: Deferred search index warmup (after UI is responsive)
+        // Use .utility priority and delay to avoid startup tax
+        if isAuthenticated {
+            Task.detached(priority: .utility) {
+                // Wait for UI to settle before warming search index
+                try? await Task.sleep(for: .seconds(2))
+
+                // Cancellation guard: get current account AFTER sleep
+                // (user may have logged out or switched accounts during delay)
+                guard let currentAccount = await MainActor.run(body: {
+                    AuthService.shared.currentAccount?.email
+                }) else {
+                    startupLogger.debug("Search prewarm skipped - no current account")
+                    return
+                }
+
+                await SearchIndexManager.shared.prewarmIfNeeded(accountEmail: currentAccount)
+                startupLogger.info("Search index prewarmed for current account")
+            }
+        }
     }
 
     func handleAuthChanged(isAuthenticated: Bool) {
