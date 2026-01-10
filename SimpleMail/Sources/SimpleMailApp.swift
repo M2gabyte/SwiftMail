@@ -35,6 +35,10 @@ struct SimpleMailApp: App {
         do {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
             self.modelContainerResult = .success(container)
+
+            // Configure SwiftData-backed caches as early as possible so InboxViewModel can preload immediately.
+            let context = ModelContext(container)
+            StartupCoordinator.shared.configureCachesIfNeeded(modelContext: context, container: container)
         } catch {
             logger.error("Failed to create ModelContainer: \(error.localizedDescription)")
             self.modelContainerResult = .failure(error)
@@ -145,14 +149,11 @@ struct ContentView: View {
                 }
             }
             .onAppear {
-                StartupCoordinator.shared.start(
-                    modelContext: modelContext,
-                    container: modelContext.container,
-                    isAuthenticated: authService.isAuthenticated
-                )
+                // Caches already configured in SimpleMailApp.init(); schedule deferred work once auth is known.
+                StartupCoordinator.shared.scheduleDeferredWorkIfNeeded(isAuthenticated: authService.isAuthenticated)
             }
             .onChange(of: authService.isAuthenticated) { _, newValue in
-                StartupCoordinator.shared.handleAuthChanged(isAuthenticated: newValue)
+                StartupCoordinator.shared.scheduleDeferredWorkIfNeeded(isAuthenticated: newValue)
             }
         }
     }

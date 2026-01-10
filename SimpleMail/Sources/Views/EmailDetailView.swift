@@ -27,29 +27,6 @@ final class WKWebViewPool {
 
     private init() {}
 
-    func warm(count: Int = 2) {
-        lock.lock(); defer { lock.unlock() }
-        guard pool.isEmpty else { return }
-        for _ in 0..<min(count, maxSize) {
-            pool.append(makeWebView())
-        }
-    }
-
-    /// Idempotent one-time prime: creates a single WKWebView and triggers JS eval
-    /// to force WebContent/GPU process launch. Call after inbox is visible.
-    private var didPrime = false
-    func primeOnce() {
-        lock.lock()
-        guard !didPrime else { lock.unlock(); return }
-        didPrime = true
-        lock.unlock()
-
-        let webView = makeWebView()
-        // Load minimal HTML and run JS to trigger WebContent process launch
-        webView.loadHTMLString("<html><body style='margin:0;padding:0;'></body></html>", baseURL: nil)
-        webView.evaluateJavaScript("1") { _, _ in }
-    }
-
     func dequeue() -> WKWebView {
         lock.lock(); defer { lock.unlock() }
         if let webView = pool.popLast() {
@@ -71,7 +48,7 @@ final class WKWebViewPool {
         let config = WKWebViewConfiguration()
         config.dataDetectorTypes = [.link, .phoneNumber, .address]
         let preferences = WKWebpagePreferences()
-        preferences.allowsContentJavaScript = true
+        preferences.allowsContentJavaScript = false
         config.defaultWebpagePreferences = preferences
         let controller = WKUserContentController()
         config.userContentController = controller
@@ -133,17 +110,27 @@ actor BodyRenderActor {
                 }
         """ : ""
 
-        let styledHTML = Self.buildStyledHTML(body: processedHTML, trackingCSS: trackingCSS)
+        let styledHTML = Self.buildStyledHTML(
+            body: processedHTML,
+            trackingCSS: trackingCSS,
+            allowRemoteImages: !settings.blockImages
+        )
         return RenderedBody(html: safeHTML, plain: plain, styledHTML: styledHTML)
     }
 
     /// Build the complete styled HTML document. All string work done off-main.
-    private static func buildStyledHTML(body: String, trackingCSS: String) -> String {
-        """
+    /// No JavaScript is injected - height is measured natively via scrollView.contentSize.
+    private static func buildStyledHTML(body: String, trackingCSS: String, allowRemoteImages: Bool) -> String {
+        let csp = allowRemoteImages
+            ? "default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data: https:;"
+            : "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;"
+
+        return """
         <!DOCTYPE html>
         <html>
         <head>
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta http-equiv="Content-Security-Policy" content="\(csp)">
             <style>
                 /* Base layout constraints - don't override email styling */
                 * { box-sizing: border-box; }
@@ -167,16 +154,11 @@ actor BodyRenderActor {
                 @media (prefers-color-scheme: dark) {
                     body { color: #f0f0f0; background-color: transparent; }
                 }
-                /* Constrain media to viewport without breaking table layouts */
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
                 td, th { word-break: break-word; }
                 a { color: #007AFF; }
-                /* Collapse empty elements that create whitespace */
-                div:empty, span:empty, td:empty, p:empty {
-                    display: none !important;
-                }
-                /* Reduce excessive spacing from marketing emails */
+                div:empty, span:empty, td:empty, p:empty { display: none !important; }
                 \(trackingCSS)
                 img[data-blocked-src] {
                     display: none !important;
@@ -203,39 +185,6 @@ actor BodyRenderActor {
                 }
                 .blocked-form { border: 1px dashed #ccc; padding: 8px; margin: 8px 0; }
             </style>
-            <script>
-                var heightTimer = null;
-                function scheduleHeight() {
-                    if (heightTimer) clearTimeout(heightTimer);
-                    heightTimer = setTimeout(postHeight, 50);
-                }
-                function collapseEmptySpacers() {
-                    var elements = document.querySelectorAll('td, tr');
-                    elements.forEach(function(el) {
-                        var style = window.getComputedStyle(el);
-                        var height = parseFloat(style.height);
-                        if (height > 0 && height < 5 && el.textContent.trim() === '' && !el.querySelector('img, a, input, button')) {
-                            el.style.display = 'none';
-                        }
-                    });
-                }
-                function postHeight() {
-                    var body = document.body;
-                    var html = document.documentElement;
-                    var maxHeight = Math.max(
-                        body.scrollHeight, body.offsetHeight,
-                        html.clientHeight, html.scrollHeight, html.offsetHeight
-                    );
-                    window.webkit.messageHandlers.heightHandler.postMessage({ height: maxHeight });
-                }
-                window.onload = function() {
-                    collapseEmptySpacers();
-                    setTimeout(postHeight, 100);
-                };
-                window.addEventListener('resize', scheduleHeight);
-                var observer = new MutationObserver(scheduleHeight);
-                observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-            </script>
         </head>
         <body>\(body)</body>
         </html>
@@ -448,7 +397,7 @@ struct EmailDetailView: View {
 
 struct EmailMessageCard: View {
     let message: EmailDetail
-    let styledHTML: String      // Pre-rendered styled HTML ready for WebView
+    let styledHTML: String?     // nil = not ready yet, show skeleton
     let renderedPlain: String
     let isExpanded: Bool
     let onToggleExpand: () -> Void
@@ -541,19 +490,95 @@ private enum MessageDateFormatters {
     }()
 }
 
-// MARK: - Email Body View (WebView with dynamic height)
+// MARK: - Email Body Skeleton (loading placeholder)
 
-struct EmailBodyView: View {
-    let styledHTML: String  // Pre-rendered styled HTML ready for WebView
-    @State private var contentHeight: CGFloat = 200
+struct EmailBodySkeleton: View {
+    @State private var isAnimating = false
 
     var body: some View {
-        EmailBodyWebView(
-            styledHTML: styledHTML,
-            contentHeight: $contentHeight
-        )
+        VStack(alignment: .leading, spacing: 12) {
+            // Simulate text lines with varying widths
+            ForEach(0..<5, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(.systemGray5))
+                    .frame(height: 14)
+                    .frame(maxWidth: lineWidth(for: index), alignment: .leading)
+            }
+        }
+        .padding()
+        .opacity(isAnimating ? 0.5 : 1.0)
+        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
+        .onAppear { isAnimating = true }
+    }
+
+    private func lineWidth(for index: Int) -> CGFloat {
+        // Vary line widths to look like text
+        switch index {
+        case 0: return .infinity
+        case 1: return .infinity
+        case 2: return 280
+        case 3: return .infinity
+        default: return 180
+        }
+    }
+}
+
+// MARK: - Email Body View (WebView with dynamic height, deferred mount)
+
+struct EmailBodyView: View {
+    let styledHTML: String?  // nil = not ready yet, show skeleton
+    @State private var contentHeight: CGFloat = 200
+    @State private var showSkeleton = false
+    @State private var webViewReady = false
+
+    var body: some View {
+        ZStack {
+            // Skeleton: shown after 250ms delay if HTML not ready
+            if showSkeleton && styledHTML == nil {
+                EmailBodySkeleton()
+                    .frame(height: 200)
+                    .transition(.opacity)
+            }
+
+            // WebView: only mounted when HTML is ready
+            if let html = styledHTML {
+                EmailBodyWebView(
+                    styledHTML: html,
+                    contentHeight: $contentHeight,
+                    onContentReady: {
+                        webViewReady = true
+                        StallLogger.mark("EmailBodyView.webReady")
+                    }
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: contentHeight)
+                .opacity(webViewReady ? 1 : 0)
+                .animation(.easeOut(duration: 0.15), value: webViewReady)
+            }
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: contentHeight)
+        .frame(height: styledHTML != nil ? contentHeight : 200)
+        .task {
+            // Only show skeleton if HTML takes longer than 250ms
+            try? await Task.sleep(for: .milliseconds(250))
+            if styledHTML == nil {
+                withAnimation(.easeIn(duration: 0.1)) {
+                    showSkeleton = true
+                }
+            }
+        }
+        .onChange(of: styledHTML) { _, newValue in
+            // Reset state when HTML changes to avoid showing old content at opacity 1
+            webViewReady = false
+            contentHeight = 200
+
+            if newValue != nil {
+                // HTML arrived, hide skeleton
+                withAnimation(.easeOut(duration: 0.1)) {
+                    showSkeleton = false
+                }
+            }
+        }
     }
 }
 
@@ -834,9 +859,11 @@ enum HTMLSanitizer {
 /// Simplified WebView that loads pre-rendered styled HTML.
 /// All heavy processing (sanitization, image blocking, tracking removal, styling)
 /// is done off-main in BodyRenderActor before reaching this view.
+/// Height is measured natively via scrollView.contentSize KVO (no JavaScript).
 struct EmailBodyWebView: UIViewRepresentable {
     let styledHTML: String      // Pre-rendered complete HTML document
     @Binding var contentHeight: CGFloat
+    var onContentReady: (() -> Void)?  // Called when WebView commits navigation (content visible)
     var webViewPool = WKWebViewPool.shared
 
     func makeUIView(context: Context) -> WKWebView {
@@ -844,6 +871,8 @@ struct EmailBodyWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
+        context.coordinator.bind(to: webView)
+        StallLogger.mark("EmailBodyWebView.makeUIView")
         return webView
     }
 
@@ -854,54 +883,89 @@ struct EmailBodyWebView: UIViewRepresentable {
         guard context.coordinator.lastKey != key else { return }
         context.coordinator.lastKey = key
         context.coordinator.contentHeight = $contentHeight
+        context.coordinator.onContentReady = onContentReady
 
         // HTML is already fully processed - just load it
         webView.loadHTMLString(styledHTML, baseURL: nil)
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        coordinator.unbind()
         webView.stopLoading()
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "heightHandler")
         WKWebViewPool.shared.recycle(webView)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(contentHeight: $contentHeight)
+        Coordinator(contentHeight: $contentHeight, onContentReady: onContentReady)
     }
 
     class Coordinator: NSObject, WKNavigationDelegate {
         var lastKey: ObjectIdentifier?
         var contentHeight: Binding<CGFloat>?
-        var didCallOnLoaded = false
+        var onContentReady: (() -> Void)?
 
-        init(contentHeight: Binding<CGFloat>) {
+        private var didSignalReady = false
+        private var contentSizeObservation: NSKeyValueObservation?
+        private var heightWorkItem: DispatchWorkItem?
+
+        init(contentHeight: Binding<CGFloat>, onContentReady: (() -> Void)?) {
             self.contentHeight = contentHeight
+            self.onContentReady = onContentReady
             super.init()
         }
 
-        func handleHeightMessage(_ body: Any) {
-            let height: CGFloat
-            if let doubleValue = body as? Double {
-                height = CGFloat(doubleValue)
-            } else if let intValue = body as? Int {
-                height = CGFloat(intValue)
-            } else if let nsNumber = body as? NSNumber {
-                height = CGFloat(nsNumber.doubleValue)
-            } else {
-                return
-            }
+        func bind(to webView: WKWebView) {
+            // Observe content size; debounce to avoid excessive updates.
+            contentSizeObservation = webView.scrollView.observe(\.contentSize, options: [.new]) { [weak self] _, change in
+                guard let self else { return }
+                guard let newSize = change.newValue else { return }
 
-            DispatchQueue.main.async {
-                self.contentHeight?.wrappedValue = max(100, height + 40)
+                self.heightWorkItem?.cancel()
+                let item = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    let height = max(100, newSize.height + 40)
+                    DispatchQueue.main.async {
+                        self.contentHeight?.wrappedValue = height
+                    }
+                }
+                self.heightWorkItem = item
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: item)
             }
         }
 
+        func unbind() {
+            heightWorkItem?.cancel()
+            heightWorkItem = nil
+            contentSizeObservation?.invalidate()
+            contentSizeObservation = nil
+            didSignalReady = false
+        }
+
+        private func signalReadyOnce() {
+            guard !didSignalReady else { return }
+            didSignalReady = true
+            onContentReady?()
+        }
+
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            StallLogger.mark("EmailBodyWebView.didCommit")
+            signalReadyOnce()
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Get height via JavaScript
-            webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, _ in
-                guard let result = result else { return }
-                self?.handleHeightMessage(result)
-            }
+            StallLogger.mark("EmailBodyWebView.didFinish")
+            // Ensure we never leave the skeleton up if didCommit is delayed.
+            signalReadyOnce()
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            StallLogger.mark("EmailBodyWebView.didFail")
+            signalReadyOnce()
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            StallLogger.mark("EmailBodyWebView.didFailProvisional")
+            signalReadyOnce()
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -1583,8 +1647,9 @@ class EmailDetailViewModel: ObservableObject {
     }
 
     /// Get pre-rendered styled HTML ready for WebView (all processing done off-main)
-    func styledHTML(for message: EmailDetail) -> String {
-        renderedBodies[message.id]?.styledHTML ?? message.body
+    /// Returns nil if HTML is not ready yet - caller should show skeleton placeholder
+    func styledHTML(for message: EmailDetail) -> String? {
+        renderedBodies[message.id]?.styledHTML
     }
 
     func bodyHTML(for message: EmailDetail) -> String {
@@ -1688,44 +1753,53 @@ class EmailDetailViewModel: ObservableObject {
             let dtoSnapshots = messageDTOs.map { (id: $0.id, body: $0.body, snippet: $0.snippet) }
             let shouldDetectTrackers = trackingProtectionEnabled
 
+            // IMPORTANT: Render the SELECTED/LATEST message first for fast perceived load
+            let latestMessageId = messages.last?.id
+
             // BACKGROUND: Heavy work - tracker detection, HTML sanitization, plaintext extraction
             Task.detached(priority: .userInitiated) { [weak self, renderActor] in
                 guard let self else { return }
 
-                // Tracker detection (runs once per thread, not blocking UI)
-                var allTrackers = Set<String>()
-                if shouldDetectTrackers {
-                    for snapshot in dtoSnapshots {
-                        let found = Self.detectTrackers(in: snapshot.body)
-                        allTrackers.formUnion(found)
-                    }
-                }
-                let trackerNamesSorted = Array(allTrackers).sorted()
-
-                // Update tracker badge on main (non-blocking UI update)
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.trackerNames = trackerNamesSorted
-                    self.trackersBlocked = trackerNamesSorted.count
-                }
-
-                // Get render settings on main actor
+                // Get render settings on main actor (do this first, before any heavy work)
                 let settings = await MainActor.run { [weak self] in
                     self?.renderSettings ?? BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
                 }
 
-                // Render sanitized + styled HTML for each message (all heavy work off-main)
-                for snapshot in dtoSnapshots {
+                // PRIORITY: Render the latest/selected message FIRST
+                // This is the one the user sees immediately, others are collapsed
+                if let latestId = latestMessageId,
+                   let latestSnapshot = dtoSnapshots.first(where: { $0.id == latestId }) {
+                    let rendered = await renderActor.render(html: latestSnapshot.body, settings: settings)
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        self.renderedBodies[latestSnapshot.id] = rendered
+                        StallLogger.mark("EmailDetail.bodySwap")
+                        self.didLogBodySwap = true
+                    }
+                }
+
+                // Now render remaining messages (collapsed, not immediately visible)
+                for snapshot in dtoSnapshots where snapshot.id != latestMessageId {
                     let rendered = await renderActor.render(html: snapshot.body, settings: settings)
                     await MainActor.run { [weak self] in
                         guard let self else { return }
-                        // Only update renderedBodies - styledHTML(for:) reads from here
-                        // Don't mutate messages[].body to avoid triggering WebView reload flash
                         self.renderedBodies[snapshot.id] = rendered
-                        if !self.didLogBodySwap {
-                            StallLogger.mark("EmailDetail.bodySwap")
-                            self.didLogBodySwap = true
-                        }
+                    }
+                }
+
+                // Tracker detection (runs after visible content is ready)
+                if shouldDetectTrackers {
+                    var allTrackers = Set<String>()
+                    for snapshot in dtoSnapshots {
+                        let found = Self.detectTrackers(in: snapshot.body)
+                        allTrackers.formUnion(found)
+                    }
+                    let trackerNamesSorted = Array(allTrackers).sorted()
+
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        self.trackerNames = trackerNamesSorted
+                        self.trackersBlocked = trackerNamesSorted.count
                     }
                 }
             }

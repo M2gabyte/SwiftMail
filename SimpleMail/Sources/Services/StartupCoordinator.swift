@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import WebKit
 import OSLog
 
 private let startupLogger = Logger(subsystem: "com.simplemail.app", category: "StartupCoordinator")
@@ -9,85 +8,46 @@ private let startupLogger = Logger(subsystem: "com.simplemail.app", category: "S
 final class StartupCoordinator {
     static let shared = StartupCoordinator()
 
-    private var didStart = false
-    private var didPreloadContacts = false
-    private var didPrewarmWebKit = false
-    private var webKitWarmer: WKWebView?  // Keep alive briefly to complete warmup
+    private var didConfigureCaches = false
+    private var didScheduleDeferred = false
 
     private init() {}
 
-    func start(modelContext: ModelContext, container: ModelContainer, isAuthenticated: Bool) {
-        guard !didStart else { return }
-        didStart = true
+    /// Configure SwiftData-backed caches. Call this as early as possible (e.g., SimpleMailApp.init())
+    /// so that InboxViewModel can preload cached emails immediately.
+    func configureCachesIfNeeded(modelContext: ModelContext, container: ModelContainer) {
+        guard !didConfigureCaches else { return }
+        didConfigureCaches = true
 
-        // Stage 1: critical path (do synchronously so caches are ready before UI work)
+        startupLogger.info("StartupCoordinator.configureCachesIfNeeded start")
+
         EmailCacheManager.shared.configure(with: modelContext, container: container, deferIndexRebuild: true)
         SnoozeManager.shared.configure(with: modelContext)
         OutboxManager.shared.configure(with: modelContext)
         NetworkMonitor.shared.start()
 
-        // Stage 2: WebKit warmup DELAYED (after UI is stable) - just 1 view, not 4
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            WKWebViewPool.shared.warm(count: 1)
-        }
+        startupLogger.info("StartupCoordinator.configureCachesIfNeeded end")
+    }
 
-        // Stage 3: Deferred search index warmup (after UI is responsive)
-        // Use .utility priority and delay to avoid startup tax
-        if isAuthenticated {
-            Task.detached(priority: .utility) {
-                // Wait for UI to settle before warming search index
-                try? await Task.sleep(for: .seconds(2))
+    /// Schedule deferred work (search index prewarm) once auth state is known.
+    /// Safe to call multiple times - will only schedule once.
+    func scheduleDeferredWorkIfNeeded(isAuthenticated: Bool) {
+        guard isAuthenticated else { return }
+        guard !didScheduleDeferred else { return }
+        didScheduleDeferred = true
 
-                // Cancellation guard: get current account AFTER sleep
-                // (user may have logged out or switched accounts during delay)
-                guard let currentAccount = await MainActor.run(body: {
-                    AuthService.shared.currentAccount?.email
-                }) else {
-                    startupLogger.debug("Search prewarm skipped - no current account")
-                    return
-                }
+        Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .seconds(5))
 
-                await SearchIndexManager.shared.prewarmIfNeeded(accountEmail: currentAccount)
-                startupLogger.info("Search index prewarmed for current account")
+            guard let currentAccount = await MainActor.run(body: {
+                AuthService.shared.currentAccount?.email
+            }) else {
+                startupLogger.debug("Search prewarm skipped - no current account")
+                return
             }
-        }
-    }
 
-    func handleAuthChanged(isAuthenticated: Bool) {
-        if isAuthenticated { }
-    }
-
-    func prewarmWebKitIfNeeded() {
-        guard !didPrewarmWebKit else { return }
-        didPrewarmWebKit = true
-        prewarmWebKit()
-    }
-
-    private func scheduleContactsPreloadIfNeeded(delaySeconds: Double) {
-        guard !didPreloadContacts else { return }
-        didPreloadContacts = true
-        Task.detached(priority: .background) {
-            if delaySeconds > 0 {
-                try? await Task.sleep(for: .seconds(delaySeconds))
-            }
-            await PeopleService.shared.preloadContacts()
-        }
-    }
-
-    /// Pre-warm WebKit by creating a WKWebView and loading minimal content.
-    /// This triggers GPU, WebContent, and Networking process launches early,
-    /// so the first email opens instantly instead of waiting 2+ seconds.
-    private func prewarmWebKit() {
-        let config = WKWebViewConfiguration()
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: config)
-        webView.loadHTMLString("<html><body></body></html>", baseURL: nil)
-        webKitWarmer = webView
-
-        // Release after processes have launched (1 second should be enough)
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
-            self.webKitWarmer = nil
+            await SearchIndexManager.shared.prewarmIfNeeded(accountEmail: currentAccount)
+            startupLogger.info("Search index prewarmed for current account")
         }
     }
 }

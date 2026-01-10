@@ -733,6 +733,14 @@ final class InboxViewModel: ObservableObject {
             return false
         }
 
+        // Special-case: cached placeholder token is NOT a real Gmail pageToken.
+        // When we reach the end of cached preload, switch to a real network load.
+        if pageToken == "cached_placeholder" {
+            updatePagingDebug(path: "pageToken", action: "cached-placeholder->refresh")
+            await loadEmails(showLoading: false, deferHeavyWork: true, force: true)
+            return true
+        }
+
         if currentMailbox == .allInboxes {
             return await loadMoreUnifiedByDate()
         }
