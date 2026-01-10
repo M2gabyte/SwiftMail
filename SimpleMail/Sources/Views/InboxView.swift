@@ -224,9 +224,7 @@ struct InboxView: View {
             }
             .onChange(of: debouncedSearchText) { _, newValue in
                 guard isSearchMode else { return }
-                Task {
-                    await viewModel.performLocalSearch(query: newValue)
-                }
+                viewModel.performLocalSearch(query: newValue)
             }
             .onChange(of: viewModel.currentMailbox) { _, _ in
                 exitSelectionMode()

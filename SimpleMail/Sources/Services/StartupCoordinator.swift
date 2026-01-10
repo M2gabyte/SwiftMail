@@ -16,19 +16,21 @@ final class StartupCoordinator {
 
     private init() {}
 
-    func start(modelContext: ModelContext, isAuthenticated: Bool) {
+    func start(modelContext: ModelContext, container: ModelContainer, isAuthenticated: Bool) {
         guard !didStart else { return }
         didStart = true
 
         // Stage 1: critical path (do synchronously so caches are ready before UI work)
-        EmailCacheManager.shared.configure(with: modelContext, deferIndexRebuild: true)
+        EmailCacheManager.shared.configure(with: modelContext, container: container, deferIndexRebuild: true)
         SnoozeManager.shared.configure(with: modelContext)
         OutboxManager.shared.configure(with: modelContext)
         NetworkMonitor.shared.start()
 
-        // Stage 2: warmups happen on-demand (first email open)
-        prewarmWebKitIfNeeded()
-        WKWebViewPool.shared.warm(count: 4)
+        // Stage 2: WebKit warmup DELAYED (after UI is stable) - just 1 view, not 4
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            WKWebViewPool.shared.warm(count: 1)
+        }
 
         // Stage 3: Deferred search index warmup (after UI is responsive)
         // Use .utility priority and delay to avoid startup tax

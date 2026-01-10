@@ -72,6 +72,11 @@ final class InboxViewModel: ObservableObject {
         nextPageToken = nil
         prefetchTask?.cancel()
         prefetchTask = nil
+        preloadTask?.cancel()
+        preloadTask = nil
+        localSearchTask?.cancel()
+        localSearchTask = nil
+        didPreloadCache = false
         isLoadInProgress = false
         hasCompletedInitialLoad = false
         currentAccountEmail = nil
@@ -214,6 +219,9 @@ final class InboxViewModel: ObservableObject {
     @ObservationIgnored private var preferredPageSizeCache: Int?
     @ObservationIgnored private var currentAccountEmail: String?
     @ObservationIgnored private var cachePagingState = CachePagingState()
+    @ObservationIgnored private var didPreloadCache = false
+    @ObservationIgnored private var preloadTask: Task<Void, Never>?
+    @ObservationIgnored private var localSearchTask: Task<Void, Never>?
 
     private struct CachePagingState {
         var oldestLoadedDate: Date?
@@ -803,32 +811,49 @@ final class InboxViewModel: ObservableObject {
     }
 
     func preloadCachedEmails(mailbox: Mailbox, accountEmail: String?) {
-        // Never block or redo work if we already have any rows.
-        guard emails.isEmpty else { return }
+        // Gate: only run once per session
+        guard !didPreloadCache else { return }
+        guard emails.isEmpty else {
+            didPreloadCache = true  // Mark as done if we already have data
+            return
+        }
 
-        StallLogger.mark("InboxViewModel.preloadCachedEmails.start")
+        // Cancel any existing preload
+        preloadTask?.cancel()
+        preloadTask = Task { @MainActor in
+            // Yield to let UI settle first
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
 
-        let cached = EmailCacheManager.shared.loadCachedEmails(
-            mailbox: mailbox,
-            limit: 60,
-            accountEmail: accountEmail
-        )
+            StallLogger.mark("InboxViewModel.preloadCachedEmails.start")
 
-        guard !cached.isEmpty else { return }
+            let cached = EmailCacheManager.shared.loadCachedEmails(
+                mailbox: mailbox,
+                limit: 60,
+                accountEmail: accountEmail
+            )
 
-        // Keep list small: dedupe early to avoid expensive downstream recompute work.
-        let deduped = dedupeByThread(cached)
+            guard !Task.isCancelled else { return }
 
-        StallLogger.mark("InboxViewModel.preloadCachedEmails.cacheReady")
+            // Mark as done AFTER we've decided what to do
+            didPreloadCache = true
 
-        emails = deduped
+            guard !cached.isEmpty else { return }
 
-        // Enable pagination until first real fetch
-        nextPageToken = "cached_placeholder"
+            // Keep list small: dedupe early to avoid expensive downstream recompute work.
+            let deduped = dedupeByThread(cached)
 
-        // Derived state updates (keep as-is but ensure they only run once on preload)
-        updateCachePagingAnchor()
-        updateFilterCounts()
+            StallLogger.mark("InboxViewModel.preloadCachedEmails.cacheReady")
+
+            emails = deduped
+
+            // Enable pagination until first real fetch
+            nextPageToken = "cached_placeholder"
+
+            // Derived state updates (keep as-is but ensure they only run once on preload)
+            updateCachePagingAnchor()
+            updateFilterCounts()
+        }
     }
 
     private func updateCachePagingAnchor() {
@@ -1386,32 +1411,50 @@ final class InboxViewModel: ObservableObject {
         currentSearchQuery = ""
         isSearching = false
         localSearchResults = []
+        // Cancel any in-flight search to prevent "ghost work" during transitions
+        localSearchTask?.cancel()
+        localSearchTask = nil
     }
 
-    func performLocalSearch(query: String) async {
+    /// Debounced local search with cancellation.
+    /// NOTE: Non-async since body just spawns a task.
+    func performLocalSearch(query: String) {
+        // Cancel previous search first (important: do this BEFORE checking empty)
+        localSearchTask?.cancel()
+
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
+            localSearchTask = nil
             localSearchResults = []
             return
         }
 
-        let accountEmail = currentMailbox == .allInboxes
-            ? nil
-            : AuthService.shared.currentAccount?.email.lowercased()
-        do {
-            let ids = try await SearchIndexManager.shared.search(
-                query: trimmed,
-                accountEmail: accountEmail
-            )
-            // Cap IDs to prevent unbounded hydration if search behavior changes
-            let limitedIds = Array(ids.prefix(100))
-            localSearchResults = EmailCacheManager.shared.loadCachedEmails(
-                by: limitedIds,
-                accountEmail: accountEmail
-            )
-        } catch {
-            logger.error("Local search failed: \(error.localizedDescription)")
-            localSearchResults = []
+        // Debounce: wait for user to stop typing + let UI animate
+        localSearchTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+
+            let accountEmail = currentMailbox == .allInboxes
+                ? nil
+                : AuthService.shared.currentAccount?.email.lowercased()
+            do {
+                let ids = try await SearchIndexManager.shared.search(
+                    query: trimmed,
+                    accountEmail: accountEmail
+                )
+                guard !Task.isCancelled else { return }  // Check again after async work
+
+                // Cap IDs to prevent unbounded hydration if search behavior changes
+                let limitedIds = Array(ids.prefix(100))
+                localSearchResults = EmailCacheManager.shared.loadCachedEmails(
+                    by: limitedIds,
+                    accountEmail: accountEmail
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                logger.error("Local search failed: \(error.localizedDescription)")
+                localSearchResults = []
+            }
         }
     }
 

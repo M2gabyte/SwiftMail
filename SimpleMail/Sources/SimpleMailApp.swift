@@ -147,6 +147,7 @@ struct ContentView: View {
             .onAppear {
                 StartupCoordinator.shared.start(
                     modelContext: modelContext,
+                    container: modelContext.container,
                     isAuthenticated: authService.isAuthenticated
                 )
             }

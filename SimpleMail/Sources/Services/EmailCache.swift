@@ -12,8 +12,10 @@ final class EmailCacheManager: ObservableObject {
 
     @Published var lastSyncDate: Date?
     @Published var cachedEmailCount: Int = 0
+    @Published var isReady = false
 
     private var modelContext: ModelContext?
+    private var modelContainer: ModelContainer?
 
     private init() {
         NotificationCenter.default.addObserver(
@@ -29,25 +31,38 @@ final class EmailCacheManager: ObservableObject {
 
     // MARK: - Configuration
 
-    func configure(with context: ModelContext, deferIndexRebuild: Bool = true) {
+    func configure(with context: ModelContext, container: ModelContainer, deferIndexRebuild: Bool = true) {
         self.modelContext = context
+        self.modelContainer = container
+        self.isReady = true
         updateCacheStats()
+
         guard deferIndexRebuild else {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let cached = self.loadAllCachedEmails()
-                // Convert to DTOs on main actor before crossing thread boundary
-                let dtos = cached.map { $0.toDTO() }
-                await SearchIndexManager.shared.rebuildIndex(with: dtos)
-            }
+            scheduleIndexRebuild()
             return
         }
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
+        Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
-            let cached = self.loadAllCachedEmails()
-            // Convert to DTOs on main actor before crossing thread boundary
+            scheduleIndexRebuild()
+        }
+    }
+
+    /// Schedule search index rebuild on a background context to avoid main thread stalls.
+    /// Critical: captures container locally before detaching to avoid cross-actor property access.
+    private func scheduleIndexRebuild() {
+        // Capture container on MainActor before detaching
+        guard let container = self.modelContainer else { return }
+
+        Task.detached(priority: .utility) {
+            // Create background context - NOT on main actor
+            let bgContext = ModelContext(container)
+            var descriptor = FetchDescriptor<Email>(
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+            descriptor.fetchLimit = 5000  // Limit to reduce IO contention
+
+            let cached = (try? bgContext.fetch(descriptor)) ?? []
             let dtos = cached.map { $0.toDTO() }
             await SearchIndexManager.shared.rebuildIndex(with: dtos)
         }
