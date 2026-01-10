@@ -78,8 +78,7 @@ actor SearchIndexManager {
         }
     }
 
-    func rebuildIndex(with emails: [Email]) async {
-        let dtos = emails.map { EmailDTO(email: $0) }
+    func rebuildIndex(with dtos: [EmailDTO]) async {
         let grouped = Dictionary(grouping: dtos) { accountKey(for: $0.accountEmail) }
         for (accountKey, accountEmails) in grouped {
             guard let db = openDatabase(for: accountKey) else { continue }

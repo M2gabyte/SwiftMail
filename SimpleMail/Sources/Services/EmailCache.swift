@@ -36,7 +36,9 @@ final class EmailCacheManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let cached = self.loadAllCachedEmails()
-                await SearchIndexManager.shared.rebuildIndex(with: cached)
+                // Convert to DTOs on main actor before crossing thread boundary
+                let dtos = cached.map { $0.toDTO() }
+                await SearchIndexManager.shared.rebuildIndex(with: dtos)
             }
             return
         }
@@ -45,7 +47,9 @@ final class EmailCacheManager: ObservableObject {
             guard let self else { return }
             try? await Task.sleep(for: .milliseconds(300))
             let cached = self.loadAllCachedEmails()
-            await SearchIndexManager.shared.rebuildIndex(with: cached)
+            // Convert to DTOs on main actor before crossing thread boundary
+            let dtos = cached.map { $0.toDTO() }
+            await SearchIndexManager.shared.rebuildIndex(with: dtos)
         }
     }
 
