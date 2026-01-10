@@ -1543,8 +1543,7 @@ struct EmailRow: View {
                 // Top row: sender + metadata cluster
                 HStack(alignment: .center, spacing: 6) {
                     // Sender name: reduced emphasis for sender-run continuation
-                    highlightedText(email.senderName, font: senderFont)
-                        .foregroundStyle(senderColor)
+                    highlightedText(email.senderName, font: senderFont, baseColor: senderColor)
                         .lineLimit(1)
 
                     if isVIPSender && !isContinuationInSenderRun {
@@ -1583,21 +1582,14 @@ struct EmailRow: View {
                     .frame(minWidth: 78, alignment: .trailing)
                 }
 
-                // Subject line (normalized to remove Fwd:/Re: prefixes)
-                highlightedText(EmailPreviewNormalizer.normalizeSubjectForDisplay(email.subject), font: subjectFont)
-                    .foregroundStyle(subjectColor)
+                // Subject line (pre-normalized in EmailDTO to avoid per-row regex)
+                highlightedText(email.displaySubject, font: subjectFont, baseColor: subjectColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                // Snippet (not in compact mode, normalized to remove forwarded boilerplate)
+                // Snippet (not in compact mode, pre-normalized in EmailDTO)
                 if !isCompact {
-                    highlightedText(
-                        EmailPreviewNormalizer.normalizeSnippetForDisplay(email.snippet),
-                        font: MailTypography.snippet,
-                        baseColor: snippetColor
-                    )
-                        .font(MailTypography.snippet)
-                        .foregroundStyle(snippetColor)
+                    highlightedText(email.displaySnippet, font: MailTypography.snippet, baseColor: snippetColor)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)

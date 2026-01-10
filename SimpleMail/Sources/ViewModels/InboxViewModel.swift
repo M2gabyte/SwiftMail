@@ -114,6 +114,15 @@ final class InboxViewModel: ObservableObject {
         emails = newEmails
     }
 
+    /// Apply email update without animation (for staged batch updates)
+    private func applyEmailUpdateNoAnim(_ newEmails: [Email]) {
+        var txn = Transaction()
+        txn.disablesAnimations = true
+        withTransaction(txn) {
+            applyEmailUpdate(newEmails)
+        }
+    }
+
     // MARK: - State
 
     var emails: [Email] = [] {
@@ -605,7 +614,24 @@ final class InboxViewModel: ObservableObject {
                     labelIds: labelIds
                 )
                 let emailModels = fetchedEmails.map(Email.init(dto:))
-                applyEmailUpdate(dedupeByThread(emailModels))
+                let deduped = dedupeByThread(emailModels)
+
+                // STAGED RENDERING: 3 batches to spread List build work across frames
+                let batch1 = min(8, deduped.count)
+                let batch2 = min(20, deduped.count)
+
+                if batch1 > 0 {
+                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)))
+                }
+                await Task.yield()
+
+                if batch2 > batch1 {
+                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)))
+                }
+                await Task.yield()
+
+                applyEmailUpdateNoAnim(deduped)
+
                 // Unified inbox uses date-based pagination, use placeholder to enable it
                 let token: String? = fetchedEmails.count >= 50 ? "unified_date_cursor" : nil
                 self.nextPageToken = token
@@ -626,7 +652,24 @@ final class InboxViewModel: ObservableObject {
                 )
 
                 let emailModels = fetchedEmails.map(Email.init(dto:))
-                applyEmailUpdate(dedupeByThread(emailModels))
+                let deduped = dedupeByThread(emailModels)
+
+                // STAGED RENDERING: 3 batches to spread List build work across frames
+                let batch1 = min(8, deduped.count)
+                let batch2 = min(20, deduped.count)
+
+                if batch1 > 0 {
+                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)))
+                }
+                await Task.yield()
+
+                if batch2 > batch1 {
+                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)))
+                }
+                await Task.yield()
+
+                applyEmailUpdateNoAnim(deduped)
+
                 self.nextPageToken = pageToken
                 updateCachePagingAnchor()
                 EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: currentMailbox == .inbox && pageToken == nil)
@@ -774,7 +817,13 @@ final class InboxViewModel: ObservableObject {
             let fetchedModels = fetchedEmails.map(Email.init(dto:))
             var allEmails = emails
             allEmails.append(contentsOf: fetchedModels)
-            applyEmailUpdate(dedupeByThread(allEmails))
+
+            // Sort/dedupe is still needed, but avoid a single giant List rebuild
+            let merged = dedupeByThread(allEmails)
+
+            // Only apply visible window to avoid rebuilding a much larger List
+            let batch1 = min(visibleWindowSize, merged.count)
+            applyEmailUpdateNoAnim(Array(merged.prefix(batch1)))
             trimVisibleWindow()
 
             cachePagingState.oldestLoadedDate = emails.map(\.date).min()
@@ -901,8 +950,8 @@ final class InboxViewModel: ObservableObject {
         // Cancel any existing preload
         preloadTask?.cancel()
         preloadTask = Task { @MainActor in
-            // Yield to let UI settle first
-            try? await Task.sleep(for: .milliseconds(150))
+            // Yield to let UI settle first (replaces 150ms sleep for faster startup)
+            await Task.yield()
             guard !Task.isCancelled else { return }
 
             StallLogger.mark("InboxViewModel.preloadCachedEmails.start")
@@ -925,20 +974,23 @@ final class InboxViewModel: ObservableObject {
 
             StallLogger.mark("InboxViewModel.preloadCachedEmails.cacheReady")
 
-            // STAGED RENDERING: Show first batch immediately, append rest after delay
-            // This reduces "single frame" work from 50+ rows to ~20 rows
-            let initialBatchSize = 20
-            if deduped.count > initialBatchSize {
-                // Render first batch immediately
-                applyEmailUpdate(Array(deduped.prefix(initialBatchSize)))
+            // STAGED RENDERING: 3 batches (8 → 20 → full) to spread List build work across frames
+            let batch1 = min(8, deduped.count)
+            let batch2 = min(20, deduped.count)
 
-                // Append remaining after animation settles
-                try? await Task.sleep(for: .milliseconds(200))
-                guard !Task.isCancelled else { return }
-                applyEmailUpdate(deduped) // Full list replaces partial
-            } else {
-                applyEmailUpdate(deduped)
+            if batch1 > 0 {
+                applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)))
             }
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+
+            if batch2 > batch1 {
+                applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)))
+            }
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+
+            applyEmailUpdateNoAnim(deduped)
 
             // Enable pagination until first real fetch
             nextPageToken = "cached_placeholder"
