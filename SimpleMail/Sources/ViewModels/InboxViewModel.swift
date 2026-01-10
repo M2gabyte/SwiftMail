@@ -803,16 +803,30 @@ final class InboxViewModel: ObservableObject {
     }
 
     func preloadCachedEmails(mailbox: Mailbox, accountEmail: String?) {
+        // Never block or redo work if we already have any rows.
         guard emails.isEmpty else { return }
+
+        StallLogger.mark("InboxViewModel.preloadCachedEmails.start")
+
         let cached = EmailCacheManager.shared.loadCachedEmails(
             mailbox: mailbox,
             limit: 60,
             accountEmail: accountEmail
         )
+
         guard !cached.isEmpty else { return }
-        emails = dedupeByThread(cached)
-        // Set a placeholder pageToken to enable pagination until first real fetch
+
+        // Keep list small: dedupe early to avoid expensive downstream recompute work.
+        let deduped = dedupeByThread(cached)
+
+        StallLogger.mark("InboxViewModel.preloadCachedEmails.cacheReady")
+
+        emails = deduped
+
+        // Enable pagination until first real fetch
         nextPageToken = "cached_placeholder"
+
+        // Derived state updates (keep as-is but ensure they only run once on preload)
         updateCachePagingAnchor()
         updateFilterCounts()
     }
@@ -1389,8 +1403,10 @@ final class InboxViewModel: ObservableObject {
                 query: trimmed,
                 accountEmail: accountEmail
             )
+            // Cap IDs to prevent unbounded hydration if search behavior changes
+            let limitedIds = Array(ids.prefix(100))
             localSearchResults = EmailCacheManager.shared.loadCachedEmails(
-                by: ids,
+                by: limitedIds,
                 accountEmail: accountEmail
             )
         } catch {

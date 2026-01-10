@@ -234,39 +234,78 @@ final class EmailCacheManager: ObservableObject {
         }
 
         let labelIds = labelIdsForMailbox(mailbox)
+        let normalizedAccount = accountEmail?.lowercased()
 
-        let descriptor = FetchDescriptor<Email>(
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
-        )
+        // Bounded paging: prevents unbounded fetch+filter on main.
+        // We intentionally overfetch per page because archive filtering can exclude many rows.
+        let batchSize = max(200, min(800, limit * 10))
+        let maxPages = 6  // hard cap to guarantee bounded work
 
-        do {
-            var results = try context.fetch(descriptor)
+        var collected: [Email] = []
+        collected.reserveCapacity(limit)
+
+        StallLogger.mark("EmailCache.loadCachedEmails.start")
+
+        var offset = 0
+        for _ in 0..<maxPages {
+            var descriptor = FetchDescriptor<Email>(
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+            descriptor.fetchLimit = batchSize
+            descriptor.fetchOffset = offset
+
+            let page: [Email]
+            do {
+                page = try context.fetch(descriptor)
+            } catch {
+                logger.error("Failed to load cached emails page: \(error.localizedDescription), mailbox: \(mailbox.rawValue)")
+                return []
+            }
+
+            if page.isEmpty {
+                break
+            }
+
+            var filtered = page
 
             // Filter by mailbox in Swift to avoid predicate crashes
             switch mailbox {
             case .archive:
-                results = results.filter { email in
+                filtered = filtered.filter { email in
                     !email.labelIds.contains("INBOX") &&
                     !email.labelIds.contains("TRASH") &&
                     !email.labelIds.contains("SPAM")
                 }
             default:
                 if let labelId = labelIds.first {
-                    results = results.filter { $0.labelIds.contains(labelId) }
+                    filtered = filtered.filter { $0.labelIds.contains(labelId) }
                 }
             }
 
             // Filter by account
-            if let accountEmail = accountEmail?.lowercased() {
-                results = results.filter { $0.accountEmail?.lowercased() == accountEmail }
+            if let normalizedAccount {
+                filtered = filtered.filter { $0.accountEmail?.lowercased() == normalizedAccount }
             }
 
-            // Apply limit
-            return Array(results.prefix(limit))
-        } catch {
-            logger.error("Failed to load cached emails: \(error.localizedDescription), mailbox: \(mailbox.rawValue)")
-            return []
+            if !filtered.isEmpty {
+                collected.append(contentsOf: filtered)
+                if collected.count >= limit {
+                    collected = Array(collected.prefix(limit))
+                    break
+                }
+            }
+
+            offset += page.count
+
+            // If this page was smaller than the requested batch size, we've exhausted results.
+            if page.count < batchSize {
+                break
+            }
         }
+
+        StallLogger.mark("EmailCache.loadCachedEmails.end")
+
+        return collected
     }
 
     func loadCachedEmailsPage(
@@ -453,11 +492,12 @@ final class EmailCacheManager: ObservableObject {
         guard !ids.isEmpty else { return [] }
 
         let idSet = Set(ids)
-        let descriptor = FetchDescriptor<Email>(
+        var descriptor = FetchDescriptor<Email>(
             predicate: #Predicate { email in
                 idSet.contains(email.id)
             }
         )
+        descriptor.fetchLimit = min(ids.count, 250)
 
         do {
             let results = try context.fetch(descriptor)
