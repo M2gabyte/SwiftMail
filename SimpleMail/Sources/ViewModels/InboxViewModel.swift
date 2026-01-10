@@ -111,7 +111,9 @@ final class InboxViewModel: ObservableObject {
             deferredEmails = newEmails
             return
         }
+        StallLogger.mark("applyEmailUpdate.start count=\(newEmails.count)")
         emails = newEmails
+        StallLogger.mark("applyEmailUpdate.end")
     }
 
     /// Flag to suppress scheduleRecompute during batched updates
@@ -220,11 +222,13 @@ final class InboxViewModel: ObservableObject {
     /// End bootstrap phase and publish any buffered state.
     func finishBootstrapIfNeeded() {
         guard isBootstrapping else { return }
+        StallLogger.mark("finishBootstrap.start hasPending=\(pendingState != nil)")
         isBootstrapping = false
         if let pending = pendingState {
             viewState = pending
             pendingState = nil
         }
+        StallLogger.mark("finishBootstrap.end")
     }
 
     // MARK: - Filter Counts
@@ -369,12 +373,14 @@ final class InboxViewModel: ObservableObject {
         // Skip during batched updates - only final batch triggers recompute
         guard !isBatchingUpdates else { return }
 
+        StallLogger.mark("scheduleRecompute.start emailCount=\(emails.count)")
         recomputeGeneration += 1
         let generation = recomputeGeneration
 
         // Capture ONLY raw SwiftData fields on main thread (no regex computation)
         let models = emails
 
+        let mapStart = CFAbsoluteTimeGetCurrent()
         let rawData: [RawEmailData] = models.map { email in
             let labelKey = email.labelIds.sorted().joined(separator: "|")
             return RawEmailData(
@@ -396,6 +402,8 @@ final class InboxViewModel: ObservableObject {
                 messagesCount: email.messagesCount
             )
         }
+        let mapDuration = (CFAbsoluteTimeGetCurrent() - mapStart) * 1000
+        StallLogger.mark("scheduleRecompute.mapped \(rawData.count) emails in \(String(format: "%.1f", mapDuration))ms")
 
         let currentTabSnapshot = currentTab
         let pinnedSnapshot = pinnedTabOption
@@ -431,7 +439,10 @@ final class InboxViewModel: ObservableObject {
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                StallLogger.mark("scheduleRecompute.applyState.start sections=\(state.sections.count)")
                 self.applyState(state)
+                StallLogger.mark("scheduleRecompute.applyState.end")
+                StallLogger.mark("scheduleRecompute.saveSnapshot.start")
                 self.saveSnapshotIfNeeded(
                     emails: models,
                     viewState: state,
@@ -441,6 +452,7 @@ final class InboxViewModel: ObservableObject {
                     mailbox: mailboxSnapshot,
                     nextPageToken: pageTokenSnapshot
                 )
+                StallLogger.mark("scheduleRecompute.saveSnapshot.end")
             }
         }
     }
@@ -629,21 +641,7 @@ final class InboxViewModel: ObservableObject {
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 let deduped = dedupeByThread(emailModels)
 
-                // STAGED RENDERING: 3 batches to spread List build work across frames
-                // Only the final batch triggers scheduleRecompute (isFinal: true)
-                let batch1 = min(8, deduped.count)
-                let batch2 = min(20, deduped.count)
-
-                if batch1 > 0 {
-                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)), isFinal: false)
-                }
-                await Task.yield()
-
-                if batch2 > batch1 {
-                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)), isFinal: false)
-                }
-                await Task.yield()
-
+                // Single update - batching causes multiple SwiftUI re-renders which is slower
                 applyEmailUpdateNoAnim(deduped, isFinal: true)
 
                 // Unified inbox uses date-based pagination, use placeholder to enable it
@@ -668,21 +666,7 @@ final class InboxViewModel: ObservableObject {
                 let emailModels = fetchedEmails.map(Email.init(dto:))
                 let deduped = dedupeByThread(emailModels)
 
-                // STAGED RENDERING: 3 batches to spread List build work across frames
-                // Only the final batch triggers scheduleRecompute (isFinal: true)
-                let batch1 = min(8, deduped.count)
-                let batch2 = min(20, deduped.count)
-
-                if batch1 > 0 {
-                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)), isFinal: false)
-                }
-                await Task.yield()
-
-                if batch2 > batch1 {
-                    applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)), isFinal: false)
-                }
-                await Task.yield()
-
+                // Single update - batching causes multiple SwiftUI re-renders which is slower
                 applyEmailUpdateNoAnim(deduped, isFinal: true)
 
                 self.nextPageToken = pageToken
@@ -989,24 +973,11 @@ final class InboxViewModel: ObservableObject {
 
             StallLogger.mark("InboxViewModel.preloadCachedEmails.cacheReady")
 
-            // STAGED RENDERING: 3 batches (8 → 20 → full) to spread List build work across frames
-            // Only the final batch triggers scheduleRecompute (isFinal: true)
-            let batch1 = min(8, deduped.count)
-            let batch2 = min(20, deduped.count)
-
-            if batch1 > 0 {
-                applyEmailUpdateNoAnim(Array(deduped.prefix(batch1)), isFinal: false)
-            }
-            try? await Task.sleep(for: .milliseconds(80))
-            guard !Task.isCancelled else { return }
-
-            if batch2 > batch1 {
-                applyEmailUpdateNoAnim(Array(deduped.prefix(batch2)), isFinal: false)
-            }
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
-
+            // Single update - batching causes more SwiftUI re-renders (each batch triggers @Observable)
+            // which actually makes startup slower than a single update
+            StallLogger.mark("preload.applyAll.start count=\(deduped.count)")
             applyEmailUpdateNoAnim(deduped, isFinal: true)
+            StallLogger.mark("preload.applyAll.end")
 
             // Enable pagination until first real fetch
             nextPageToken = "cached_placeholder"

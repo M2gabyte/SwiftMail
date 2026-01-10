@@ -119,7 +119,6 @@ struct InboxView: View {
                     isFirstInSenderRun: isFirst
                 )
                 .tag(email.threadId)
-                .padding(.top, emailIndex == 0 ? 0 : 0)
             }
         } header: {
             SectionHeaderRow(title: section.title, isFirst: sectionIndex == 0)
