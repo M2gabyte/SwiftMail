@@ -592,4 +592,51 @@ struct InboxFilterEngine {
             isNeedsReply: isNeedsReply
         )
     }
+
+    // MARK: - Category Bundles
+
+    /// Compute category bundles for non-Primary emails (Promotions, Social, Updates, Forums)
+    /// Only computed when viewing Primary tab to show collapsed bundles
+    static func computeCategoryBundles(from emails: [EmailSnapshot]) -> [CategoryBundle] {
+        var bundleData: [GmailCategory: (unread: Int, total: Int, latest: EmailSnapshot?)] = [:]
+
+        // Initialize all categories
+        for category in GmailCategory.allCases {
+            bundleData[category] = (unread: 0, total: 0, latest: nil)
+        }
+
+        // Sort emails by date descending to get latest first
+        let sortedEmails = emails.sorted { $0.date > $1.date }
+
+        for email in sortedEmails {
+            let labelIds = Set(email.labelIdsKey.split(separator: "|").map(String.init))
+
+            for category in GmailCategory.allCases {
+                if labelIds.contains(category.rawValue) {
+                    var data = bundleData[category]!
+                    data.total += 1
+                    if email.isUnread {
+                        data.unread += 1
+                    }
+                    // First match is the latest (already sorted by date)
+                    if data.latest == nil {
+                        data.latest = email
+                    }
+                    bundleData[category] = data
+                    break  // Email belongs to one category
+                }
+            }
+        }
+
+        // Convert to CategoryBundle array, only include non-empty bundles
+        return GmailCategory.allCases.compactMap { category in
+            guard let data = bundleData[category], data.total > 0 else { return nil }
+            return CategoryBundle(
+                category: category,
+                unreadCount: data.unread,
+                totalCount: data.total,
+                latestEmail: data.latest?.toDTO()
+            )
+        }
+    }
 }

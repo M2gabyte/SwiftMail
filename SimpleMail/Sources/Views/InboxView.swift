@@ -472,6 +472,27 @@ struct InboxView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
+
+                // Category viewing header (when drilled into a category from bundle tap)
+                if let category = viewModel.viewingCategory {
+                    CategoryViewingHeader(category: category) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.viewingCategory = nil
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+                // Category bundles (shown in Primary tab when not viewing a specific category)
+                else if viewModel.currentTab == .primary && !viewModel.categoryBundles.isEmpty {
+                    CategoryBundlesSection(bundles: viewModel.categoryBundles) { category in
+                        handleBundleTap(category)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
             }
 
             ForEach(Array(displaySections.enumerated()), id: \.element.id) { sectionIndex, section in
@@ -1117,6 +1138,14 @@ struct InboxView: View {
             }
         } catch {
             logger.warning("Failed to decode app settings: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleBundleTap(_ category: GmailCategory) {
+        HapticFeedback.light()
+        // Instantly filter to show this category's emails (no network call)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            viewModel.viewingCategory = category
         }
     }
 

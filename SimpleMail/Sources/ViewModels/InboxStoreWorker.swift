@@ -31,7 +31,8 @@ actor InboxStoreWorker {
         pinnedTabOption: PinnedTabOption,
         activeFilter: InboxFilter?,
         currentAccountEmail: String?,
-        searchFilter: SearchFilter?
+        searchFilter: SearchFilter?,
+        viewingCategory: GmailCategory?
     ) -> InboxViewState {
         // Convert raw data to snapshots here (regex parsing off main thread)
         let emails = rawEmails.map { raw in
@@ -61,7 +62,8 @@ actor InboxStoreWorker {
             pinnedTabOption: pinnedTabOption,
             activeFilter: activeFilter,
             currentAccountEmail: currentAccountEmail,
-            searchFilter: searchFilter
+            searchFilter: searchFilter,
+            viewingCategory: viewingCategory
         )
     }
 
@@ -74,7 +76,8 @@ actor InboxStoreWorker {
         pinnedTabOption: PinnedTabOption,
         activeFilter: InboxFilter?,
         currentAccountEmail: String?,
-        searchFilter: SearchFilter?
+        searchFilter: SearchFilter?,
+        viewingCategory: GmailCategory?
     ) -> InboxViewState {
         let cacheResult = InboxFilterEngine.buildClassificationCache(
             emails: emails,
@@ -83,14 +86,23 @@ actor InboxStoreWorker {
         )
         classificationCache = cacheResult.cache
 
-        let filtered = InboxFilterEngine.applyFilters(
-            emails,
-            currentTab: currentTab,
-            pinnedTabOption: pinnedTabOption,
-            activeFilter: activeFilter,
-            currentAccountEmail: currentAccountEmail,
-            classifications: cacheResult.classifications
-        )
+        // When viewing a specific category, filter to just that category's emails
+        let filtered: [EmailSnapshot]
+        if let category = viewingCategory {
+            filtered = emails.filter { email in
+                let labelIds = Set(email.labelIdsKey.split(separator: "|").map(String.init))
+                return labelIds.contains(category.rawValue)
+            }
+        } else {
+            filtered = InboxFilterEngine.applyFilters(
+                emails,
+                currentTab: currentTab,
+                pinnedTabOption: pinnedTabOption,
+                activeFilter: activeFilter,
+                currentAccountEmail: currentAccountEmail,
+                classifications: cacheResult.classifications
+            )
+        }
 
         // Apply search filter (local search) if present
         let searchFiltered = searchFilter.map { filter in
@@ -107,6 +119,15 @@ actor InboxStoreWorker {
             currentAccountEmail: currentAccountEmail,
             classifications: cacheResult.classifications
         )
-        return InboxViewState(sections: sections, filterCounts: counts)
+
+        // Compute category bundles when in Primary tab (not when viewing a specific category)
+        let bundles: [CategoryBundle]
+        if currentTab == .primary && viewingCategory == nil {
+            bundles = InboxFilterEngine.computeCategoryBundles(from: emails)
+        } else {
+            bundles = []
+        }
+
+        return InboxViewState(sections: sections, filterCounts: counts, categoryBundles: bundles)
     }
 }

@@ -376,6 +376,12 @@ struct EmailDetailView: View {
                 viewModel.printEmail()
             }
 
+            if viewModel.isInNonPrimaryCategory {
+                Button("Move to Primary") {
+                    Task { await viewModel.moveToPrimary() }
+                }
+            }
+
             Button("Move to Trash", role: .destructive) {
                 Task {
                     await viewModel.trash()
@@ -1610,6 +1616,24 @@ class EmailDetailViewModel: ObservableObject {
         return vipSenders.contains(email.lowercased())
     }
 
+    /// Check if the email is in a non-Primary Gmail category (Promotions, Social, Updates, Forums)
+    var isInNonPrimaryCategory: Bool {
+        let nonPrimaryCategories = ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]
+        guard let labelIds = messages.first?.labelIds else { return false }
+        return !nonPrimaryCategories.filter { labelIds.contains($0) }.isEmpty
+    }
+
+    /// The category this email is in, if any
+    var currentCategory: GmailCategory? {
+        guard let labelIds = messages.first?.labelIds else { return nil }
+        for category in GmailCategory.allCases {
+            if labelIds.contains(category.rawValue) {
+                return category
+            }
+        }
+        return nil
+    }
+
     var autoSummarizeEnabled: Bool {
         let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
         guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
@@ -1926,6 +1950,27 @@ class EmailDetailViewModel: ObservableObject {
                 }
             }
             await loadThread()
+        } catch {
+            self.error = error
+        }
+    }
+
+    func moveToPrimary() async {
+        guard let lastMessage = messages.last else { return }
+        do {
+            if let account = accountForThread() {
+                try await GmailService.shared.moveToPrimary(messageId: lastMessage.id, account: account)
+            } else {
+                try await GmailService.shared.moveToPrimary(messageId: lastMessage.id)
+            }
+            // Notify inbox to update local email labels
+            NotificationCenter.default.post(
+                name: .movedToPrimaryRequested,
+                object: nil,
+                userInfo: ["messageId": lastMessage.id]
+            )
+            await loadThread()
+            HapticFeedback.success()
         } catch {
             self.error = error
         }

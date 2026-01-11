@@ -32,6 +32,7 @@ extension Notification.Name {
     static let cachesDidClear = Notification.Name("cachesDidClear")
     static let archiveThreadRequested = Notification.Name("archiveThreadRequested")
     static let trashThreadRequested = Notification.Name("trashThreadRequested")
+    static let movedToPrimaryRequested = Notification.Name("movedToPrimaryRequested")
 }
 
 @MainActor
@@ -60,6 +61,7 @@ final class InboxViewModel: ObservableObject {
         isBootstrapping = true  // Re-enable bootstrap batching for next sign-in
         currentTab = .all
         activeFilter = nil
+        viewingCategory = nil
         currentMailbox = .inbox
         isLoading = false
         isLoadingMore = false
@@ -144,6 +146,10 @@ final class InboxViewModel: ObservableObject {
     }
     var currentTab: InboxTab = .all {
         didSet {
+            // Clear category drill-down when switching tabs
+            if viewingCategory != nil {
+                viewingCategory = nil
+            }
             scheduleRecompute()
         }
     }
@@ -153,6 +159,12 @@ final class InboxViewModel: ObservableObject {
         }
     }
     var activeFilter: InboxFilter? = nil {
+        didSet {
+            scheduleRecompute()
+        }
+    }
+    /// When set, shows only emails from this Gmail category (drill-down from bundle tap)
+    var viewingCategory: GmailCategory? = nil {
         didSet {
             scheduleRecompute()
         }
@@ -299,6 +311,7 @@ final class InboxViewModel: ObservableObject {
     @ObservationIgnored private var accountChangeObserver: NSObjectProtocol?
     @ObservationIgnored private var archiveThreadObserver: NSObjectProtocol?
     @ObservationIgnored private var trashThreadObserver: NSObjectProtocol?
+    @ObservationIgnored private var movedToPrimaryObserver: NSObjectProtocol?
     @ObservationIgnored private var inboxPreferencesObserver: NSObjectProtocol?
     @ObservationIgnored private let inboxWorker = InboxStoreWorker()
     @ObservationIgnored private var recomputeTask: Task<Void, Never>?
@@ -351,6 +364,10 @@ final class InboxViewModel: ObservableObject {
 
     var emailSections: [EmailSection] {
         viewState.sections
+    }
+
+    var categoryBundles: [CategoryBundle] {
+        viewState.categoryBundles
     }
 
     /// Last visible email after filtering (for pagination trigger)
@@ -409,6 +426,7 @@ final class InboxViewModel: ObservableObject {
         let pinnedSnapshot = pinnedTabOption
         let searchFilterSnapshot = searchFilter
         let activeFilterSnapshot = activeFilter
+        let viewingCategorySnapshot = viewingCategory
         let accountSnapshot = currentAccountEmail
         let mailboxSnapshot = currentMailbox
         let pageTokenSnapshot = nextPageToken
@@ -430,7 +448,8 @@ final class InboxViewModel: ObservableObject {
                 pinnedTabOption: pinnedSnapshot,
                 activeFilter: activeFilterSnapshot,
                 currentAccountEmail: accountSnapshot,
-                searchFilter: searchFilterSnapshot
+                searchFilter: searchFilterSnapshot,
+                viewingCategory: viewingCategorySnapshot
             )
             StallLogger.mark("InboxViewModel.computeState.end")
 
@@ -553,6 +572,19 @@ final class InboxViewModel: ObservableObject {
                 guard let self else { return }
                 guard let threadId = notification.userInfo?["threadId"] as? String else { return }
                 performUndoableBulkAction(threadIds: [threadId], action: .trash)
+            }
+        }
+
+        movedToPrimaryObserver = NotificationCenter.default.addObserver(
+            forName: .movedToPrimaryRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let messageId = notification.userInfo?["messageId"] as? String else { return }
+                // Update local email labels to reflect move to Primary
+                updateEmailLabelsToPrimary(messageId: messageId)
             }
         }
 
@@ -923,7 +955,8 @@ final class InboxViewModel: ObservableObject {
             pinnedTabOption: pinnedTabOption,
             activeFilter: activeFilter,
             currentAccountEmail: currentAccountEmail,
-            searchFilter: searchFilter
+            searchFilter: searchFilter,
+            viewingCategory: viewingCategory
         )
         viewState = state
         return state
@@ -1824,6 +1857,25 @@ final class InboxViewModel: ObservableObject {
                 bulkToastMessage = nil
             }
         }
+    }
+
+    /// Update local email labels when moved to Primary (removes category labels, adds CATEGORY_PERSONAL)
+    private func updateEmailLabelsToPrimary(messageId: String) {
+        let categoriesToRemove: Set<String> = [
+            "CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"
+        ]
+
+        // Update the email in the emails array (SwiftData model)
+        if let email = emails.first(where: { $0.id == messageId }) {
+            var updatedLabels = email.labelIds.filter { !categoriesToRemove.contains($0) }
+            if !updatedLabels.contains("CATEGORY_PERSONAL") {
+                updatedLabels.append("CATEGORY_PERSONAL")
+            }
+            email.labelIds = updatedLabels
+        }
+
+        // Trigger recompute so category bundles update
+        scheduleRecompute()
     }
 
     private func undoDelaySeconds() -> Int {
