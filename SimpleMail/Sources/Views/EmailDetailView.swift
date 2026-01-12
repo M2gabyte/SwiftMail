@@ -229,14 +229,15 @@ struct EmailDetailView: View {
                     .padding(40)
                 } else {
                     // AI Summary at thread level (for long emails)
-                    // Check plain text length, not HTML length, to avoid false negatives
+                    // Check plain text length using full body, not the snippet placeholder
                     if viewModel.autoSummarizeEnabled,
                        let latestMessage = viewModel.messages.last,
-                       EmailTextHelper.plainTextLength(latestMessage.body) > 300 {
+                       let fullBody = viewModel.latestMessageFullBody,
+                       EmailTextHelper.plainTextLength(fullBody) > 300 {
                         EmailSummaryView(
                             emailId: latestMessage.id,
                             accountEmail: latestMessage.accountEmail,
-                            emailBody: latestMessage.body,
+                            emailBody: fullBody,
                             isExpanded: $viewModel.summaryExpanded
                         )
                         .padding(.horizontal)
@@ -1534,6 +1535,8 @@ class EmailDetailViewModel: ObservableObject {
     @Published var summaryExpanded: Bool = true
     @Published var isLoading = false
     @Published var error: Error?
+    /// Full body of latest message (for AI summary check - not the placeholder snippet)
+    @Published var latestMessageFullBody: String?
     @Published var unsubscribeURL: URL?
     @Published var trackersBlocked: Int = 0
     @Published var trackerNames: [String] = []
@@ -1761,6 +1764,8 @@ class EmailDetailViewModel: ObservableObject {
                 return detail
             }
             messages = placeholders
+            // Store full body for AI summary check (not the snippet placeholder)
+            latestMessageFullBody = messageDTOs.last?.body
             StallLogger.mark("EmailDetail.threadLoaded")
 
             // Expand the latest message by default

@@ -160,6 +160,20 @@ struct SettingsView: View {
             .onChange(of: viewModel.settings.showAvatars) { _, _ in viewModel.saveSettings() }
 
             HStack(spacing: 12) {
+                SettingsIcon(systemName: "tray.2.fill", color: .green)
+                Toggle("Show category banners", isOn: $viewModel.settings.showCategoryBundles)
+            }
+            .font(.callout)
+            .onChange(of: viewModel.settings.showCategoryBundles) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "line.3.horizontal.decrease", color: .green)
+                Toggle("Place banners inline (Gmail-style)", isOn: $viewModel.settings.showCategoryBundlesInline)
+            }
+            .font(.callout)
+            .onChange(of: viewModel.settings.showCategoryBundlesInline) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
                 SettingsIcon(systemName: "text.alignleft", color: .indigo)
                 Picker("List Density", selection: $viewModel.settings.listDensity) {
                     Text("Comfortable").tag(ListDensity.comfortable)
@@ -651,6 +665,8 @@ struct AppSettings: Codable {
     var leftSwipeAction: SwipeAction = .archive
     var rightSwipeAction: SwipeAction = .markRead
     var showAvatars: Bool = true
+    var showCategoryBundles: Bool = true
+    var showCategoryBundlesInline: Bool = false
     var listDensity: ListDensity = .comfortable
     var theme: AppTheme = .system
     var notificationsEnabled: Bool = true

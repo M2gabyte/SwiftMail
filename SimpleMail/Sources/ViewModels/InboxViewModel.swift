@@ -367,7 +367,11 @@ final class InboxViewModel: ObservableObject {
     }
 
     var categoryBundles: [CategoryBundle] {
-        viewState.categoryBundles
+        viewState.categoryBundles.sorted { lhs, rhs in
+            let lDate = lhs.latestEmail?.date ?? .distantPast
+            let rDate = rhs.latestEmail?.date ?? .distantPast
+            return lDate > rDate
+        }
     }
 
     /// Last visible email after filtering (for pagination trigger)

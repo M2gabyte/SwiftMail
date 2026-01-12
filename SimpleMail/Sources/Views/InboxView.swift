@@ -35,6 +35,8 @@ struct InboxView: View {
     @State private var restoredComposeMode: ComposeMode?
     @State private var showingFilterSheet = false
     @State private var showAvatars = true
+    @State private var showCategoryBundles = true
+    @State private var showCategoryBundlesInline = false
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
@@ -484,8 +486,8 @@ struct InboxView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
-                // Category bundles (shown in Primary tab when not viewing a specific category)
-                else if viewModel.currentTab == .primary && !viewModel.categoryBundles.isEmpty {
+                // Category bundles (top block) when not inline
+                else if showCategoryBundles && !showCategoryBundlesInline && viewModel.currentTab == .primary && !viewModel.categoryBundles.isEmpty {
                     CategoryBundlesSection(bundles: viewModel.categoryBundles) { category in
                         handleBundleTap(category)
                     }
@@ -495,8 +497,23 @@ struct InboxView: View {
                 }
             }
 
-            ForEach(Array(displaySections.enumerated()), id: \.element.id) { sectionIndex, section in
-                sectionView(section: section, sectionIndex: sectionIndex)
+            let inlineBlocks = inlineCategoryBlocks(
+                sections: displaySections,
+                bundles: (showCategoryBundles && showCategoryBundlesInline && viewModel.currentTab == .primary) ? viewModel.categoryBundles : []
+            )
+
+            ForEach(Array(inlineBlocks.enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .section(let index, let section):
+                    sectionView(section: section, sectionIndex: index)
+                case .bundle(let bundle):
+                    CategoryBundleRow(bundle: bundle) {
+                        handleBundleTap(bundle.category)
+                    }
+                    .listRowSeparator(.visible)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowBackground(Color(.systemBackground))
+                }
             }
 
             if !isSearchMode {
@@ -1094,6 +1111,35 @@ struct InboxView: View {
         } catch { }
     }
 
+    // MARK: - Inline category blocks (Gmail-style)
+    private enum InlineBlock {
+        case section(index: Int, section: EmailSection)
+        case bundle(CategoryBundle)
+    }
+
+    private func inlineCategoryBlocks(sections: [EmailSection], bundles: [CategoryBundle]) -> [InlineBlock] {
+        // Derive a sort key (latest date) for each section and bundle
+        var blocks: [(Date, InlineBlock)] = []
+
+        for (idx, section) in sections.enumerated() {
+            if let date = section.emails.first?.date {
+                blocks.append((date, .section(index: idx, section: section)))
+            } else {
+                blocks.append((.distantPast, .section(index: idx, section: section)))
+            }
+        }
+
+        for bundle in bundles {
+            let date = bundle.latestEmail?.date ?? .distantPast
+            blocks.append((date, .bundle(bundle)))
+        }
+
+        // Sort by date descending (newest first)
+        blocks.sort { $0.0 > $1.0 }
+
+        return blocks.map { $0.1 }
+    }
+
     private func handleAppear() {
         StallLogger.mark("InboxView.appear")
         loadSettings()
@@ -1125,6 +1171,8 @@ struct InboxView: View {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             listDensity = settings.listDensity
             showAvatars = settings.showAvatars
+            showCategoryBundles = settings.showCategoryBundles
+            showCategoryBundlesInline = settings.showCategoryBundlesInline
 
             // Update threading setting on viewModel
             let threadingChanged = viewModel.conversationThreading != settings.conversationThreading

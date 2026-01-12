@@ -16,11 +16,11 @@ struct CategoryBundleRow: View {
                 // Category icon with colored background
                 ZStack {
                     Circle()
-                        .fill(bundle.category.color.opacity(0.15))
-                        .frame(width: 40, height: 40)
+                        .fill(bundle.category.color.opacity(0.14))
+                        .frame(width: 36, height: 36)
 
                     Image(systemName: bundle.category.icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(bundle.category.color)
                 }
 
@@ -66,12 +66,12 @@ struct CategoryBundleRow: View {
                     }
                 }
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 16)
-            .background(Color(.systemBackground))
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(Color(.systemBackground))
     }
 }
 
@@ -90,16 +90,10 @@ struct CategoryBundlesSection: View {
 
                     if bundle.id != bundles.last?.id {
                         Divider()
-                            .padding(.leading, 68)
+                            .padding(.leading, 64)
                     }
                 }
             }
-            .background(Color(.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color(.separator).opacity(0.2), lineWidth: 0.5)
-            )
         }
     }
 }
@@ -151,4 +145,3 @@ struct CategoryViewingHeader: View {
         .buttonStyle(.plain)
     }
 }
-

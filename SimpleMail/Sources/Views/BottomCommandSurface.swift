@@ -22,7 +22,7 @@ struct BottomCommandSurface: View {
         HStack(spacing: isEditing ? 6 : 8) {
             if !isEditing {
                 leftButton
-                    .frame(width: 50, height: 50)
+                    .frame(width: 48, height: 48)
             }
 
             centerSearchContent
@@ -32,13 +32,13 @@ struct BottomCommandSurface: View {
             if isEditing {
                 Button(action: { onCancelSearch() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 34, weight: .regular))
+                        .font(.system(size: 30, weight: .regular))
                         .foregroundStyle(.secondary)
-                        .frame(width: 56, height: 56)
+                        .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .frame(width: 56, height: 56)
+                .frame(width: 48, height: 48)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Cancel search")
             } else {
@@ -46,18 +46,18 @@ struct BottomCommandSurface: View {
             }
         }
         .padding(.horizontal, isEditing ? 8 : 12)
-        .padding(.vertical, 9)
-        .padding(.bottom, 2)
+        .padding(.vertical, 6)
+        .padding(.bottom, 0)
         .animation(.snappy(duration: 0.22), value: isSearchActive)
     }
 
     private var leftButton: some View {
         Button(action: onTapFilter) {
-            Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal")
-                .font(.system(size: 22, weight: .regular))
+            Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                .font(.system(size: 21, weight: .regular))
                 .foregroundStyle(isFilterActive ? Color.accentColor : .secondary)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(.ultraThinMaterial))
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(.regularMaterial))
                 .overlay(
                     Circle()
                         .stroke(Color(.separator).opacity(0.22), lineWidth: 0.5)
@@ -82,10 +82,10 @@ struct BottomCommandSurface: View {
         ZStack {
             Button(action: onTapCompose) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 22, weight: .regular))
+                    .font(.system(size: 21, weight: .regular))
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 38, height: 38)
-                    .background(Circle().fill(.ultraThinMaterial))
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(.regularMaterial))
                     .overlay(
                         Circle()
                             .stroke(Color(.separator).opacity(0.22), lineWidth: 0.5)
@@ -108,10 +108,10 @@ struct BottomCommandSurface: View {
             onSubmit: onSubmitSearch,
             onBeginEditing: onTapSearch
         )
-        .frame(height: 46)
+        .frame(height: 42)
         .background(
             Capsule()
-                .fill(.ultraThinMaterial)
+                .fill(.regularMaterial)
         )
         .overlay(
             Capsule()
