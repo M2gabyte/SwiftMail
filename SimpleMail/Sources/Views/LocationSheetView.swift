@@ -87,7 +87,7 @@ struct LocationSheetView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "tray.full")
                                 .foregroundStyle(.secondary)
-                            Text("Inbox scope")
+                            Text("Account")
                                 .foregroundStyle(.primary)
                             Spacer()
                             VStack(alignment: .trailing, spacing: 2) {
@@ -143,7 +143,7 @@ struct LocationSheetView: View {
             }
             .listStyle(.insetGrouped)
             .listSectionSpacing(.compact)
-            .navigationTitle("Location")
+            .navigationTitle("Mailboxes")
             .navigationBarTitleDisplayMode(.inline)
             .presentationDetents([.large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)

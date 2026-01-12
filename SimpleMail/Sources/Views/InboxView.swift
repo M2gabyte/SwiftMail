@@ -34,6 +34,7 @@ struct InboxView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var restoredComposeMode: ComposeMode?
     @State private var showingFilterSheet = false
+    @State private var showingLanePickerSheet = false
     @State private var showAvatars = true
     @State private var showCategoryBundles = true
     @State private var showCategoryBundlesInline = false
@@ -150,19 +151,14 @@ struct InboxView: View {
         .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
         .listRowSeparator(.visible)
         .listRowSeparatorTint(Color(.separator).opacity(0.35))
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button { viewModel.toggleRead(emailId: email.id) } label: {
-                Label(email.isUnread ? "Read" : "Unread",
-                      systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
-            }
-            .tint(Color.accentColor)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { viewModel.archiveEmail(id: email.id) } label: {
-                Label("Archive", systemImage: "archivebox")
-            }
-            .tint(.green)
-        }
+        .modifier(InstantSwipeModifier(
+            onSwipeLeft: { viewModel.archiveEmail(id: email.id) },
+            onSwipeRight: { viewModel.toggleRead(emailId: email.id) },
+            leftColor: .green,
+            rightColor: .accentColor,
+            leftIcon: "archivebox",
+            rightIcon: email.isUnread ? "envelope.open" : "envelope.badge"
+        ))
         .onTapGesture {
             if isSelectionMode {
                 toggleSelection(threadId: email.threadId)
@@ -212,6 +208,9 @@ struct InboxView: View {
                     filterCounts: viewModel.filterCounts
                 )
                 .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showingLanePickerSheet) {
+                CustomLanePickerSheet(selectedLane: $viewModel.pinnedTabOption)
             }
             // MARK: - Dialogs & Navigation
             .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
@@ -441,11 +440,12 @@ struct InboxView: View {
             if !isSearchMode {
                 InboxHeaderBlock(
                     currentTab: currentTabBinding,
-                    pinnedTitle: viewModel.pinnedTabOption.title,
+                    customLaneTitle: viewModel.pinnedTabOption.title,
                     activeFilter: $viewModel.activeFilter,
                     filterCounts: viewModel.filterCounts,
                     isCollapsed: isHeaderCollapsed,
-                    onOpenFilters: { showingFilterSheet = true }
+                    onOpenFilters: { showingFilterSheet = true },
+                    onTapCustomWhileSelected: { showingLanePickerSheet = true }
                 )
                 .background(
                     GeometryReader { proxy in
@@ -553,26 +553,26 @@ struct InboxView: View {
         let onTapBackground: () -> Void
         let emailRowView: (EmailDTO) -> Row
 
+        @Environment(\.colorScheme) private var colorScheme
+
         var body: some View {
+            let bgColor = colorScheme == .dark ? Color.black : Color(.systemBackground)
+
             ZStack {
-                Color.black.opacity(0.85)
+                bgColor
                     .ignoresSafeArea()
                     .onTapGesture { onTapBackground() }
 
-                VStack(spacing: 0) {
-                    SearchResultsCard(
-                        searchText: $searchText,
-                        debouncedSearchText: $debouncedSearchText,
-                        searchHistory: searchHistory,
-                        isSearching: isSearching,
-                        results: results,
-                        onSelectRecent: onSelectRecent,
-                        emailRowView: emailRowView
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 80)
-                }
+                SearchResultsCard(
+                    searchText: $searchText,
+                    debouncedSearchText: $debouncedSearchText,
+                    searchHistory: searchHistory,
+                    isSearching: isSearching,
+                    results: results,
+                    onSelectRecent: onSelectRecent,
+                    emailRowView: emailRowView
+                )
+                .padding(.bottom, 80)
             }
         }
     }
@@ -586,12 +586,18 @@ struct InboxView: View {
         let onSelectRecent: (String) -> Void
         let emailRowView: (EmailDTO) -> Row
 
+        @Environment(\.colorScheme) private var colorScheme
+
+        private var rowBackground: Color {
+            colorScheme == .dark ? Color.black : Color(.systemBackground)
+        }
+
         var body: some View {
             ZStack {
                 List {
                     if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         if !searchHistory.recentSearches.isEmpty {
-                            Section("Recent") {
+                            Section {
                                 ForEach(searchHistory.recentSearches.prefix(8), id: \.self) { query in
                                     Button {
                                         onSelectRecent(query)
@@ -599,24 +605,36 @@ struct InboxView: View {
                                         Label(query, systemImage: "clock.arrow.circlepath")
                                     }
                                     .foregroundStyle(.primary)
+                                    .listRowBackground(rowBackground)
                                 }
+                            } header: {
+                                Text("Recent")
+                                    .foregroundStyle(.secondary)
                             }
-                        } else {
-                            ContentUnavailableView.search(text: "")
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
                         }
                     } else {
-                        ForEach(results.prefix(50)) { email in
-                            emailRowView(email)
+                        if !results.isEmpty {
+                            Section {
+                                ForEach(results.prefix(50)) { email in
+                                    emailRowView(email)
+                                        .listRowBackground(rowBackground)
+                                }
+                            } header: {
+                                Text("Top Hits")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         if results.isEmpty && !isSearching {
                             ContentUnavailableView.search(text: searchText)
-                                .listRowBackground(Color.clear)
+                                .listRowBackground(rowBackground)
                                 .listRowSeparator(.hidden)
                         }
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(rowBackground)
+
                 if isSearching {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -627,10 +645,6 @@ struct InboxView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Color.clear)
-            .listRowSeparatorTint(Color.white.opacity(0.12))
         }
     }
 
@@ -1204,7 +1218,7 @@ struct InboxView: View {
         if viewModel.currentTab == .primary {
             return "No Primary"
         }
-        if viewModel.currentTab == .pinned {
+        if viewModel.currentTab == .custom {
             return "No \(viewModel.pinnedTabOption.title)"
         }
         return "Inbox Zero"
@@ -1217,7 +1231,7 @@ struct InboxView: View {
         if viewModel.currentTab == .primary {
             return "No primary emails yet."
         }
-        if viewModel.currentTab == .pinned {
+        if viewModel.currentTab == .custom {
             return "No \(viewModel.pinnedTabOption.title.lowercased()) emails yet."
         }
         return "You're all caught up."
@@ -1227,7 +1241,7 @@ struct InboxView: View {
         if viewModel.activeFilter != nil {
             return "line.3.horizontal.decrease.circle"
         }
-        if viewModel.currentTab == .pinned {
+        if viewModel.currentTab == .custom {
             return "tray.2"
         }
         return "tray"
@@ -1238,24 +1252,29 @@ struct InboxView: View {
 
 struct InboxHeaderBlock: View {
     @Binding var currentTab: InboxTab
-    let pinnedTitle: String
+    let customLaneTitle: String
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
     let isCollapsed: Bool
     let onOpenFilters: () -> Void
+    let onTapCustomWhileSelected: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // All/Primary/Other segmented control - always visible
-            Picker("", selection: $currentTab) {
-                Text(InboxTab.all.rawValue).tag(InboxTab.all)
-                Text(InboxTab.primary.rawValue).tag(InboxTab.primary)
-                Text(pinnedTitle).tag(InboxTab.pinned)
-            }
-            .pickerStyle(.segmented)
+            InboxTabBar(
+                selectedTab: currentTab,
+                customLaneTitle: customLaneTitle,
+                onTapAll: { currentTab = .all },
+                onTapPrimary: { currentTab = .primary },
+                onTapCustom: {
+                    if currentTab == .custom {
+                        onTapCustomWhileSelected()
+                    } else {
+                        currentTab = .custom
+                    }
+                }
+            )
             .padding(.horizontal, 16)
-            .padding(.top, 0)
-            .padding(.bottom, 0)
         }
         .padding(.top, 0)
         .padding(.bottom, 0)
@@ -1937,6 +1956,80 @@ struct SmartFilterCard: View {
         )
         .opacity(count == 0 ? 0.5 : 1)
         .disabled(count == 0)
+    }
+}
+
+// MARK: - Instant Swipe Modifier
+
+private struct InstantSwipeModifier: ViewModifier {
+    let onSwipeLeft: () -> Void
+    let onSwipeRight: () -> Void
+    let leftColor: Color
+    let rightColor: Color
+    let leftIcon: String
+    let rightIcon: String
+
+    @State private var offset: CGFloat = 0
+    @State private var hasTriggered = false
+
+    private let threshold: CGFloat = 80
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .background {
+                // Only show backgrounds when actively swiping
+                if offset != 0 {
+                    HStack(spacing: 0) {
+                        // Right swipe background (toggle read)
+                        rightColor
+                            .overlay(alignment: .leading) {
+                                Image(systemName: rightIcon)
+                                    .font(.title2)
+                                    .foregroundStyle(.white)
+                                    .padding(.leading, 20)
+                            }
+                            .opacity(offset > 0 ? 1 : 0)
+
+                        // Left swipe background (archive)
+                        leftColor
+                            .overlay(alignment: .trailing) {
+                                Image(systemName: leftIcon)
+                                    .font(.title2)
+                                    .foregroundStyle(.white)
+                                    .padding(.trailing, 20)
+                            }
+                            .opacity(offset < 0 ? 1 : 0)
+                    }
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                        offset = value.translation.width
+
+                        if !hasTriggered {
+                            if offset > threshold {
+                                hasTriggered = true
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                onSwipeRight()
+                            } else if offset < -threshold {
+                                hasTriggered = true
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                onSwipeLeft()
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        withAnimation(.spring(response: 0.3)) {
+                            offset = 0
+                        }
+                        hasTriggered = false
+                    }
+            )
     }
 }
 

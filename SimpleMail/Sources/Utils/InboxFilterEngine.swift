@@ -332,7 +332,7 @@ struct InboxFilterEngine {
         if primary.contains(sender) { return .primary }
 
         let other = alwaysOtherSenders(for: accountEmail)
-        if other.contains(sender) { return .pinned }
+        if other.contains(sender) { return .custom }
 
         return nil
     }
@@ -538,7 +538,7 @@ struct InboxFilterEngine {
                 guard let classification = classifications[email.id] else { return false }
                 return isPrimary(email, classification: classification, currentAccountEmail: currentAccountEmail)
             }
-        case .pinned:
+        case .custom:
             filtered = filtered.filter { email in
                 matchesPinned(
                     email,

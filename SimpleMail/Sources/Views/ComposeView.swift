@@ -83,7 +83,6 @@ struct ComposeView: View {
 
     private func applyNavigation<V: View>(to view: V) -> some View {
         view
-            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("composeView")
     }
@@ -96,26 +95,35 @@ struct ComposeView: View {
         view
             .overlay { composeOverlay }
             .overlay(alignment: .bottomTrailing) {
-                if focusedField == .body {
-                    RichTextToolbar(
-                        context: richTextContext,
-                        onAttachment: { viewModel.showAttachmentPicker = true }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+                RichTextToolbar(
+                    context: richTextContext,
+                    onAttachment: { viewModel.showAttachmentPicker = true }
+                )
             }
+    }
+
+    private var isReplyMode: Bool {
+        switch mode {
+        case .reply, .replyAll: return true
+        default: return false
+        }
     }
 
     private func applySheets<V: View>(to view: V) -> some View {
         view
             .sheet(isPresented: $showingAIDraft) {
-                AIDraftSheet { prompt, tone, length, includeSubject in
+                let allowSubject = !isReplyMode
+                AIDraftSheet(
+                    allowSubjectToggle: allowSubject,
+                    defaultIncludeSubject: allowSubject
+                ) { prompt, tone, length, includeSubject in
+                    let resolvedInclude = allowSubject ? includeSubject : false
                     Task {
                         await viewModel.generateAIDraftPreview(
                             prompt: prompt,
                             tone: tone,
                             length: length,
-                            includeSubject: includeSubject
+                            includeSubject: resolvedInclude
                         )
                     }
                 }
@@ -125,7 +133,11 @@ struct ComposeView: View {
                     draft: draft,
                     applySubject: viewModel.pendingAIDraftIncludeSubject
                 ) {
-                    viewModel.applyAIDraftResult(draft, includeSubject: viewModel.pendingAIDraftIncludeSubject)
+                    let include = (!isReplyMode) && viewModel.pendingAIDraftIncludeSubject ? true : false
+                    viewModel.applyAIDraftResult(draft, includeSubject: include)
+                    let attributed = ComposeViewModel.attributedBody(from: draft.body)
+                    editingBody = attributed
+                    viewModel.bodyAttributed = attributed
                 }
             }
             .sheet(isPresented: $showingTemplates) {
@@ -422,7 +434,37 @@ struct ComposeView: View {
             .accessibilityIdentifier("cancelCompose")
         }
 
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(placement: .principal) {
+            Text(navigationTitle)
+                .font(.headline)
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button(action: { showingTemplates = true }) {
+                    Label("Templates", systemImage: "doc.text")
+                }
+
+                Button(action: { showingScheduleSheet = true }) {
+                    Label("Schedule Send", systemImage: "clock")
+                }
+                .disabled(!viewModel.canSend)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 17))
+                    .accessibilityLabel("More options")
+            }
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Button(action: { showingAIDraft = true }) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 17))
+            }
+            .accessibilityLabel("AI Draft")
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
             Button(action: send) {
                 Image(systemName: "paperplane.circle.fill")
                     .font(.title2)
@@ -430,33 +472,6 @@ struct ComposeView: View {
             }
             .disabled(!viewModel.canSend)
             .accessibilityIdentifier("sendButton")
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Button(action: { showingAttachmentOptions = true }) {
-                    Label("Add Attachment", systemImage: "paperclip")
-                }
-
-                Button(action: { showingScheduleSheet = true }) {
-                    Label("Schedule Send", systemImage: "clock")
-                }
-                .disabled(!viewModel.canSend)
-
-                Divider()
-
-                Button(action: { showingAIDraft = true }) {
-                    Label("AI Draft", systemImage: "sparkles")
-                }
-
-                Button(action: { showingTemplates = true }) {
-                    Label("Templates", systemImage: "doc.text")
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .frame(width: 32, height: 32)
-                    .accessibilityLabel("More options")
-            }
         }
     }
 
@@ -1206,9 +1221,20 @@ struct AIDraftSheet: View {
     @State private var prompt = ""
     @State private var tone: AIDraftTone = .professional
     @State private var length: AIDraftLength = .medium
-    @State private var includeSubject = true
+    @State private var includeSubject: Bool
 
+    let allowSubjectToggle: Bool
     let onGenerate: (String, AIDraftTone, AIDraftLength, Bool) -> Void
+
+    init(
+        allowSubjectToggle: Bool,
+        defaultIncludeSubject: Bool,
+        onGenerate: @escaping (String, AIDraftTone, AIDraftLength, Bool) -> Void
+    ) {
+        self.allowSubjectToggle = allowSubjectToggle
+        self._includeSubject = State(initialValue: defaultIncludeSubject)
+        self.onGenerate = onGenerate
+    }
 
     var body: some View {
         NavigationStack {
@@ -1258,8 +1284,10 @@ struct AIDraftSheet: View {
                     }
                 }
 
-                Section {
-                    Toggle("Suggest subject line", isOn: $includeSubject)
+                if allowSubjectToggle {
+                    Section {
+                        Toggle("Suggest subject line", isOn: $includeSubject)
+                    }
                 }
             }
             .navigationTitle("AI Draft")
@@ -2522,7 +2550,7 @@ class ComposeViewModel: ObservableObject {
         }
     }
 
-    nonisolated private static func attributedBody(from text: String) -> NSAttributedString {
+    nonisolated static func attributedBody(from text: String) -> NSAttributedString {
         let font = UIFont.preferredFont(forTextStyle: .body)
         return NSAttributedString(string: text, attributes: [.font: font])
     }
