@@ -209,10 +209,7 @@ struct EmailDetailView: View {
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
-    @State private var showBlockConfirm = false
-    @State private var showSpamConfirm = false
-    @State private var showTrackerAlert = false
-    @State private var toastMessage: String?
+    @State private var pendingChipAction: PendingChipAction?
 
     init(emailId: String, threadId: String, accountEmail: String? = nil) {
         self.emailId = emailId
@@ -251,19 +248,13 @@ struct EmailDetailView: View {
                         .padding(.top, 8)
                     }
 
-                    // Action Badges Row (Trackers, Unsubscribe, Block, Spam)
-                    EmailActionBadgesView(
+                    // Action Chips Row (Trackers, Unsubscribe, Block, Spam)
+                    EmailActionChipsView(
                         canUnsubscribe: viewModel.canUnsubscribe,
                         senderName: viewModel.senderName ?? "sender",
                         isReply: viewModel.subject.lowercased().hasPrefix("re:"),
                         trackersBlocked: viewModel.trackersBlocked,
-                        trackerNames: viewModel.trackerNames,
-                        onUnsubscribe: {
-                            Task { await viewModel.unsubscribe() }
-                        },
-                        showBlockConfirm: $showBlockConfirm,
-                        showSpamConfirm: $showSpamConfirm,
-                        showTrackerAlert: $showTrackerAlert
+                        pendingAction: $pendingChipAction
                     )
 
                     ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
@@ -273,7 +264,7 @@ struct EmailDetailView: View {
                             styledHTML: viewModel.styledHTML(for: message),
                             renderedPlain: viewModel.plainText(for: message),
                             isExpanded: viewModel.expandedMessageIds.contains(message.id),
-                            bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 20 : 0,
+                            bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 28 : 0,
                             onToggleExpand: { viewModel.toggleExpanded(message.id) }
                         )
                     }
@@ -388,39 +379,18 @@ struct EmailDetailView: View {
                 }
             }
         }
-        // Block sender confirmation
-        .alert("Block \(viewModel.senderName ?? "Sender")?", isPresented: $showBlockConfirm) {
-            Button("Cancel", role: .cancel) { }
-            Button("Block", role: .destructive) {
-                let name = viewModel.senderName ?? "Sender"
-                Task {
-                    await viewModel.blockSender()
-                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                    toastMessage = "Blocked \(name)"
-                }
-            }
-        } message: {
-            Text("Emails from this sender will be moved to Trash.")
-        }
-        // Spam confirmation
-        .alert("Report as Spam?", isPresented: $showSpamConfirm) {
-            Button("Cancel", role: .cancel) { }
-            Button("Report Spam", role: .destructive) {
-                Task {
-                    await viewModel.reportSpam()
-                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                    toastMessage = "Reported as Spam"
-                }
-            }
-        } message: {
-            Text("This message will be moved to Spam.")
-        }
-        // Tracker info alert
-        .alert("Tracking Prevented", isPresented: $showTrackerAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("SimpleMail blocked \(viewModel.trackersBlocked) tracking pixel\(viewModel.trackersBlocked == 1 ? "" : "s") from notifying the sender when you opened this email.")
-        }
+        .modifier(ChipDialogModifier(
+            pendingAction: $pendingChipAction,
+            trackersBlocked: viewModel.trackersBlocked,
+            senderName: viewModel.senderName ?? "Sender",
+            senderEmail: viewModel.senderEmail,
+            emailId: emailId,
+            threadId: threadId,
+            onUnsubscribe: { await viewModel.unsubscribe() },
+            onBlockSender: { await viewModel.blockSender() },
+            onReportSpam: { await viewModel.reportSpam() },
+            onDismiss: { dismiss() }
+        ))
         .task {
             // WebKit warmup now happens on row tap (before navigation starts)
             // so it overlaps with the push animation instead of competing with it
@@ -428,21 +398,6 @@ struct EmailDetailView: View {
         }
         .toolbar(.hidden, for: .tabBar)
         .onAppear { StallLogger.mark("EmailDetail.appear") }
-        .overlay(alignment: .bottom) {
-            if let message = toastMessage {
-                ActionToast(message: message)
-                    .padding(.bottom, bottomBarHeight + safeAreaBottom + 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toastMessage)
-        .onChange(of: toastMessage) { _, newValue in
-            guard newValue != nil else { return }
-            Task {
-                try? await Task.sleep(for: .seconds(1.5))
-                dismiss()
-            }
-        }
     }
 }
 
@@ -1501,139 +1456,296 @@ struct EmailSummaryView: View {
     }
 }
 
-// MARK: - Email Action Badges View (Trackers, Block, Spam)
+// MARK: - Pending Chip Action (for confirmation dialogs)
 
-struct EmailActionBadgesView: View {
+enum PendingChipAction: Identifiable {
+    case tracker
+    case unsubscribe
+    case block
+    case spam
+
+    var id: Self { self }
+}
+
+// MARK: - Chip Dialog Modifier (helps type-checker by extracting modifiers)
+
+struct ChipDialogModifier: ViewModifier {
+    @Binding var pendingAction: PendingChipAction?
+    let trackersBlocked: Int
+    let senderName: String
+    let senderEmail: String?
+    let emailId: String
+    let threadId: String
+    let onUnsubscribe: () async -> Void
+    let onBlockSender: () async -> Void
+    let onReportSpam: () async -> Void
+    let onDismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Tracking Prevented", isPresented: trackerBinding) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("SimpleMail blocked \(trackersBlocked) tracking pixel\(trackersBlocked == 1 ? "" : "s") from notifying the sender when you opened this email.")
+            }
+            .confirmationDialog(
+                "Unsubscribe from \(senderName)?",
+                isPresented: unsubscribeBinding,
+                titleVisibility: .visible
+            ) {
+                Button("Unsubscribe", role: .destructive) {
+                    Task {
+                        await onUnsubscribe()
+                        NotificationCenter.default.post(
+                            name: .unsubscribed,
+                            object: nil,
+                            userInfo: ["senderName": senderName, "emailId": emailId]
+                        )
+                    }
+                }
+            } message: {
+                Text("You'll stop getting these emails.")
+            }
+            .alert("Block \(senderName)?", isPresented: blockBinding) {
+                Button("Cancel", role: .cancel) {
+                    pendingAction = nil
+                }
+                Button("Block Sender", role: .destructive) {
+                    Task {
+                        await onBlockSender()
+                        NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
+                        NotificationCenter.default.post(
+                            name: .senderBlocked,
+                            object: nil,
+                            userInfo: ["senderName": senderName, "senderEmail": senderEmail ?? "", "emailId": emailId, "threadId": threadId]
+                        )
+                        onDismiss()
+                    }
+                }
+            } message: {
+                Text("You won't see emails from this sender.")
+            }
+            .alert("Mark as spam?", isPresented: spamBinding) {
+                Button("Cancel", role: .cancel) {
+                    pendingAction = nil
+                }
+                Button("Mark as Spam", role: .destructive) {
+                    Task {
+                        await onReportSpam()
+                        NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
+                        NotificationCenter.default.post(
+                            name: .spamReported,
+                            object: nil,
+                            userInfo: ["senderName": senderName, "emailId": emailId, "threadId": threadId]
+                        )
+                        onDismiss()
+                    }
+                }
+            } message: {
+                Text("This email will be moved to Spam.")
+            }
+    }
+
+    private var trackerBinding: Binding<Bool> {
+        Binding(
+            get: { pendingAction == .tracker },
+            set: { if !$0 { pendingAction = nil } }
+        )
+    }
+
+    private var unsubscribeBinding: Binding<Bool> {
+        Binding(
+            get: { pendingAction == .unsubscribe },
+            set: { if !$0 { pendingAction = nil } }
+        )
+    }
+
+    private var blockBinding: Binding<Bool> {
+        Binding(
+            get: { pendingAction == .block },
+            set: { if !$0 { pendingAction = nil } }
+        )
+    }
+
+    private var spamBinding: Binding<Bool> {
+        Binding(
+            get: { pendingAction == .spam },
+            set: { if !$0 { pendingAction = nil } }
+        )
+    }
+}
+
+// MARK: - Email Action Chips View
+
+struct EmailActionChipsView: View {
     let canUnsubscribe: Bool
     let senderName: String
     let isReply: Bool
     let trackersBlocked: Int
-    let trackerNames: [String]
-    let onUnsubscribe: () -> Void
 
-    // Bindings for dialogs (controlled by parent)
-    @Binding var showBlockConfirm: Bool
-    @Binding var showSpamConfirm: Bool
-    @Binding var showTrackerAlert: Bool
-
-    private let pillHeight: CGFloat = 28
+    @Binding var pendingAction: PendingChipAction?
 
     var body: some View {
-        HStack(spacing: 8) {
-            // Status chip (tracker badge)
+        VStack(spacing: 0) {
+            // Chip row
+            HStack(spacing: 0) {
+                // Left cluster: tracker + unsubscribe
+                leftCluster
+
+                Spacer(minLength: 16)
+
+                // Right cluster: block + spam
+                rightCluster
+            }
+            .padding(.horizontal, 12) // Match sender header padding
+            .padding(.top, 2)  // Tight to summary above
+            .padding(.bottom, 8)
+
+            // Subtle divider to anchor strip
+            Rectangle()
+                .fill(Color(UIColor.separator).opacity(0.12))
+                .frame(height: 0.5)
+                .padding(.horizontal, 12)
+        }
+    }
+
+    @ViewBuilder
+    private var leftCluster: some View {
+        HStack(spacing: 10) {
+            // Tracker status chip
             if trackersBlocked > 0 {
-                Button {
-                    showTrackerAlert = true
+                GlassChip(
+                    style: .status,
+                    foregroundColor: .green,
+                    strokeColor: Color.green.opacity(0.26)
+                ) {
+                    pendingAction = .tracker
                 } label: {
                     HStack(spacing: 3) {
-                        Image(systemName: "shield.checkered")
-                            .font(.system(size: 12, weight: .medium))
+                        Image(systemName: "shield.fill")
+                            .font(.system(size: 11, weight: .semibold))
                             .symbolRenderingMode(.hierarchical)
                         Text("\(trackersBlocked)")
                             .font(.caption)
                             .fontWeight(.semibold)
                     }
-                    .foregroundStyle(.green)
-                    .actionPill(height: pillHeight, strokeColor: Color.green.opacity(0.25))
                 }
-                .buttonStyle(ActionPillButtonStyle())
                 .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
             }
 
-            // Separator gap (status | actions)
-            if trackersBlocked > 0 {
-                Spacer().frame(width: 4)
-            }
-
-            // Unsubscribe (for newsletters)
+            // Unsubscribe chip
             if canUnsubscribe {
-                Button(action: onUnsubscribe) {
+                GlassChip(
+                    style: .primary,
+                    foregroundColor: .primary,
+                    strokeColor: GlassTokens.strokeColor.opacity(0.22)
+                ) {
+                    pendingAction = .unsubscribe
+                } label: {
                     Text("Unsubscribe")
                         .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
-                        .actionPill(height: pillHeight)
+                        .fontWeight(.semibold)
                 }
-                .buttonStyle(ActionPillButtonStyle())
             }
+        }
+    }
 
-            // Block sender
-            Button {
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
-                showBlockConfirm = true
+    @ViewBuilder
+    private var rightCluster: some View {
+        HStack(spacing: 8) {
+            // Block chip - uses secondaryLabel for proper contrast
+            GlassChip(
+                style: .secondary,
+                foregroundColor: Color(UIColor.secondaryLabel),
+                strokeColor: GlassTokens.strokeColor.opacity(0.22)
+            ) {
+                pendingAction = .block
             } label: {
                 Text("Block")
                     .font(.caption)
                     .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
-                    .actionPill(height: pillHeight)
             }
-            .buttonStyle(ActionPillButtonStyle())
             .accessibilityLabel("Block \(senderName)")
 
-            // Mark as spam (not for replies)
+            // Spam chip (not for replies)
             if !isReply {
-                Button {
-                    let generator = UIImpactFeedbackGenerator(style: .light)
-                    generator.impactOccurred()
-                    showSpamConfirm = true
+                GlassChip(
+                    style: .secondary,
+                    foregroundColor: Color(UIColor.secondaryLabel),
+                    strokeColor: GlassTokens.strokeColor.opacity(0.22)
+                ) {
+                    pendingAction = .spam
                 } label: {
                     Text("Spam")
                         .font(.caption)
                         .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
-                        .actionPill(height: pillHeight)
                 }
-                .buttonStyle(ActionPillButtonStyle())
                 .accessibilityLabel("Mark as spam")
             }
-
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
     }
 }
 
-// MARK: - Action Pill Button Style (with pressed state)
+// MARK: - Glass Chip Component
 
-struct ActionPillButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
-    }
-}
+struct GlassChip<Label: View>: View {
+    enum Style { case status, primary, secondary }
 
-// MARK: - Action Toast
+    let style: Style
+    let foregroundColor: Color
+    let strokeColor: Color
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
 
-struct ActionToast: View {
-    let message: String
+    @State private var isPressed = false
+
+    private let visualHeight: CGFloat = 28
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.white)
-
-            Text(message)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(.white)
+        Button {
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+            action()
+        } label: {
+            label()
+                .foregroundStyle(foregroundColor)
+                .padding(.horizontal, 12)
+                .frame(height: visualHeight)
+                .background(
+                    Capsule()
+                        .fill(GlassTokens.chromeMaterial)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            strokeColor.opacity(isPressed ? 1.6 : 1.0), // 60% stronger stroke on press
+                            lineWidth: isPressed ? 1.0 : GlassTokens.strokeWidth // thicker stroke on press
+                        )
+                )
+                .shadow(
+                    color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity),
+                    radius: GlassTokens.shadowRadius,
+                    y: GlassTokens.shadowY
+                )
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
-        .background(
-            Capsule()
-                .fill(Color(.darkGray))
-                .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
-        )
+        .buttonStyle(GlassChipButtonStyle(isPressed: $isPressed))
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Glass Chip Button Style
+
+struct GlassChipButtonStyle: ButtonStyle {
+    @Binding var isPressed: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, newValue in
+                isPressed = newValue
+            }
     }
 }
 
