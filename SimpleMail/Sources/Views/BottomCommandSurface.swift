@@ -60,11 +60,12 @@ struct BottomCommandSurface: View {
 
     private var leftButton: some View {
         Button(action: onTapFilter) {
-            Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            Image(systemName: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 21, weight: .regular))
-                .foregroundStyle(isFilterActive ? Color.accentColor : .secondary)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(isFilterActive ? Color.accentColor.opacity(0.8) : .secondary)
                 .frame(width: 36, height: 36)
-                .background(Circle().fill(GlassTokens.surfaceMaterial))
+                .background(Circle().fill(GlassTokens.chromeMaterial))
                 .glassStroke(Circle())
                 .glassShadow()
                 .overlay(alignment: .topTrailing) {
@@ -84,23 +85,20 @@ struct BottomCommandSurface: View {
     }
 
     private var rightButton: some View {
-        ZStack {
-            Button(action: onTapCompose) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 21, weight: .regular))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(GlassTokens.surfaceMaterial))
-                    .glassStroke(Circle())
-                    .glassShadow()
-            }
-            .buttonStyle(.plain)
-            .frame(width: 50, height: 50)
-            .contentShape(Rectangle())
-            .accessibilityLabel("Compose new email")
-            .accessibilityHint("Double tap to write a new message")
-
+        Button(action: onTapCompose) {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(GlassTokens.chromeMaterial))
+                .glassStroke(Circle())
+                .glassShadow()
         }
+        .buttonStyle(.plain)
+        .frame(width: 50, height: 50)
+        .contentShape(Rectangle())
+        .accessibilityLabel("Compose new email")
+        .accessibilityHint("Double tap to write a new message")
     }
 
     @ViewBuilder

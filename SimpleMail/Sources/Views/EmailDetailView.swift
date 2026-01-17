@@ -280,7 +280,7 @@ struct EmailDetailView: View {
                             styledHTML: viewModel.styledHTML(for: message),
                             renderedPlain: viewModel.plainText(for: message),
                             isExpanded: viewModel.expandedMessageIds.contains(message.id),
-                            bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 8 : 0,
+                            bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 20 : 0,
                             onToggleExpand: { viewModel.toggleExpanded(message.id) }
                         )
                     }
@@ -1642,7 +1642,7 @@ struct DetailBottomBar: View {
         .padding(.vertical, 6)
         .background(
             Capsule()
-                .fill(GlassTokens.controlMaterial)
+                .fill(GlassTokens.chromeMaterial)
         )
         .glassStroke(Capsule())
         .glassShadow()

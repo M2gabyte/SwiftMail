@@ -410,8 +410,8 @@ struct ComposeView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if editingBody.string.isEmpty {
                         Text("Message")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                             .padding(.top, 8)
                     }
 
@@ -470,7 +470,7 @@ struct ComposeView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 Menu {
                     Button(action: { showingTemplates = true }) {
                         Label("Templates", systemImage: "doc.text")
@@ -482,27 +482,30 @@ struct ComposeView: View {
                     .disabled(!viewModel.canSend)
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 16, weight: .medium))
+                        .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("More options")
                 }
 
                 Button(action: { showingAIDraft = true }) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 16, weight: .medium))
+                        .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityLabel("AI Draft")
 
                 Button(action: send) {
-                    Image(systemName: "paperplane.fill")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(viewModel.canSend ? Color.accentColor : .gray.opacity(0.5))
+                    Image(systemName: "paperplane")
+                        .font(.system(size: 16, weight: viewModel.canSend ? .semibold : .medium))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(viewModel.canSend ? Color.accentColor : .secondary.opacity(0.5))
                 }
                 .disabled(!viewModel.canSend)
                 .accessibilityIdentifier("sendButton")
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(
                 Capsule()
