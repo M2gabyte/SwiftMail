@@ -42,6 +42,7 @@ struct InboxView: View {
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
     @State private var inboxScope: InboxLocationScope = .unified
+    @State private var bottomBarHeight: CGFloat = 56
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
 
@@ -163,10 +164,8 @@ struct InboxView: View {
             if isSelectionMode {
                 toggleSelection(threadId: email.threadId)
             } else {
-                if isSearchMode {
-                    isSearchMode = false
-                    searchFieldFocused = false
-                }
+                // Dismiss keyboard but keep search mode active so user returns to search results
+                searchFieldFocused = false
                 withAnimation(.easeInOut(duration: 0.2)) {
                     viewModel.openEmail(id: email.id)
                 }
@@ -379,7 +378,7 @@ struct InboxView: View {
         .overlay(alignment: .top) { offlineBannerContent }
             .overlay(alignment: .bottom) {
                 bulkToastContent
-                    .padding(.bottom, 62)
+                    .padding(.bottom, bottomBarHeight + 8)
                     .zIndex(25)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -417,17 +416,26 @@ struct InboxView: View {
                         onTapFilter: { showingFilterSheet = true },
                         onTapCompose: { showingCompose = true }
                     )
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .onAppear { bottomBarHeight = geo.size.height }
+                                .onChange(of: geo.size.height) { _, newHeight in
+                                    bottomBarHeight = newHeight
+                                }
+                        }
+                    )
                 }
             }
             .overlay(alignment: .bottom) {
                 undoActionToastContent
-                    .padding(.bottom, 62)
+                    .padding(.bottom, bottomBarHeight + 8)
                     .zIndex(28)
                     .animation(.easeInOut(duration: 0.25), value: viewModel.showingUndoToast)
             }
             .overlay(alignment: .bottom) {
                 undoSendToastContent
-                    .padding(.bottom, 62)
+                    .padding(.bottom, bottomBarHeight + 8)
                     .zIndex(30)
                     .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
                     .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
@@ -540,7 +548,7 @@ struct InboxView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: viewModel.bucketRows)
         .listSectionSpacing(2)
         .contentMargins(.top, 0, for: .scrollContent)
-        .contentMargins(.bottom, 64, for: .scrollContent)
+        .contentMargins(.bottom, bottomBarHeight + 8, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
         .coordinateSpace(name: "inboxScroll")
@@ -1677,12 +1685,11 @@ struct EmailRow: View {
                             .font(MailTypography.meta)
                             .foregroundStyle(metaColor)
 
-                        // Unread dot aligned with timestamp
-                        if email.isUnread {
-                            Circle()
-                                .fill(.blue)
-                                .frame(width: 8, height: 8)
-                        }
+                        // Unread dot - always reserve space for alignment
+                        Circle()
+                            .fill(.blue)
+                            .frame(width: 8, height: 8)
+                            .opacity(email.isUnread ? 1 : 0)
                     }
                     .frame(minWidth: 78, alignment: .trailing)
                 }

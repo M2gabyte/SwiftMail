@@ -206,6 +206,7 @@ struct EmailDetailView: View {
     @State private var showingReplySheet = false
     @State private var showingActionSheet = false
     @State private var showingSnoozeSheet = false
+    @State private var bottomBarHeight: CGFloat = 0
 
     init(emailId: String, threadId: String, accountEmail: String? = nil) {
         self.emailId = emailId
@@ -279,6 +280,9 @@ struct EmailDetailView: View {
                             onToggleExpand: { viewModel.toggleExpanded(message.id) }
                         )
                     }
+
+                    // Bottom padding to clear the toolbar
+                    Color.clear.frame(height: bottomBarHeight + 8)
                 }
             }
         }
@@ -306,39 +310,31 @@ struct EmailDetailView: View {
                 }
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .bottomBar) {
-                // Reply: tap = Reply, long-press = options
-                Button(action: { showingReplySheet = true }) {
-                    Image(systemName: "arrowshape.turn.up.left")
-                }
-                .contextMenu {
-                    Button(action: { showingReplySheet = true }) {
-                        Label("Reply", systemImage: "arrowshape.turn.up.left")
-                    }
-                    Button(action: { showingReplySheet = true }) {
-                        Label("Reply All", systemImage: "arrowshape.turn.up.left.2")
-                    }
-                    Button(action: { }) {
-                        Label("Forward", systemImage: "arrowshape.turn.up.right")
-                    }
-                }
-            }
-
-            ToolbarItem(placement: .bottomBar) {
-                Spacer()
-            }
-
-            ToolbarItem(placement: .bottomBar) {
-                Button {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            DetailBottomBar(
+                onReply: { showingReplySheet = true },
+                onArchive: {
                     Task {
                         await viewModel.archive()
                         dismiss()
                     }
-                } label: {
-                    Image(systemName: "archivebox")
+                },
+                onTrash: {
+                    Task {
+                        await viewModel.trash()
+                        dismiss()
+                    }
                 }
-            }
+            )
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { bottomBarHeight = geo.size.height }
+                        .onChange(of: geo.size.height) { _, newHeight in
+                            bottomBarHeight = newHeight
+                        }
+                }
+            )
         }
         .sheet(isPresented: $showingReplySheet) {
             if let latestMessage = viewModel.messages.last {
@@ -1487,6 +1483,8 @@ struct EmailActionBadgesView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
 
                 // Tier 1: Unsubscribe button (for newsletters)
@@ -1504,26 +1502,30 @@ struct EmailActionBadgesView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
 
-                // Tier 2: More menu with destructive actions (pill styled to match)
+                // Tier 2: Sender actions menu (distinct from top-right message menu)
                 Menu {
-                    Button(role: .destructive) {
-                        showBlockConfirm = true
-                    } label: {
-                        Label("Block Sender", systemImage: "hand.raised")
-                    }
-
-                    if !isReply {
+                    Section("Sender Actions") {
                         Button(role: .destructive) {
-                            showSpamConfirm = true
+                            showBlockConfirm = true
                         } label: {
-                            Label("Mark as Spam", systemImage: "exclamationmark.shield")
+                            Label("Block Sender", systemImage: "hand.raised")
+                        }
+
+                        if !isReply {
+                            Button(role: .destructive) {
+                                showSpamConfirm = true
+                            } label: {
+                                Label("Mark as Spam", systemImage: "exclamationmark.shield")
+                            }
                         }
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .medium))
+                    Image(systemName: "person.crop.circle.badge.minus")
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(width: pillHeight, height: pillHeight)
                         .background(
@@ -1540,9 +1542,10 @@ struct EmailActionBadgesView: View {
                             y: GlassTokens.shadowY
                         )
                 }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
             .padding(.horizontal)
-            .padding(.vertical, 8)
         }
         .alert("Block \(senderName)?", isPresented: $showBlockConfirm) {
             Button("Cancel", role: .cancel) { }
@@ -1561,6 +1564,69 @@ struct EmailActionBadgesView: View {
         } message: {
             Text("SimpleMail blocked \(trackersBlocked) tracking pixel\(trackersBlocked > 1 ? "s" : "") that would have notified the sender when you opened this email.\n\nBlocked: \(trackerNames.joined(separator: ", "))")
         }
+    }
+}
+
+// MARK: - Detail Bottom Bar (Glass styled)
+
+struct DetailBottomBar: View {
+    let onReply: () -> Void
+    let onArchive: () -> Void
+    let onTrash: () -> Void
+
+    @State private var showReplyOptions = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Reply button with context menu
+            Menu {
+                Button(action: onReply) {
+                    Label("Reply", systemImage: "arrowshape.turn.up.left")
+                }
+                Button(action: onReply) {
+                    Label("Reply All", systemImage: "arrowshape.turn.up.left.2")
+                }
+                Button(action: {}) {
+                    Label("Forward", systemImage: "arrowshape.turn.up.right")
+                }
+            } label: {
+                Image(systemName: "arrowshape.turn.up.left")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+            } primaryAction: {
+                onReply()
+            }
+
+            Spacer()
+
+            // Archive button
+            Button(action: onArchive) {
+                Image(systemName: "archivebox")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+            }
+
+            // Trash button
+            Button(action: onTrash) {
+                Image(systemName: "trash")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(.red.opacity(0.8))
+                    .frame(width: 44, height: 44)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .background(
+            Rectangle()
+                .fill(GlassTokens.chromeMaterial)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity))
+                        .frame(height: GlassTokens.strokeWidth)
+                }
+        )
     }
 }
 

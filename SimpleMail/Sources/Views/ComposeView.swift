@@ -407,22 +407,31 @@ struct ComposeView: View {
                 }
 
                 // Body (rich text)
-                ZStack(alignment: .topLeading) {
-                    RichTextEditor(
-                        attributedText: $editingBody,
-                        context: richTextContext
-                    )
-                    .frame(minHeight: 300)
-                    .focused($focusedField, equals: .body)
-
+                VStack(alignment: .leading, spacing: 0) {
                     if editingBody.string.isEmpty {
-                        Text("Write your message…")
-                            .foregroundStyle(.secondary)
+                        Text("Message")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                             .padding(.top, 8)
-                            .padding(.leading, 6)
+                    }
+
+                    ZStack(alignment: .topLeading) {
+                        RichTextEditor(
+                            attributedText: $editingBody,
+                            context: richTextContext
+                        )
+                        .frame(minHeight: 300)
+                        .focused($focusedField, equals: .body)
+
+                        if editingBody.string.isEmpty {
+                            Text("Write your message…")
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 8)
+                                .padding(.leading, 6)
+                        }
                     }
                 }
-                .padding(.top, 10)
+                .padding(.top, 6)
                 .padding(.horizontal)
             }
         }
@@ -440,13 +449,14 @@ struct ComposeView: View {
     @ToolbarContentBuilder
     private var composeToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel") {
+            Button("Cancel", role: .cancel) {
                 if viewModel.hasContent {
                     viewModel.showDiscardAlert = true
                 } else {
                     dismiss()
                 }
             }
+            .tint(.primary)
             .accessibilityIdentifier("cancelCompose")
         }
 
