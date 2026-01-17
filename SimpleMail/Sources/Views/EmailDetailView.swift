@@ -89,6 +89,8 @@ actor BodyRenderActor {
         var safeHTML = HTMLSanitizer.sanitize(html)
         // Remove zero-width characters that create empty space in marketing emails
         safeHTML = HTMLSanitizer.removeZeroWidthCharacters(safeHTML)
+        // Upgrade insecure asset links (http->https) before any blocking
+        safeHTML = HTMLSanitizer.upgradeInsecureAssets(safeHTML)
         safeHTML = HTMLSanitizer.stripTinyImages(safeHTML)
         let plain = HTMLSanitizer.plainText(safeHTML)
 
@@ -124,7 +126,7 @@ actor BodyRenderActor {
     /// No JavaScript is injected - height is measured natively via scrollView.contentSize.
     private static func buildStyledHTML(body: String, trackingCSS: String, allowRemoteImages: Bool) -> String {
         let csp = allowRemoteImages
-            ? "default-src 'none'; img-src data: https: http: cid:; style-src 'unsafe-inline'; font-src data: https:;"
+            ? "default-src 'none'; img-src data: https: http: cid:; style-src 'unsafe-inline'; font-src data: https: http:; media-src https: http: data:; connect-src https: http:;"
             : "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;"
 
         return """
@@ -675,6 +677,21 @@ enum HTMLSanitizer {
         )
         result = result.replacingOccurrences(of: "</form>", with: "</div>")
 
+        return result
+    }
+
+    /// Upgrade insecure asset URLs (img/background/link) from http->https to satisfy ATS.
+    static func upgradeInsecureAssets(_ html: String) -> String {
+        var result = html
+        // img src/background url(...) and link href
+        let patterns = [
+            "(<img[^>]*src\\s*=\\s*[\"'])http://",
+            "(url\\(\\s*[\"']?)http://",
+            "(<link[^>]*href\\s*=\\s*[\"'])http://"
+        ]
+        for pattern in patterns {
+            result = result.replacingOccurrences(of: pattern, with: "$1https://", options: [.regularExpression, .caseInsensitive])
+        }
         return result
     }
 
