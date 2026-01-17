@@ -724,7 +724,9 @@ enum HTMLSanitizer {
         // Extract candidate URLs from img src and background attributes.
         var urls: [String] = []
         let imgSrcPattern = try! NSRegularExpression(pattern: "<img[^>]*src\\s*=\\s*[\"']([^\"'>]+)[\"'][^>]*>", options: .caseInsensitive)
+        let imgSrcSetPattern = try! NSRegularExpression(pattern: "<img[^>]*srcset\\s*=\\s*[\"']([^\"'>]+)[\"'][^>]*>", options: .caseInsensitive)
         let bgPattern = try! NSRegularExpression(pattern: "background\\s*=\\s*[\"']([^\"'>]+)[\"']", options: .caseInsensitive)
+        let cssURLPattern = try! NSRegularExpression(pattern: "url\\(\\s*[\"']?([^\"')\\s]+)[\"']?\\s*\\)", options: .caseInsensitive)
 
         func extract(_ regex: NSRegularExpression, _ text: String) {
             let range = NSRange(text.startIndex..., in: text)
@@ -735,7 +737,19 @@ enum HTMLSanitizer {
             }
         }
         extract(imgSrcPattern, html)
+        extract(imgSrcSetPattern, html)
         extract(bgPattern, html)
+        extract(cssURLPattern, html)
+
+        // srcset can contain multiple URLs separated by commas; split them.
+        urls = urls.flatMap { entry -> [String] in
+            if entry.contains(",") && entry.contains(" ") {
+                return entry.split(separator: ",").map { part in
+                    String(part.split(separator: " ").first ?? part).trimmingCharacters(in: .whitespaces)
+                }
+            }
+            return [entry]
+        }
 
         // Deduplicate and keep only http(s) URLs (skip cid:, data:, blocked-src)
         let candidates = Array(NSOrderedSet(array: urls.compactMap { raw -> String? in
