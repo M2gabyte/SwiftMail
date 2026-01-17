@@ -49,9 +49,12 @@ final class WKWebViewPool {
         let config = WKWebViewConfiguration()
         config.dataDetectorTypes = [.link, .phoneNumber, .address]
         let preferences = WKWebpagePreferences()
-        preferences.allowsContentJavaScript = false
+        // Allow JS so we can run lightweight diagnostics; HTML is sanitized earlier.
+        preferences.allowsContentJavaScript = true
         config.defaultWebpagePreferences = preferences
         let controller = WKUserContentController()
+        controller.add(ImageProbeHandler.shared, name: "imageProbe")
+        controller.addUserScript(.imageProbeScript)
         config.userContentController = controller
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
@@ -69,6 +72,48 @@ final class WKWebViewPool {
         webView.scrollView.setContentOffset(.zero, animated: false)
         // Don't loadHTMLString here - unnecessary navigation that adds churn.
         // Real content will be loaded when the email body is set.
+    }
+}
+
+// MARK: - Lightweight image probe to log missing assets (helps debug CDN/ATS issues)
+private final class ImageProbeHandler: NSObject, WKScriptMessageHandler {
+    static let shared = ImageProbeHandler()
+    private let logger = Logger(subsystem: "com.simplemail.app", category: "ImageProbe")
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "imageProbe" else { return }
+        if let body = message.body as? [String: Any],
+           let missing = body["missing"] as? [[String: Any]] {
+            for item in missing {
+                let src = item["src"] as? String ?? "unknown"
+                logger.info("IMG_MISS src=\(src, privacy: .public)")
+            }
+        }
+    }
+}
+
+private extension WKUserScript {
+    /// Reports images that failed to load (naturalWidth == 0) back to Swift.
+    static var imageProbeScript: WKUserScript {
+        let source = """
+        (function() {
+          function report() {
+            try {
+              const missing = Array.from(document.images || []).filter(img =>
+                img.complete && img.naturalWidth === 0
+              ).map(img => ({
+                src: img.currentSrc || img.src || ""
+              }));
+              if (missing.length) {
+                window.webkit?.messageHandlers?.imageProbe?.postMessage({missing});
+              }
+            } catch(e) {}
+          }
+          window.addEventListener('load', () => setTimeout(report, 300));
+          setTimeout(report, 1200);
+        })();
+        """
+        return WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
     }
 }
 
