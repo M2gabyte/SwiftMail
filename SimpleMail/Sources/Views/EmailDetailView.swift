@@ -209,7 +209,9 @@ struct EmailDetailView: View {
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
-    @State private var pendingSenderAction: PendingSenderAction?
+    @State private var showBlockConfirm = false
+    @State private var showSpamConfirm = false
+    @State private var showTrackerAlert = false
 
     init(emailId: String, threadId: String, accountEmail: String? = nil) {
         self.emailId = emailId
@@ -258,7 +260,9 @@ struct EmailDetailView: View {
                         onUnsubscribe: {
                             Task { await viewModel.unsubscribe() }
                         },
-                        pendingAction: $pendingSenderAction
+                        showBlockConfirm: $showBlockConfirm,
+                        showSpamConfirm: $showSpamConfirm,
+                        showTrackerAlert: $showTrackerAlert
                     )
 
                     ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
@@ -384,14 +388,8 @@ struct EmailDetailView: View {
             }
         }
         // Block sender confirmation
-        .confirmationDialog(
-            "Block \(viewModel.senderName ?? "Sender")?",
-            isPresented: Binding(
-                get: { pendingSenderAction == .block },
-                set: { if !$0 { pendingSenderAction = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
+        .alert("Block \(viewModel.senderName ?? "Sender")?", isPresented: $showBlockConfirm) {
+            Button("Cancel", role: .cancel) { }
             Button("Block", role: .destructive) {
                 Task {
                     await viewModel.blockSender()
@@ -399,21 +397,12 @@ struct EmailDetailView: View {
                     dismiss()
                 }
             }
-            Button("Cancel", role: .cancel) {
-                pendingSenderAction = nil
-            }
         } message: {
             Text("Emails from this sender will be moved to Trash.")
         }
         // Spam confirmation
-        .confirmationDialog(
-            "Report as Spam?",
-            isPresented: Binding(
-                get: { pendingSenderAction == .spam },
-                set: { if !$0 { pendingSenderAction = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
+        .alert("Report as Spam?", isPresented: $showSpamConfirm) {
+            Button("Cancel", role: .cancel) { }
             Button("Report Spam", role: .destructive) {
                 Task {
                     await viewModel.reportSpam()
@@ -421,21 +410,14 @@ struct EmailDetailView: View {
                     dismiss()
                 }
             }
-            Button("Cancel", role: .cancel) {
-                pendingSenderAction = nil
-            }
         } message: {
             Text("This message will be moved to Spam.")
         }
-        // Tracker info sheet
-        .sheet(isPresented: Binding(
-            get: { pendingSenderAction == .trackerInfo },
-            set: { if !$0 { pendingSenderAction = nil } }
-        )) {
-            TrackerInfoSheet(
-                trackersBlocked: viewModel.trackersBlocked,
-                trackerNames: viewModel.trackerNames
-            )
+        // Tracker info alert
+        .alert("Tracking Prevented", isPresented: $showTrackerAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("SimpleMail blocked \(viewModel.trackersBlocked) tracking pixel\(viewModel.trackersBlocked == 1 ? "" : "s") from notifying the sender when you opened this email.")
         }
         .task {
             // WebKit warmup now happens on row tap (before navigation starts)
@@ -1504,11 +1486,6 @@ struct EmailSummaryView: View {
 
 // MARK: - Email Action Badges View (Trackers, Block, Spam)
 
-enum PendingSenderAction: Identifiable {
-    case block, spam, trackerInfo
-    var id: Self { self }
-}
-
 struct EmailActionBadgesView: View {
     let canUnsubscribe: Bool
     let senderName: String
@@ -1518,7 +1495,9 @@ struct EmailActionBadgesView: View {
     let onUnsubscribe: () -> Void
 
     // Bindings for dialogs (controlled by parent)
-    @Binding var pendingAction: PendingSenderAction?
+    @Binding var showBlockConfirm: Bool
+    @Binding var showSpamConfirm: Bool
+    @Binding var showTrackerAlert: Bool
 
     private let pillHeight: CGFloat = 28
 
@@ -1527,7 +1506,7 @@ struct EmailActionBadgesView: View {
             // Status chip (tracker badge)
             if trackersBlocked > 0 {
                 Button {
-                    pendingAction = .trackerInfo
+                    showTrackerAlert = true
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "shield.checkered")
@@ -1565,7 +1544,7 @@ struct EmailActionBadgesView: View {
             Button {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
-                pendingAction = .block
+                showBlockConfirm = true
             } label: {
                 Text("Block")
                     .font(.caption)
@@ -1581,7 +1560,7 @@ struct EmailActionBadgesView: View {
                 Button {
                     let generator = UIImpactFeedbackGenerator(style: .light)
                     generator.impactOccurred()
-                    pendingAction = .spam
+                    showSpamConfirm = true
                 } label: {
                     Text("Spam")
                         .font(.caption)
@@ -1625,57 +1604,6 @@ extension View {
             .background(Capsule().fill(GlassTokens.chromeMaterial))
             .overlay(Capsule().stroke(strokeColor, lineWidth: GlassTokens.strokeWidth))
             .shadow(color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity), radius: GlassTokens.shadowRadius, y: GlassTokens.shadowY)
-    }
-}
-
-// MARK: - Tracker Info Sheet
-
-struct TrackerInfoSheet: View {
-    let trackersBlocked: Int
-    let trackerNames: [String]
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("SimpleMail prevented \(trackersBlocked) tracking pixel\(trackersBlocked > 1 ? "s" : "") from notifying the sender when you opened this email.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                if !trackerNames.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Blocked:")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-
-                        ForEach(trackerNames, id: \.self) { name in
-                            HStack(spacing: 8) {
-                                Image(systemName: "shield.checkered")
-                                    .font(.caption)
-                                    .foregroundStyle(.green)
-                                Text(name)
-                                    .font(.subheadline)
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemGroupedBackground)))
-                }
-
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("Tracking Prevented")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
     }
 }
 
