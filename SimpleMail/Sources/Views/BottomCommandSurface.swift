@@ -41,7 +41,8 @@ struct BottomCommandSurface: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 36, height: 36)
-                        .background(Circle().fill(colorScheme == .dark ? Color(white: 0.2) : Color(.systemGray5)))
+                        .background(Circle().fill(GlassTokens.surfaceMaterial))
+                        .glassStroke(Circle())
                 }
                 .buttonStyle(.plain)
                 .frame(width: 44, height: 44)
@@ -59,15 +60,13 @@ struct BottomCommandSurface: View {
 
     private var leftButton: some View {
         Button(action: onTapFilter) {
-                Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 .font(.system(size: 21, weight: .regular))
                 .foregroundStyle(isFilterActive ? Color.accentColor : .secondary)
                 .frame(width: 36, height: 36)
-                .background(Circle().fill(.regularMaterial))
-                .overlay(
-                    Circle()
-                        .stroke(Color(.separator).opacity(0.22), lineWidth: 0.5)
-                )
+                .background(Circle().fill(GlassTokens.surfaceMaterial))
+                .glassStroke(Circle())
+                .glassShadow()
                 .overlay(alignment: .topTrailing) {
                     if isFilterActive {
                         FilterActiveBadge(count: activeFilterCount)
@@ -91,11 +90,9 @@ struct BottomCommandSurface: View {
                     .font(.system(size: 21, weight: .regular))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(.regularMaterial))
-                    .overlay(
-                        Circle()
-                            .stroke(Color(.separator).opacity(0.22), lineWidth: 0.5)
-                    )
+                    .background(Circle().fill(GlassTokens.surfaceMaterial))
+                    .glassStroke(Circle())
+                    .glassShadow()
             }
             .buttonStyle(.plain)
             .frame(width: 50, height: 50)
@@ -115,14 +112,8 @@ struct BottomCommandSurface: View {
             onBeginEditing: onTapSearch
         )
         .frame(height: 44)
-        .background(
-            Capsule()
-                .fill(fieldBackground)
-        )
-        .overlay(
-            Capsule()
-                .stroke(Color(.separator).opacity(0.3), lineWidth: 0.5)
-        )
+        .background(Capsule().fill(fieldBackground))
+        .glassStroke(Capsule())
         .opacity(showSearchField ? 1 : 0)
         .allowsHitTesting(showSearchField)
         .accessibilityHidden(!showSearchField)

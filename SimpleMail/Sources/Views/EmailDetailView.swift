@@ -1579,12 +1579,12 @@ class EmailDetailViewModel: ObservableObject {
     ]
 
     // Precomputed lowercased domains for O(1) contains checks
-    private static let trackerDomainsLowercased: [(domain: String, name: String)] = {
+    nonisolated(unsafe) private static let trackerDomainsLowercased: [(domain: String, name: String)] = {
         trackerDomains.map { (domain: $0.key.lowercased(), name: $0.value) }
     }()
 
     // Short-circuit keywords to skip expensive regex if no trackers likely present
-    private static let trackerHintKeywords = ["pixel", "track", "beacon", "open", "click"]
+    nonisolated(unsafe) private static let trackerHintKeywords = ["pixel", "track", "beacon", "open", "click"]
 
     var subject: String {
         messages.first?.subject ?? ""
@@ -1758,7 +1758,7 @@ class EmailDetailViewModel: ObservableObject {
             // FAST PATH: Show minimal placeholders immediately WITHOUT HTML processing on main
             // Use snippet (already available) as placeholder text to avoid HTMLSanitizer.plainText() on main
             let placeholders = messageDTOs.map { dto -> EmailDetail in
-                var detail = EmailDetail(dto: dto)
+                let detail = EmailDetail(dto: dto)
                 // Use snippet as quick placeholder - real HTML will be swapped in from background
                 detail.body = HTMLSanitizer.inlinePlainHTML(dto.snippet)
                 return detail

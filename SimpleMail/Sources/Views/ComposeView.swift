@@ -507,6 +507,195 @@ struct ComposeView: View {
     }
 }
 
+// MARK: - Recipient Field Helpers
+
+private struct RecipientToken {
+    let token: String   // what user is typing right now (e.g. "mark.marge@g")
+    let prefix: String  // text before the token (e.g. "anna@x.com, ")
+}
+
+/// Returns the active token after last delimiter (comma/semicolon/newline)
+private func extractActiveToken(from input: String) -> RecipientToken {
+    let delimiters = CharacterSet(charactersIn: ",;\n")
+    if let range = input.rangeOfCharacter(from: delimiters, options: .backwards) {
+        let after = input[range.upperBound...]
+        return RecipientToken(
+            token: after.trimmingCharacters(in: .whitespacesAndNewlines),
+            prefix: String(input[..<range.upperBound])
+        )
+    } else {
+        return RecipientToken(
+            token: input.trimmingCharacters(in: .whitespacesAndNewlines),
+            prefix: ""
+        )
+    }
+}
+
+private func isValidEmailFormat(_ s: String) -> Bool {
+    let pattern = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
+    return s.range(of: pattern, options: .regularExpression) != nil
+}
+
+private func shouldCommitOnSpace(token: String) -> Bool {
+    return isValidEmailFormat(token)
+}
+
+private func isEmailMode(_ token: String) -> Bool {
+    if token.contains("@") { return true }
+    // If they typed something like "mark.marge" treat as email-ish
+    if token.contains(".") && !token.contains(" ") { return true }
+    return false
+}
+
+private func normalizeEmail(_ s: String) -> String {
+    s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+}
+
+private func emailScore(email: String, token: String, isSelf: Bool) -> Int {
+    let e = normalizeEmail(email)
+    let q = normalizeEmail(token)
+
+    if e == q { return 1_000_000 + (isSelf ? 10_000 : 0) }
+    if e.hasPrefix(q) { return 900_000 + q.count * 100 + (isSelf ? 10_000 : 0) }
+
+    // local-part prefix
+    if let at = e.firstIndex(of: "@") {
+        let local = String(e[..<at])
+        if local.hasPrefix(q) { return 800_000 + q.count * 100 + (isSelf ? 10_000 : 0) }
+    }
+
+    // substring last (never outrank prefix)
+    if let idx = e.range(of: q)?.lowerBound {
+        let dist = e.distance(from: e.startIndex, to: idx)
+        return 700_000 - dist
+    }
+
+    return 0
+}
+
+// MARK: - Recipient Suggestion
+
+struct RecipientSuggestion: Identifiable, Equatable {
+    let id: String
+    let name: String?
+    let email: String
+    let isTyped: Bool  // true if this is the "Use exactly what I typed" suggestion
+
+    init(from contact: PeopleService.Contact) {
+        self.id = contact.id
+        self.name = contact.name.isEmpty ? nil : contact.name
+        self.email = contact.email
+        self.isTyped = false
+    }
+
+    init(typedEmail: String) {
+        self.id = "typed-\(typedEmail)"
+        self.name = nil
+        self.email = typedEmail
+        self.isTyped = true
+    }
+}
+
+private func rankAndDedupe(
+    results: [PeopleService.Contact],
+    queryToken: String,
+    myEmails: [String],
+    alreadySelected: [String]
+) -> [RecipientSuggestion] {
+    let q = queryToken.trimmingCharacters(in: .whitespacesAndNewlines)
+    let emailMode = isEmailMode(q)
+    let mySet = Set(myEmails.map(normalizeEmail))
+    let selectedSet = Set(alreadySelected.map(normalizeEmail))
+
+    // Dedupe by normalized email
+    var bestByEmail: [String: PeopleService.Contact] = [:]
+    for r in results {
+        let key = normalizeEmail(r.email)
+        // Skip already selected recipients
+        if selectedSet.contains(key) { continue }
+
+        if bestByEmail[key] == nil {
+            bestByEmail[key] = r
+        } else {
+            // Prefer contact with a name if duplicate
+            let existing = bestByEmail[key]!
+            if existing.name.isEmpty && !r.name.isEmpty {
+                bestByEmail[key] = r
+            }
+        }
+    }
+
+    var deduped = Array(bestByEmail.values)
+
+    // If user is typing an email, do email-first scoring
+    if emailMode {
+        deduped.sort {
+            let aSelf = mySet.contains(normalizeEmail($0.email))
+            let bSelf = mySet.contains(normalizeEmail($1.email))
+            let sa = emailScore(email: $0.email, token: q, isSelf: aSelf)
+            let sb = emailScore(email: $1.email, token: q, isSelf: bSelf)
+
+            if sa != sb { return sa > sb }
+            // stable tie-breakers
+            if $0.email != $1.email { return $0.email.lowercased() < $1.email.lowercased() }
+            return $0.name < $1.name
+        }
+
+        // Hard filter: if token contains '@', drop non-matching emails
+        if q.contains("@") {
+            deduped = deduped.filter { normalizeEmail($0.email).contains(normalizeEmail(q)) }
+        }
+
+        var suggestions = deduped.prefix(5).map { RecipientSuggestion(from: $0) }
+
+        // Add "use exactly what I typed" if valid email and not already in list
+        if isValidEmailFormat(q) {
+            let normalizedQ = normalizeEmail(q)
+            let alreadyInList = suggestions.contains { normalizeEmail($0.email) == normalizedQ }
+            let alreadySelected = selectedSet.contains(normalizedQ)
+            if !alreadyInList && !alreadySelected {
+                suggestions.insert(RecipientSuggestion(typedEmail: q), at: 0)
+            }
+        }
+
+        return Array(suggestions.prefix(5))
+    }
+
+    // Non-email mode: simple name/email sorting
+    deduped.sort { ($0.name.isEmpty ? $0.email : $0.name) < ($1.name.isEmpty ? $1.email : $1.name) }
+    return Array(deduped.prefix(5).map { RecipientSuggestion(from: $0) })
+}
+
+private func commitTokenIfNeeded(
+    _ input: String,
+    addRecipient: (String) -> Void
+) -> (newInput: String, committed: Bool) {
+    guard let last = input.last else { return (input, false) }
+
+    if last == "," || last == ";" || last == "\n" {
+        let dropped = String(input.dropLast())
+        let tok = extractActiveToken(from: dropped).token
+        if !tok.isEmpty && isValidEmailFormat(tok) {
+            addRecipient(tok)
+            return (extractActiveToken(from: dropped).prefix, true)
+        }
+        // Even if not valid, drop the delimiter
+        return (dropped, false)
+    }
+
+    if last == " " {
+        let dropped = String(input.dropLast())
+        let tok = extractActiveToken(from: dropped).token
+        if shouldCommitOnSpace(token: tok) {
+            addRecipient(tok)
+            return (extractActiveToken(from: dropped).prefix, true)
+        }
+        return (input, false)
+    }
+
+    return (input, false)
+}
+
 // MARK: - Recipient Field
 
 struct RecipientField: View {
@@ -519,10 +708,20 @@ struct RecipientField: View {
     private let labelWidth: CGFloat = 60
     private let horizontalPadding: CGFloat = 16
 
-    @State private var suggestions: [PeopleService.Contact] = []
+    @State private var suggestions: [RecipientSuggestion] = []
     @State private var showingSuggestions = false
+    @State private var searchTask: Task<Void, Never>?
+    @State private var lastIssuedQuery: String = ""
 
     @FocusState private var textFieldFocused: Bool
+
+    /// Current user's email addresses for ranking
+    private var myAccountEmails: [String] {
+        if let email = AuthService.shared.currentAccount?.email {
+            return [email]
+        }
+        return []
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -551,12 +750,7 @@ struct RecipientField: View {
                             addRecipient()
                         }
                         .onChange(of: pendingInput) { _, newValue in
-                            if newValue.hasSuffix(" ") || newValue.hasSuffix(",") {
-                                pendingInput = String(newValue.dropLast())
-                                addRecipient()
-                            } else {
-                                searchContacts(query: newValue)
-                            }
+                            handleInputChange(newValue)
                         }
                 }
                 .padding(.vertical, 8)
@@ -578,27 +772,44 @@ struct RecipientField: View {
                         .frame(width: labelWidth + horizontalPadding)
 
                     VStack(spacing: 0) {
-                        ForEach(suggestions.prefix(5)) { contact in
+                        ForEach(suggestions) { suggestion in
                             Button(action: {
-                                selectContact(contact)
+                                selectSuggestion(suggestion)
                             }) {
                                 HStack(spacing: 10) {
-                                    SmartAvatarView(
-                                        email: contact.email,
-                                        name: contact.name,
-                                        size: 28
-                                    )
+                                    if suggestion.isTyped {
+                                        // "Use exactly what I typed" row
+                                        Image(systemName: "envelope")
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 28, height: 28)
+                                    } else {
+                                        SmartAvatarView(
+                                            email: suggestion.email,
+                                            name: suggestion.name ?? "",
+                                            size: 28
+                                        )
+                                    }
 
                                     VStack(alignment: .leading, spacing: 1) {
-                                        if !contact.name.isEmpty {
-                                            Text(contact.name)
+                                        if suggestion.isTyped {
+                                            Text("Use \"\(suggestion.email)\"")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                        } else if let name = suggestion.name, !name.isEmpty {
+                                            Text(name)
+                                                .font(.subheadline)
+                                                .lineLimit(1)
+                                            Text(suggestion.email)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        } else {
+                                            Text(suggestion.email)
                                                 .font(.subheadline)
                                                 .lineLimit(1)
                                         }
-                                        Text(contact.email)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
                                     }
 
                                     Spacer()
@@ -609,7 +820,7 @@ struct RecipientField: View {
                             }
                             .buttonStyle(.plain)
 
-                            if contact.id != suggestions.prefix(5).last?.id {
+                            if suggestion.id != suggestions.last?.id {
                                 Divider()
                                     .padding(.leading, 54)
                             }
@@ -625,58 +836,77 @@ struct RecipientField: View {
         }
     }
 
-    private func addRecipient() {
-        let trimmed = pendingInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if isValidEmail(trimmed) {
-            recipients.append(trimmed)
-            pendingInput = ""
-            showingSuggestions = false
+    private func handleInputChange(_ newValue: String) {
+        // First check if we should commit a token
+        let (newInput, committed) = commitTokenIfNeeded(newValue) { email in
+            if !recipients.contains(email) {
+                recipients.append(email)
+            }
         }
-    }
 
-    /// Validates email format: local@domain.tld
-    private func isValidEmail(_ email: String) -> Bool {
-        let parts = email.split(separator: "@")
-        guard parts.count == 2,
-              !parts[0].isEmpty,
-              !parts[1].isEmpty else {
-            return false
-        }
-        let domain = String(parts[1])
-        // Domain must have at least one dot, not start/end with dot
-        guard domain.contains("."),
-              !domain.hasPrefix("."),
-              !domain.hasSuffix(".") else {
-            return false
-        }
-        return true
-    }
-
-    private func selectContact(_ contact: PeopleService.Contact) {
-        if !recipients.contains(contact.email) {
-            recipients.append(contact.email)
-        }
-        pendingInput = ""
-        showingSuggestions = false
-    }
-
-    private func searchContacts(query: String) {
-        guard query.count >= 1 else {
+        if committed {
+            pendingInput = newInput
             suggestions = []
             showingSuggestions = false
             return
         }
 
-        Task {
-            // First try to search, which will fetch contacts if cache is empty
-            let results = await PeopleService.shared.searchContacts(query: query)
-            // Filter out already selected recipients
-            let filtered = results.filter { !recipients.contains($0.email) }
-            await MainActor.run {
-                suggestions = filtered
-                showingSuggestions = !filtered.isEmpty
-            }
+        // Extract the active token for searching
+        let token = extractActiveToken(from: newValue).token
+
+        // Don't search empty tokens
+        if token.isEmpty {
+            suggestions = []
+            showingSuggestions = false
+            return
         }
+
+        // Cancel previous search and debounce
+        searchTask?.cancel()
+        searchTask = Task { @MainActor in
+            // 150ms debounce
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if Task.isCancelled { return }
+
+            lastIssuedQuery = token
+            let results = await PeopleService.shared.searchContacts(query: token)
+
+            if Task.isCancelled { return }
+            // Discard stale results if user typed more
+            if lastIssuedQuery != token { return }
+
+            let ranked = rankAndDedupe(
+                results: results,
+                queryToken: token,
+                myEmails: myAccountEmails,
+                alreadySelected: recipients
+            )
+
+            suggestions = ranked
+            showingSuggestions = !ranked.isEmpty
+        }
+    }
+
+    private func addRecipient() {
+        let token = extractActiveToken(from: pendingInput).token
+        if isValidEmailFormat(token) {
+            if !recipients.contains(token) {
+                recipients.append(token)
+            }
+            pendingInput = extractActiveToken(from: pendingInput).prefix
+            suggestions = []
+            showingSuggestions = false
+        }
+    }
+
+    private func selectSuggestion(_ suggestion: RecipientSuggestion) {
+        if !recipients.contains(suggestion.email) {
+            recipients.append(suggestion.email)
+        }
+        // Keep the prefix (text before the active token)
+        pendingInput = extractActiveToken(from: pendingInput).prefix
+        suggestions = []
+        showingSuggestions = false
     }
 }
 
@@ -1966,7 +2196,11 @@ class ComposeViewModel: ObservableObject {
     private var isSavingDraft = false  // Prevent concurrent saves
     private var pendingHTMLBody: String?
     private var pendingQuotedEmail: EmailDetail?
-    private static let htmlCache = NSCache<NSString, NSAttributedString>()
+    nonisolated(unsafe) private static let htmlCache = NSCache<NSString, NSAttributedString>()
+
+    private struct AttributedResult: @unchecked Sendable {
+        let value: NSAttributedString?
+    }
     private var autoSaveTask: Task<Void, Never>?
 
     /// True while programmatically setting body (e.g., loading quoted email)
@@ -2100,28 +2334,28 @@ class ComposeViewModel: ObservableObject {
         }
 
         // Heavy work on background thread
-        let result = await Task.detached(priority: .userInitiated) { [htmlToProcess, quoteInputs] () -> NSAttributedString? in
+        let result = await Task.detached(priority: .userInitiated) { [htmlToProcess, quoteInputs] () -> AttributedResult in
             // Process pending HTML body
             if let html = htmlToProcess {
                 if let rich = Self.parseHTMLToAttributed(html) {
-                    return rich
+                    return AttributedResult(value: rich)
                 }
             }
 
             // Build quoted reply
             if let inputs = quoteInputs {
-                return Self.buildQuotedReplyBackground(
+                return AttributedResult(value: Self.buildQuotedReplyBackground(
                     from: inputs.from,
                     date: inputs.date,
                     body: inputs.body,
                     subject: inputs.subject
-                )
+                ))
             }
 
-            return nil
+            return AttributedResult(value: nil)
         }.value
 
-        return result
+        return result.value
     }
 
     /// Thread-safe HTML parsing (can be called from background)

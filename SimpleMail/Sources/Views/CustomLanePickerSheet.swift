@@ -10,6 +10,8 @@ struct CustomLanePickerSheet: View {
                 Section {
                     ForEach(PinnedTabOption.allCases) { lane in
                         Button {
+                            let generator = UIImpactFeedbackGenerator(style: .light)
+                            generator.impactOccurred()
                             selectedLane = lane
                             dismiss()
                         } label: {

@@ -205,7 +205,13 @@ struct InboxView: View {
             .sheet(isPresented: $showingFilterSheet) {
                 FilterSheet(
                     activeFilter: $viewModel.activeFilter,
-                    filterCounts: viewModel.filterCounts
+                    filterCounts: viewModel.filterCounts,
+                    bucketTotals: { viewModel.bucketTotalCount($0) },
+                    bucketUnseen: { viewModel.bucketUnseenCount($0) },
+                    onSelectCategory: { bucket in
+                        handleBucketTap(bucket)
+                        showingFilterSheet = false
+                    }
                 )
                 .presentationDetents([.medium])
             }
@@ -444,6 +450,7 @@ struct InboxView: View {
                     activeFilter: $viewModel.activeFilter,
                     filterCounts: viewModel.filterCounts,
                     isCollapsed: isHeaderCollapsed,
+                    isPickerOpen: showingLanePickerSheet,
                     onOpenFilters: { showingFilterSheet = true },
                     onTapCustomWhileSelected: { showingLanePickerSheet = true }
                 )
@@ -487,9 +494,9 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                 }
                 // Category bundles (top block) when not inline
-                else if showCategoryBundles && !showCategoryBundlesInline && viewModel.currentTab == .primary && !viewModel.categoryBundles.isEmpty {
-                    CategoryBundlesSection(bundles: viewModel.categoryBundles) { category in
-                        handleBundleTap(category)
+                else if showCategoryBundles && !showCategoryBundlesInline && viewModel.currentTab == .primary && !viewModel.bucketRows.isEmpty {
+                    CategoryBundlesSection(bundles: viewModel.bucketRows) { bucket in
+                        handleBucketTap(bucket)
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowSeparator(.hidden)
@@ -499,16 +506,16 @@ struct InboxView: View {
 
             let inlineBlocks = inlineCategoryBlocks(
                 sections: displaySections,
-                bundles: (showCategoryBundles && showCategoryBundlesInline && viewModel.currentTab == .primary) ? viewModel.categoryBundles : []
+                bundles: (showCategoryBundles && showCategoryBundlesInline && viewModel.currentTab == .primary) ? viewModel.bucketRows : []
             )
 
             ForEach(Array(inlineBlocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .section(let index, let section):
                     sectionView(section: section, sectionIndex: index)
-                case .bundle(let bundle):
-                    CategoryBundleRow(bundle: bundle) {
-                        handleBundleTap(bundle.category)
+                case .bucket(let bundle):
+                    CategoryBundleRow(model: bundle) {
+                        handleBucketTap(bundle.bucket)
                     }
                     .listRowSeparator(.visible)
                     .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
@@ -531,6 +538,7 @@ struct InboxView: View {
             }
         }
         .listStyle(.plain)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: viewModel.bucketRows)
         .listSectionSpacing(2)
         .contentMargins(.top, 0, for: .scrollContent)
         .contentMargins(.bottom, 56, for: .scrollContent)
@@ -1128,10 +1136,10 @@ struct InboxView: View {
     // MARK: - Inline category blocks (Gmail-style)
     private enum InlineBlock {
         case section(index: Int, section: EmailSection)
-        case bundle(CategoryBundle)
+        case bucket(BucketRowModel)
     }
 
-    private func inlineCategoryBlocks(sections: [EmailSection], bundles: [CategoryBundle]) -> [InlineBlock] {
+    private func inlineCategoryBlocks(sections: [EmailSection], bundles: [BucketRowModel]) -> [InlineBlock] {
         // Derive a sort key (latest date) for each section and bundle
         var blocks: [(Date, InlineBlock)] = []
 
@@ -1144,8 +1152,8 @@ struct InboxView: View {
         }
 
         for bundle in bundles {
-            let date = bundle.latestEmail?.date ?? .distantPast
-            blocks.append((date, .bundle(bundle)))
+            let date = bundle.latestDate ?? .distantPast
+            blocks.append((date, .bucket(bundle)))
         }
 
         // Sort by date descending (newest first)
@@ -1203,11 +1211,12 @@ struct InboxView: View {
         }
     }
 
-    private func handleBundleTap(_ category: GmailCategory) {
+    private func handleBucketTap(_ bucket: GmailBucket) {
         HapticFeedback.light()
         // Instantly filter to show this category's emails (no network call)
-        withAnimation(.easeInOut(duration: 0.2)) {
-            viewModel.viewingCategory = category
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+            viewModel.markBucketSeen(bucket)
+            viewModel.viewingCategory = bucket.category
         }
     }
 
@@ -1256,6 +1265,7 @@ struct InboxHeaderBlock: View {
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
     let isCollapsed: Bool
+    var isPickerOpen: Bool = false
     let onOpenFilters: () -> Void
     let onTapCustomWhileSelected: () -> Void
 
@@ -1264,6 +1274,7 @@ struct InboxHeaderBlock: View {
             InboxTabBar(
                 selectedTab: currentTab,
                 customLaneTitle: customLaneTitle,
+                isPickerOpen: isPickerOpen,
                 onTapAll: { currentTab = .all },
                 onTapPrimary: { currentTab = .primary },
                 onTapCustom: {
@@ -1857,10 +1868,14 @@ struct TimeOfDayGradient: View {
 struct FilterSheet: View {
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
+    let bucketTotals: (GmailBucket) -> Int
+    let bucketUnseen: (GmailBucket) -> Int
+    let onSelectCategory: (GmailBucket) -> Void
     @Environment(\.dismiss) private var dismiss
 
     private let smartFilters: [InboxFilter] = [.unread, .needsReply, .deadlines, .money]
     private let otherFilters: [InboxFilter] = [.newsletters]
+    private let categoryBuckets: [GmailBucket] = GmailBucket.allCases
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
@@ -1869,6 +1884,7 @@ struct FilterSheet: View {
                 VStack(alignment: .leading, spacing: 20) {
                     filterSection(title: "Smart", filters: smartFilters)
                     filterSection(title: "Other", filters: otherFilters)
+                    categorySection()
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -1919,6 +1935,89 @@ struct FilterSheet: View {
 
     private func selectFilter(_ filter: InboxFilter) {
         activeFilter = (activeFilter == filter) ? nil : filter
+    }
+
+    @ViewBuilder
+    private func categorySection() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Categories")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            VStack(spacing: 10) {
+                ForEach(categoryBuckets, id: \.self) { bucket in
+                    categoryRow(bucket: bucket)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func categoryRow(bucket: GmailBucket) -> some View {
+        let total = bucketTotals(bucket)
+        let unseen = bucketUnseen(bucket)
+        let category = bucket.category
+
+        Button {
+            selectCategory(bucket)
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(category.color.opacity(0.14))
+                        .frame(width: 32, height: 32)
+
+                    Image(systemName: category.icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(category.color)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(category.displayName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        if unseen > 0 {
+                            Text("\(unseen) new")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(category.color)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(category.color.opacity(0.12))
+                                )
+                        }
+                    }
+
+                    Text(total == 0 ? "No mail yet" : "\(total) total")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+        .buttonStyle(.plain)
+        .opacity(total == 0 ? 0.5 : 1)
+        .disabled(total == 0)
+    }
+
+    private func selectCategory(_ bucket: GmailBucket) {
+        onSelectCategory(bucket)
+        dismiss()
     }
 }
 

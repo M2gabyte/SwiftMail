@@ -374,6 +374,14 @@ final class InboxViewModel: ObservableObject {
         }
     }
 
+    /// Gmail-style inline bucket rows (Promotions/Updates/Social) based on unseen mail.
+    var bucketRows: [BucketRowModel] {
+        guard currentTab == .primary, viewingCategory == nil else { return [] }
+        guard currentMailbox == .inbox || currentMailbox == .allInboxes else { return [] }
+        let rows = GmailBucket.allCases.compactMap { bucketRowModelIfNeeded(bucket: $0) }
+        return rows.sorted { ($0.latestDate ?? .distantPast) > ($1.latestDate ?? .distantPast) }
+    }
+
     /// Last visible email after filtering (for pagination trigger)
     private var lastVisibleEmailId: String? {
         emailSections.last?.emails.last?.id
@@ -929,10 +937,79 @@ final class InboxViewModel: ObservableObject {
         scheduleRecompute()
     }
 
+    // MARK: - Gmail Buckets
+
+    private var currentAccountId: String? {
+        currentAccountEmail?.lowercased()
+    }
+
+    /// Returns cached emails for a given Gmail bucket scoped to the current mailbox.
+    private func getMessagesForBucket(_ bucket: GmailBucket) -> [Email] {
+        emails.filter { email in
+            email.labelIds.contains(bucket.gmailLabel)
+        }
+    }
+
+    /// Computes a bucket row model if there are unseen messages newer than the last seen marker.
+    func bucketRowModelIfNeeded(bucket: GmailBucket) -> BucketRowModel? {
+        guard let accountId = currentAccountId else { return nil }
+
+        let messages = getMessagesForBucket(bucket)
+        guard !messages.isEmpty else { return nil }
+
+        let totalCount = messages.count
+        guard let newestDate = messages.map(\.date).max() else { return nil }
+        let newestEmail = messages.max(by: { $0.date < $1.date })?.toDTO()
+
+        let lastSeen = BucketSeenStore.shared.getLastSeenDate(accountEmail: accountId, bucket: bucket)
+        let unseenCount: Int
+        if let lastSeen {
+            unseenCount = messages.filter { $0.date > lastSeen }.count
+        } else {
+            unseenCount = totalCount
+        }
+
+        guard unseenCount > 0 else { return nil }
+
+        return BucketRowModel(
+            id: "bucketRow.\(accountId).\(bucket.rawValue)",
+            bucket: bucket,
+            unseenCount: unseenCount,
+            totalCount: totalCount,
+            latestEmail: newestEmail,
+            latestDate: newestDate
+        )
+    }
+
+    /// Marks a bucket as seen up to its newest message.
+    func markBucketSeen(_ bucket: GmailBucket) {
+        guard let accountId = currentAccountId else { return }
+        let messages = getMessagesForBucket(bucket)
+        guard let newestDate = messages.map(\.date).max() else { return }
+        BucketSeenStore.shared.setLastSeenDate(accountEmail: accountId, bucket: bucket, date: newestDate)
+        scheduleRecompute()
+    }
+
+    /// Total cached messages for a bucket in the current mailbox.
+    func bucketTotalCount(_ bucket: GmailBucket) -> Int {
+        getMessagesForBucket(bucket).count
+    }
+
+    /// Unseen count for a bucket (messages newer than last seen marker).
+    func bucketUnseenCount(_ bucket: GmailBucket) -> Int {
+        guard let accountId = currentAccountId else { return 0 }
+        let messages = getMessagesForBucket(bucket)
+        guard !messages.isEmpty else { return 0 }
+        if let lastSeen = BucketSeenStore.shared.getLastSeenDate(accountEmail: accountId, bucket: bucket) {
+            return messages.filter { $0.date > lastSeen }.count
+        }
+        return messages.count
+    }
+
 #if DEBUG
     func refreshViewStateForTests() async -> InboxViewState {
         let snapshots: [EmailSnapshot] = emails.map { email in
-            let labelKey = (email.labelIds ?? []).sorted().joined(separator: "|")
+            let labelKey = email.labelIds.sorted().joined(separator: "|")
             return EmailSnapshot(
                 id: email.id,
                 threadId: email.threadId,

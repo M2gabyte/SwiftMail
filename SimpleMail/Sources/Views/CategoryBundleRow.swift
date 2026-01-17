@@ -1,13 +1,20 @@
 import SwiftUI
 
-/// A compact row displaying a collapsed Gmail category bundle.
-/// Shows category icon, name, unread count, and preview of latest email.
+/// A compact row displaying a Gmail bucket (Promotions/Updates/Social) with unseen count semantics.
 struct CategoryBundleRow: View {
-    let bundle: CategoryBundle
+    let model: BucketRowModel
     let onTap: () -> Void
 
-    private var hasUnread: Bool {
-        bundle.unreadCount > 0
+    private var category: GmailCategory { model.bucket.category }
+
+    private var hasUnseen: Bool {
+        model.unseenCount > 0
+    }
+
+    private var previewText: String {
+        guard let email = model.latestEmail else { return "" }
+        let sender = email.senderName.isEmpty ? email.senderEmail : email.senderName
+        return "\(sender) - \(email.displaySubject)"
     }
 
     var body: some View {
@@ -16,38 +23,38 @@ struct CategoryBundleRow: View {
                 // Category icon with colored background
                 ZStack {
                     Circle()
-                        .fill(bundle.category.color.opacity(0.14))
+                        .fill(category.color.opacity(0.14))
                         .frame(width: 36, height: 36)
 
-                    Image(systemName: bundle.category.icon)
+                    Image(systemName: category.icon)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(bundle.category.color)
+                        .foregroundStyle(category.color)
                 }
 
                 // Content
                 VStack(alignment: .leading, spacing: 3) {
                     // Top row: category name + unread badge
                     HStack(spacing: 8) {
-                        Text(bundle.category.displayName)
-                            .font(.subheadline.weight(hasUnread ? .semibold : .medium))
+                        Text(category.displayName)
+                            .font(.subheadline.weight(hasUnseen ? .semibold : .medium))
                             .foregroundStyle(.primary)
 
-                        if hasUnread {
-                            Text("\(bundle.unreadCount) new")
+                        if hasUnseen {
+                            Text("\(model.unseenCount) new")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(bundle.category.color)
+                                .foregroundStyle(category.color)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 2)
                                 .background(
                                     Capsule()
-                                        .fill(bundle.category.color.opacity(0.12))
+                                        .fill(category.color.opacity(0.12))
                                 )
                         }
 
                         Spacer()
 
                         // Total count
-                        Text("\(bundle.totalCount)")
+                        Text("\(model.totalCount)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
@@ -57,8 +64,8 @@ struct CategoryBundleRow: View {
                     }
 
                     // Preview text
-                    if !bundle.previewText.isEmpty {
-                        Text(bundle.previewText)
+                    if !previewText.isEmpty {
+                        Text(previewText)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -77,15 +84,15 @@ struct CategoryBundleRow: View {
 
 /// A section containing all category bundles for the Primary tab
 struct CategoryBundlesSection: View {
-    let bundles: [CategoryBundle]
-    let onTapBundle: (GmailCategory) -> Void
+    let bundles: [BucketRowModel]
+    let onTapBundle: (GmailBucket) -> Void
 
     var body: some View {
         if !bundles.isEmpty {
             VStack(spacing: 0) {
                 ForEach(bundles) { bundle in
-                    CategoryBundleRow(bundle: bundle) {
-                        onTapBundle(bundle.category)
+                    CategoryBundleRow(model: bundle) {
+                        onTapBundle(bundle.bucket)
                     }
 
                     if bundle.id != bundles.last?.id {
