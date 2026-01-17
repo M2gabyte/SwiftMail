@@ -90,10 +90,12 @@ actor BodyRenderActor {
         var safeHTML = HTMLSanitizer.sanitize(html)
         // Remove zero-width characters that create empty space in marketing emails
         safeHTML = HTMLSanitizer.removeZeroWidthCharacters(safeHTML)
+        safeHTML = HTMLSanitizer.stripTinyImages(safeHTML)
         let plain = HTMLSanitizer.plainText(safeHTML)
 
         // Apply conditional transformations based on settings
         var processedHTML = safeHTML
+        processedHTML = HTMLSanitizer.addLazyLoading(processedHTML)
         if settings.blockImages {
             processedHTML = HTMLSanitizer.blockImages(processedHTML)
         }
@@ -142,23 +144,11 @@ actor BodyRenderActor {
                     max-width: 100%;
                     overflow-x: hidden;
                 }
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                    font-size: 16px;
-                    line-height: 1.5;
-                    color: #1a1a1a;
-                    padding: 16px;
-                    padding-bottom: 96px;
-                    word-wrap: break-word;
-                    overflow-wrap: break-word;
-                }
-                @media (prefers-color-scheme: dark) {
-                    body { color: #f0f0f0; background-color: transparent; }
-                }
+                body { word-wrap: break-word; overflow-wrap: break-word; background: transparent; color: inherit; }
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
                 td, th { word-break: break-word; }
-                a { color: #007AFF; }
+                a { color: inherit; }
                 div:empty, span:empty, td:empty, p:empty { display: none !important; }
                 \(trackingCSS)
                 img[data-blocked-src] {
@@ -766,6 +756,26 @@ enum HTMLSanitizer {
         return """
         <html><body style="font-family:-apple-system;font-size:16px;padding:12px;">\(escaped)</body></html>
         """
+    }
+
+    /// Remove obvious 1x1 / 2x2 tracking pixels while keeping normal images.
+    static func stripTinyImages(_ html: String) -> String {
+        // Drop imgs that explicitly declare width/height <= 2
+        let tinyPattern = "<img[^>]*(width\\s*=\\s*\"?[0-2]\"?[^>]*height\\s*=\\s*\"?[0-2]\"?|height\\s*=\\s*\"?[0-2]\"?[^>]*width\\s*=\\s*\"?[0-2]\"?)[^>]*>"
+        var result = html.replacingOccurrences(of: tinyPattern, with: "", options: [.regularExpression, .caseInsensitive])
+
+        // Drop common pixel filenames when size not declared
+        let pixelNames = ["pixel", "track", "beacon", "open", "1x1", "1px"]
+        if let regex = try? NSRegularExpression(pattern: "<img[^>]*src\\s*=\\s*[\"'][^\"'>]*(\(pixelNames.joined(separator: "|")))[^\"'>]*[\"'][^>]*>", options: [.caseInsensitive]) {
+            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(result.startIndex..., in: result), withTemplate: "")
+        }
+        return result
+    }
+
+    /// Add lazy-loading to images that don't already declare it.
+    static func addLazyLoading(_ html: String) -> String {
+        let pattern = "<img(?![^>]*\\sloading=)([^>]*?)>"
+        return html.replacingOccurrences(of: pattern, with: "<img loading=\"lazy\" $1>", options: [.regularExpression, .caseInsensitive])
     }
 
     /// Block remote images by converting img src to data-src
@@ -1488,11 +1498,10 @@ struct ChipDialogModifier: ViewModifier {
             } message: {
                 Text("SimpleMail blocked \(trackersBlocked) tracking pixel\(trackersBlocked == 1 ? "" : "s") from notifying the sender when you opened this email.")
             }
-            .confirmationDialog(
-                "Unsubscribe from \(senderName)?",
-                isPresented: unsubscribeBinding,
-                titleVisibility: .visible
-            ) {
+            .alert("Unsubscribe from \(senderName)?", isPresented: unsubscribeBinding) {
+                Button("Cancel", role: .cancel) {
+                    pendingAction = nil
+                }
                 Button("Unsubscribe", role: .destructive) {
                     Task {
                         await onUnsubscribe()
@@ -1585,19 +1594,67 @@ struct EmailActionChipsView: View {
 
     @Binding var pendingAction: PendingChipAction?
 
+    // Standard stroke opacity for all action chips
+    private let chipStrokeOpacity: Double = 0.20
+
     var body: some View {
         VStack(spacing: 0) {
             // Chip row - all chips grouped together, left-aligned
-            HStack(spacing: 12) {
-                // Left cluster: tracker + unsubscribe
-                leftCluster
+            HStack(spacing: 10) {
+                // Tracker status chip (special - keeps green accent)
+                if trackersBlocked > 0 {
+                    ActionChip(strokeOpacity: 0.26) {
+                        pendingAction = .tracker
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "shield.fill")
+                                .font(.system(size: 11, weight: .medium))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(.green)
+                            Text("\(trackersBlocked)")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
+                }
 
-                // Right cluster: block + spam
-                rightCluster
+                // Unsubscribe chip - equal peer
+                if canUnsubscribe {
+                    ActionChip(strokeOpacity: chipStrokeOpacity) {
+                        pendingAction = .unsubscribe
+                    } label: {
+                        Text("Unsubscribe")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Block chip - equal peer
+                ActionChip(strokeOpacity: chipStrokeOpacity) {
+                    pendingAction = .block
+                } label: {
+                    Text("Block")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Block \(senderName)")
+
+                // Spam chip - equal peer (not for replies)
+                if !isReply {
+                    ActionChip(strokeOpacity: chipStrokeOpacity) {
+                        pendingAction = .spam
+                    } label: {
+                        Text("Spam")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("Mark as spam")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12) // Match sender header padding
-            .padding(.top, 2)  // Tight to summary above
+            .padding(.horizontal, 12)
+            .padding(.top, 2)
             .padding(.bottom, 8)
 
             // Subtle divider to anchor strip
@@ -1607,85 +1664,73 @@ struct EmailActionChipsView: View {
                 .padding(.horizontal, 12)
         }
     }
+}
 
-    @ViewBuilder
-    private var leftCluster: some View {
-        HStack(spacing: 10) {
-            // Tracker status chip
-            if trackersBlocked > 0 {
-                GlassChip(
-                    style: .status,
-                    foregroundColor: .green,
-                    strokeColor: Color.green.opacity(0.26)
-                ) {
-                    pendingAction = .tracker
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "shield.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .symbolRenderingMode(.hierarchical)
-                        Text("\(trackersBlocked)")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                    }
-                }
-                .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
-            }
+// MARK: - Action Chip Component (equal-weight, quiet, tappable)
 
-            // Unsubscribe chip
-            if canUnsubscribe {
-                GlassChip(
-                    style: .primary,
-                    foregroundColor: .primary,
-                    strokeColor: GlassTokens.strokeColor.opacity(0.22)
-                ) {
-                    pendingAction = .unsubscribe
-                } label: {
-                    Text("Unsubscribe")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                }
-            }
+struct ActionChip<Label: View>: View {
+    let strokeOpacity: Double
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    @State private var isPressed = false
+
+    private let visualHeight: CGFloat = 28
+    private let horizontalPadding: CGFloat = 12
+
+    var body: some View {
+        Button {
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+            action()
+        } label: {
+            label()
+                .padding(.horizontal, horizontalPadding)
+                .frame(height: visualHeight)
+                .background(
+                    Capsule()
+                        .fill(GlassTokens.chromeMaterial)
+                )
+                .overlay(
+                    // Pressed highlight overlay
+                    Capsule()
+                        .fill(Color.white.opacity(isPressed ? 0.06 : 0))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            GlassTokens.strokeColor.opacity(isPressed ? strokeOpacity + 0.06 : strokeOpacity),
+                            lineWidth: GlassTokens.strokeWidth
+                        )
+                )
+                .shadow(
+                    color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity),
+                    radius: GlassTokens.shadowRadius,
+                    y: GlassTokens.shadowY
+                )
+                .scaleEffect(isPressed ? 0.98 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: isPressed)
         }
-    }
-
-    @ViewBuilder
-    private var rightCluster: some View {
-        HStack(spacing: 8) {
-            // Block chip - same styling as other chips for consistency
-            GlassChip(
-                style: .secondary,
-                foregroundColor: .primary,
-                strokeColor: GlassTokens.strokeColor.opacity(0.22)
-            ) {
-                pendingAction = .block
-            } label: {
-                Text("Block")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-            }
-            .accessibilityLabel("Block \(senderName)")
-
-            // Spam chip (not for replies)
-            if !isReply {
-                GlassChip(
-                    style: .secondary,
-                    foregroundColor: .primary,
-                    strokeColor: GlassTokens.strokeColor.opacity(0.22)
-                ) {
-                    pendingAction = .spam
-                } label: {
-                    Text("Spam")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                }
-                .accessibilityLabel("Mark as spam")
-            }
-        }
+        .buttonStyle(ActionChipButtonStyle(isPressed: $isPressed))
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 
-// MARK: - Glass Chip Component
+// MARK: - Action Chip Button Style
+
+struct ActionChipButtonStyle: ButtonStyle {
+    @Binding var isPressed: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .onChange(of: configuration.isPressed) { _, newValue in
+                isPressed = newValue
+            }
+    }
+}
+
+// MARK: - Legacy Glass Chip Component (for backwards compatibility)
 
 struct GlassChip<Label: View>: View {
     enum Style { case status, primary, secondary }
@@ -1716,9 +1761,13 @@ struct GlassChip<Label: View>: View {
                 )
                 .overlay(
                     Capsule()
+                        .fill(Color.white.opacity(isPressed ? 0.06 : 0))
+                )
+                .overlay(
+                    Capsule()
                         .stroke(
-                            strokeColor.opacity(isPressed ? 1.6 : 1.0), // 60% stronger stroke on press
-                            lineWidth: isPressed ? 1.0 : GlassTokens.strokeWidth // thicker stroke on press
+                            strokeColor.opacity(isPressed ? 1.3 : 1.0),
+                            lineWidth: GlassTokens.strokeWidth
                         )
                 )
                 .shadow(
@@ -1726,6 +1775,8 @@ struct GlassChip<Label: View>: View {
                     radius: GlassTokens.shadowRadius,
                     y: GlassTokens.shadowY
                 )
+                .scaleEffect(isPressed ? 0.98 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: isPressed)
         }
         .buttonStyle(GlassChipButtonStyle(isPressed: $isPressed))
         .frame(minHeight: 44)
