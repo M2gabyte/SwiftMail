@@ -1016,33 +1016,47 @@ struct EmailSummaryView: View {
     var body: some View {
         Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isExpanded.toggle() } }) {
             HStack(spacing: 0) {
-                // Left accent bar
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.purple.opacity(0.6))
-                    .frame(width: 3)
-                    .padding(.vertical, 6)
+                // Left accent bar with gradient and inset
+                LinearGradient(
+                    colors: [Color.purple.opacity(0.45), Color.purple.opacity(0.25)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(width: 3)
+                .clipShape(RoundedRectangle(cornerRadius: 1.5))
+                .padding(.vertical, 7)
+                .padding(.leading, 2)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    // Header row
-                    HStack(spacing: 6) {
-                        Image(systemName: "apple.intelligence")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.purple.opacity(0.8))
+                    // Header row with chevron
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
 
                         Text("Summary")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.purple.opacity(0.8))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
 
                         Spacer()
-                    }
 
-                    // Summary content
+                        // Rotating chevron with larger hitbox
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                            .padding(6)
+                            .contentShape(Rectangle())
+                    }
+                    .padding(.trailing, -6) // compensate for chevron padding
+
+                    // Summary content with fade when collapsed
                     summaryContent
                 }
-                .padding(.leading, 10)
-                .padding(.trailing, 12)
-                .padding(.vertical, 10)
+                .padding(.leading, 8)
+                .padding(.trailing, 10)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
             }
             .background(
                 cardShape.fill(GlassTokens.secondaryGroupedBackground)
@@ -1082,20 +1096,27 @@ struct EmailSummaryView: View {
                 .foregroundStyle(.orange)
                 .italic()
         } else if !summary.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(summary)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(isExpanded ? nil : 3)
-                    .multilineTextAlignment(.leading)
-
-                // "More" affordance when collapsed and text is long
-                if !isExpanded && summary.count > 150 {
-                    Text("Tap for more")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            Text(summary)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .lineLimit(isExpanded ? nil : 3)
+                .multilineTextAlignment(.leading)
+                .mask {
+                    if isExpanded {
+                        Rectangle()
+                    } else {
+                        // Subtle fade at bottom when collapsed
+                        VStack(spacing: 0) {
+                            Rectangle()
+                            LinearGradient(
+                                colors: [.black, .black.opacity(0)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 14)
+                        }
+                    }
                 }
-            }
         } else {
             Text("Summary unavailable")
                 .font(.caption)
@@ -1440,9 +1461,11 @@ struct EmailActionBadgesView: View {
     @State private var showSpamConfirm = false
     @State private var showTrackersInfo = false
 
+    private let pillHeight: CGFloat = 28
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 // Tier 1: Trackers Blocked badge (informational, green)
                 if trackersBlocked > 0 {
                     Button {
@@ -1457,9 +1480,9 @@ struct EmailActionBadgesView: View {
                         }
                         .foregroundStyle(.green.opacity(0.9))
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .frame(height: pillHeight)
                         .background(
-                            RoundedRectangle(cornerRadius: 6)
+                            Capsule()
                                 .fill(Color.green.opacity(0.08))
                         )
                     }
@@ -1474,16 +1497,16 @@ struct EmailActionBadgesView: View {
                             .fontWeight(.medium)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
+                            .frame(height: pillHeight)
                             .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                                Capsule()
+                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
                             )
                     }
                     .buttonStyle(.plain)
                 }
 
-                // Tier 2: More menu with destructive actions
+                // Tier 2: More menu with destructive actions (pill styled to match)
                 Menu {
                     Button(role: .destructive) {
                         showBlockConfirm = true
@@ -1500,12 +1523,21 @@ struct EmailActionBadgesView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.caption)
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
+                        .frame(width: pillHeight, height: pillHeight)
                         .background(
-                            Circle()
-                                .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                            Capsule()
+                                .fill(GlassTokens.controlMaterial)
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity), lineWidth: GlassTokens.strokeWidth)
+                        )
+                        .shadow(
+                            color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity),
+                            radius: GlassTokens.shadowRadius,
+                            y: GlassTokens.shadowY
                         )
                 }
             }
@@ -1798,6 +1830,10 @@ class EmailDetailViewModel: ObservableObject {
             Task.detached(priority: .userInitiated) { [weak self, renderActor] in
                 guard let self else { return }
 
+#if DEBUG
+                let renderStart = CFAbsoluteTimeGetCurrent()
+#endif
+
                 // Get render settings on main actor (do this first, before any heavy work)
                 let settings = await MainActor.run { [weak self] in
                     self?.renderSettings ?? BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
@@ -1813,6 +1849,10 @@ class EmailDetailViewModel: ObservableObject {
                         self.renderedBodies[latestSnapshot.id] = rendered
                         StallLogger.mark("EmailDetail.bodySwap")
                         self.didLogBodySwap = true
+#if DEBUG
+                        let ms = Int((CFAbsoluteTimeGetCurrent() - renderStart) * 1000)
+                        detailLogger.info("render.latest id=\(latestId, privacy: .public) ms=\(ms)")
+#endif
                     }
                 }
 
@@ -1840,6 +1880,11 @@ class EmailDetailViewModel: ObservableObject {
                         self.trackersBlocked = trackerNamesSorted.count
                     }
                 }
+
+#if DEBUG
+                let totalMs = Int((CFAbsoluteTimeGetCurrent() - renderStart) * 1000)
+                detailLogger.info("render.all complete ms=\(totalMs)")
+#endif
             }
 
             // Mark as read (fire off async, don't block)

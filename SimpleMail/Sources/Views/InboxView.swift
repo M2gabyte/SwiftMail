@@ -382,7 +382,7 @@ struct InboxView: View {
                     .padding(.bottom, 62)
                     .zIndex(25)
             }
-            .overlay(alignment: .bottom) {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !isSelectionMode && !showingFilterSheet {
                     BottomCommandSurface(
                         isFilterActive: viewModel.activeFilter != nil,
@@ -417,7 +417,6 @@ struct InboxView: View {
                         onTapFilter: { showingFilterSheet = true },
                         onTapCompose: { showingCompose = true }
                     )
-                    .zIndex(20)
                 }
             }
             .overlay(alignment: .bottom) {
@@ -541,7 +540,7 @@ struct InboxView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: viewModel.bucketRows)
         .listSectionSpacing(2)
         .contentMargins(.top, 0, for: .scrollContent)
-        .contentMargins(.bottom, 56, for: .scrollContent)
+        .contentMargins(.bottom, 64, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
         .coordinateSpace(name: "inboxScroll")
@@ -1306,7 +1305,7 @@ struct SectionHeaderRow: View {
                 .textCase(nil)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
-                .padding(.top, isFirst ? 6 : 10)
+                .padding(.top, isFirst ? 2 : 8)
                 .padding(.bottom, 4)
                 .accessibilityAddTraits(.isHeader)
 

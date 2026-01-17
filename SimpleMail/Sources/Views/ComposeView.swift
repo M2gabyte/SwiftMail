@@ -422,6 +422,7 @@ struct ComposeView: View {
                             .padding(.leading, 6)
                     }
                 }
+                .padding(.top, 10)
                 .padding(.horizontal)
             }
         }
@@ -439,58 +440,55 @@ struct ComposeView: View {
     @ToolbarContentBuilder
     private var composeToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button {
+            Button("Cancel") {
                 if viewModel.hasContent {
                     viewModel.showDiscardAlert = true
                 } else {
                     dismiss()
                 }
-            } label: {
-                Text("Cancel")
-                    .foregroundStyle(.primary)
             }
-            .buttonStyle(.plain)
             .accessibilityIdentifier("cancelCompose")
         }
 
         ToolbarItem(placement: .principal) {
             Text(navigationTitle)
                 .font(.headline)
+                .lineLimit(1)
+                .layoutPriority(1)
         }
 
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Button(action: { showingTemplates = true }) {
-                    Label("Templates", systemImage: "doc.text")
+        ToolbarItem(placement: .primaryAction) {
+            HStack(spacing: 4) {
+                Menu {
+                    Button(action: { showingTemplates = true }) {
+                        Label("Templates", systemImage: "doc.text")
+                    }
+
+                    Button(action: { showingScheduleSheet = true }) {
+                        Label("Schedule Send", systemImage: "clock")
+                    }
+                    .disabled(!viewModel.canSend)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 17))
+                        .accessibilityLabel("More options")
                 }
 
-                Button(action: { showingScheduleSheet = true }) {
-                    Label("Schedule Send", systemImage: "clock")
+                Button(action: { showingAIDraft = true }) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 17))
+                }
+                .accessibilityLabel("AI Draft")
+
+                Button(action: send) {
+                    Image(systemName: "paperplane.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(viewModel.canSend ? Color.accentColor : .gray)
                 }
                 .disabled(!viewModel.canSend)
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 17))
-                    .accessibilityLabel("More options")
+                .accessibilityIdentifier("sendButton")
             }
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-            Button(action: { showingAIDraft = true }) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 17))
-            }
-            .accessibilityLabel("AI Draft")
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-            Button(action: send) {
-                Image(systemName: "paperplane.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(viewModel.canSend ? Color.accentColor : .gray)
-            }
-            .disabled(!viewModel.canSend)
-            .accessibilityIdentifier("sendButton")
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
