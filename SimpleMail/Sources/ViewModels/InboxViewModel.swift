@@ -32,6 +32,10 @@ extension Notification.Name {
     static let cachesDidClear = Notification.Name("cachesDidClear")
     static let archiveThreadRequested = Notification.Name("archiveThreadRequested")
     static let trashThreadRequested = Notification.Name("trashThreadRequested")
+    static let movedToPrimaryRequested = Notification.Name("movedToPrimaryRequested")
+    static let senderBlocked = Notification.Name("senderBlocked")
+    static let spamReported = Notification.Name("spamReported")
+    static let unsubscribed = Notification.Name("unsubscribed")
 }
 
 @MainActor
@@ -60,6 +64,7 @@ final class InboxViewModel: ObservableObject {
         isBootstrapping = true  // Re-enable bootstrap batching for next sign-in
         currentTab = .all
         activeFilter = nil
+        viewingCategory = nil
         currentMailbox = .inbox
         isLoading = false
         isLoadingMore = false
@@ -111,7 +116,28 @@ final class InboxViewModel: ObservableObject {
             deferredEmails = newEmails
             return
         }
+        StallLogger.mark("applyEmailUpdate.start count=\(newEmails.count)")
         emails = newEmails
+        StallLogger.mark("applyEmailUpdate.end")
+    }
+
+    /// Flag to suppress scheduleRecompute during batched updates
+    @ObservationIgnored private var isBatchingUpdates = false
+
+    /// Apply email update without animation (for staged batch updates)
+    /// When isFinal=false, skips scheduleRecompute to avoid redundant work
+    private func applyEmailUpdateNoAnim(_ newEmails: [Email], isFinal: Bool = false) {
+        var txn = Transaction()
+        txn.disablesAnimations = true
+        if !isFinal {
+            isBatchingUpdates = true
+        }
+        withTransaction(txn) {
+            applyEmailUpdate(newEmails)
+        }
+        if !isFinal {
+            isBatchingUpdates = false
+        }
     }
 
     // MARK: - State
@@ -123,6 +149,10 @@ final class InboxViewModel: ObservableObject {
     }
     var currentTab: InboxTab = .all {
         didSet {
+            // Clear category drill-down when switching tabs
+            if viewingCategory != nil {
+                viewingCategory = nil
+            }
             scheduleRecompute()
         }
     }
@@ -132,6 +162,12 @@ final class InboxViewModel: ObservableObject {
         }
     }
     var activeFilter: InboxFilter? = nil {
+        didSet {
+            scheduleRecompute()
+        }
+    }
+    /// When set, shows only emails from this Gmail category (drill-down from bundle tap)
+    var viewingCategory: GmailCategory? = nil {
         didSet {
             scheduleRecompute()
         }
@@ -201,11 +237,13 @@ final class InboxViewModel: ObservableObject {
     /// End bootstrap phase and publish any buffered state.
     func finishBootstrapIfNeeded() {
         guard isBootstrapping else { return }
+        StallLogger.mark("finishBootstrap.start hasPending=\(pendingState != nil)")
         isBootstrapping = false
         if let pending = pendingState {
             viewState = pending
             pendingState = nil
         }
+        StallLogger.mark("finishBootstrap.end")
     }
 
     // MARK: - Filter Counts
@@ -271,11 +309,25 @@ final class InboxViewModel: ObservableObject {
         let index: Int
     }
 
+    // Pending block/spam action for undo
+    private enum BlockSpamActionType { case block, spam }
+    private struct PendingBlockSpamAction {
+        let email: Email
+        let index: Int
+        let senderEmail: String
+        let senderName: String
+        let actionType: BlockSpamActionType
+    }
+    private var pendingBlockSpamAction: PendingBlockSpamAction?
+
     // MARK: - Notification Observer
+    @ObservationIgnored private var senderBlockedObserver: NSObjectProtocol?
+    @ObservationIgnored private var spamReportedObserver: NSObjectProtocol?
     @ObservationIgnored private var blockedSendersObserver: NSObjectProtocol?
     @ObservationIgnored private var accountChangeObserver: NSObjectProtocol?
     @ObservationIgnored private var archiveThreadObserver: NSObjectProtocol?
     @ObservationIgnored private var trashThreadObserver: NSObjectProtocol?
+    @ObservationIgnored private var movedToPrimaryObserver: NSObjectProtocol?
     @ObservationIgnored private var inboxPreferencesObserver: NSObjectProtocol?
     @ObservationIgnored private let inboxWorker = InboxStoreWorker()
     @ObservationIgnored private var recomputeTask: Task<Void, Never>?
@@ -330,6 +382,22 @@ final class InboxViewModel: ObservableObject {
         viewState.sections
     }
 
+    var categoryBundles: [CategoryBundle] {
+        viewState.categoryBundles.sorted { lhs, rhs in
+            let lDate = lhs.latestEmail?.date ?? .distantPast
+            let rDate = rhs.latestEmail?.date ?? .distantPast
+            return lDate > rDate
+        }
+    }
+
+    /// Gmail-style inline bucket rows (Promotions/Updates/Social) based on unseen mail.
+    var bucketRows: [BucketRowModel] {
+        guard currentTab == .primary, viewingCategory == nil else { return [] }
+        guard currentMailbox == .inbox || currentMailbox == .allInboxes else { return [] }
+        let rows = GmailBucket.allCases.compactMap { bucketRowModelIfNeeded(bucket: $0) }
+        return rows.sorted { ($0.latestDate ?? .distantPast) > ($1.latestDate ?? .distantPast) }
+    }
+
     /// Last visible email after filtering (for pagination trigger)
     private var lastVisibleEmailId: String? {
         emailSections.last?.emails.last?.id
@@ -347,12 +415,17 @@ final class InboxViewModel: ObservableObject {
     }
 
     private func scheduleRecompute() {
+        // Skip during batched updates - only final batch triggers recompute
+        guard !isBatchingUpdates else { return }
+
+        StallLogger.mark("scheduleRecompute.start emailCount=\(emails.count)")
         recomputeGeneration += 1
         let generation = recomputeGeneration
 
         // Capture ONLY raw SwiftData fields on main thread (no regex computation)
         let models = emails
 
+        let mapStart = CFAbsoluteTimeGetCurrent()
         let rawData: [RawEmailData] = models.map { email in
             let labelKey = email.labelIds.sorted().joined(separator: "|")
             return RawEmailData(
@@ -374,11 +447,14 @@ final class InboxViewModel: ObservableObject {
                 messagesCount: email.messagesCount
             )
         }
+        let mapDuration = (CFAbsoluteTimeGetCurrent() - mapStart) * 1000
+        StallLogger.mark("scheduleRecompute.mapped \(rawData.count) emails in \(String(format: "%.1f", mapDuration))ms")
 
         let currentTabSnapshot = currentTab
         let pinnedSnapshot = pinnedTabOption
         let searchFilterSnapshot = searchFilter
         let activeFilterSnapshot = activeFilter
+        let viewingCategorySnapshot = viewingCategory
         let accountSnapshot = currentAccountEmail
         let mailboxSnapshot = currentMailbox
         let pageTokenSnapshot = nextPageToken
@@ -400,7 +476,8 @@ final class InboxViewModel: ObservableObject {
                 pinnedTabOption: pinnedSnapshot,
                 activeFilter: activeFilterSnapshot,
                 currentAccountEmail: accountSnapshot,
-                searchFilter: searchFilterSnapshot
+                searchFilter: searchFilterSnapshot,
+                viewingCategory: viewingCategorySnapshot
             )
             StallLogger.mark("InboxViewModel.computeState.end")
 
@@ -409,7 +486,10 @@ final class InboxViewModel: ObservableObject {
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                StallLogger.mark("scheduleRecompute.applyState.start sections=\(state.sections.count)")
                 self.applyState(state)
+                StallLogger.mark("scheduleRecompute.applyState.end")
+                StallLogger.mark("scheduleRecompute.saveSnapshot.start")
                 self.saveSnapshotIfNeeded(
                     emails: models,
                     viewState: state,
@@ -419,6 +499,7 @@ final class InboxViewModel: ObservableObject {
                     mailbox: mailboxSnapshot,
                     nextPageToken: pageTokenSnapshot
                 )
+                StallLogger.mark("scheduleRecompute.saveSnapshot.end")
             }
         }
     }
@@ -522,6 +603,42 @@ final class InboxViewModel: ObservableObject {
             }
         }
 
+        movedToPrimaryObserver = NotificationCenter.default.addObserver(
+            forName: .movedToPrimaryRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let messageId = notification.userInfo?["messageId"] as? String else { return }
+                // Update local email labels to reflect move to Primary
+                updateEmailLabelsToPrimary(messageId: messageId)
+            }
+        }
+
+        // Listen for block/spam actions from EmailDetailView (for undo toast)
+        senderBlockedObserver = NotificationCenter.default.addObserver(
+            forName: .senderBlocked,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.handleSenderBlockedNotification(notification)
+            }
+        }
+
+        spamReportedObserver = NotificationCenter.default.addObserver(
+            forName: .spamReported,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.handleSpamReportedNotification(notification)
+            }
+        }
+
         // Preload cached emails FIRST so we have data to show immediately
         preloadCachedEmails(mailbox: currentMailbox, accountEmail: currentAccountEmail)
 
@@ -544,6 +661,12 @@ final class InboxViewModel: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = inboxPreferencesObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = senderBlockedObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = spamReportedObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -605,7 +728,11 @@ final class InboxViewModel: ObservableObject {
                     labelIds: labelIds
                 )
                 let emailModels = fetchedEmails.map(Email.init(dto:))
-                applyEmailUpdate(dedupeByThread(emailModels))
+                let deduped = dedupeByThread(emailModels)
+
+                // Single update - batching causes multiple SwiftUI re-renders which is slower
+                applyEmailUpdateNoAnim(deduped, isFinal: true)
+
                 // Unified inbox uses date-based pagination, use placeholder to enable it
                 let token: String? = fetchedEmails.count >= 50 ? "unified_date_cursor" : nil
                 self.nextPageToken = token
@@ -626,7 +753,11 @@ final class InboxViewModel: ObservableObject {
                 )
 
                 let emailModels = fetchedEmails.map(Email.init(dto:))
-                applyEmailUpdate(dedupeByThread(emailModels))
+                let deduped = dedupeByThread(emailModels)
+
+                // Single update - batching causes multiple SwiftUI re-renders which is slower
+                applyEmailUpdateNoAnim(deduped, isFinal: true)
+
                 self.nextPageToken = pageToken
                 updateCachePagingAnchor()
                 EmailCacheManager.shared.cacheEmails(fetchedEmails, isFullInboxFetch: currentMailbox == .inbox && pageToken == nil)
@@ -774,7 +905,13 @@ final class InboxViewModel: ObservableObject {
             let fetchedModels = fetchedEmails.map(Email.init(dto:))
             var allEmails = emails
             allEmails.append(contentsOf: fetchedModels)
-            applyEmailUpdate(dedupeByThread(allEmails))
+
+            // Sort/dedupe is still needed, but avoid a single giant List rebuild
+            let merged = dedupeByThread(allEmails)
+
+            // Only apply visible window to avoid rebuilding a much larger List
+            let batch1 = min(visibleWindowSize, merged.count)
+            applyEmailUpdateNoAnim(Array(merged.prefix(batch1)), isFinal: true)
             trimVisibleWindow()
 
             cachePagingState.oldestLoadedDate = emails.map(\.date).min()
@@ -845,10 +982,79 @@ final class InboxViewModel: ObservableObject {
         scheduleRecompute()
     }
 
+    // MARK: - Gmail Buckets
+
+    private var currentAccountId: String? {
+        currentAccountEmail?.lowercased()
+    }
+
+    /// Returns cached emails for a given Gmail bucket scoped to the current mailbox.
+    private func getMessagesForBucket(_ bucket: GmailBucket) -> [Email] {
+        emails.filter { email in
+            email.labelIds.contains(bucket.gmailLabel)
+        }
+    }
+
+    /// Computes a bucket row model if there are unseen messages newer than the last seen marker.
+    func bucketRowModelIfNeeded(bucket: GmailBucket) -> BucketRowModel? {
+        guard let accountId = currentAccountId else { return nil }
+
+        let messages = getMessagesForBucket(bucket)
+        guard !messages.isEmpty else { return nil }
+
+        let totalCount = messages.count
+        guard let newestDate = messages.map(\.date).max() else { return nil }
+        let newestEmail = messages.max(by: { $0.date < $1.date })?.toDTO()
+
+        let lastSeen = BucketSeenStore.shared.getLastSeenDate(accountEmail: accountId, bucket: bucket)
+        let unseenCount: Int
+        if let lastSeen {
+            unseenCount = messages.filter { $0.date > lastSeen }.count
+        } else {
+            unseenCount = totalCount
+        }
+
+        guard unseenCount > 0 else { return nil }
+
+        return BucketRowModel(
+            id: "bucketRow.\(accountId).\(bucket.rawValue)",
+            bucket: bucket,
+            unseenCount: unseenCount,
+            totalCount: totalCount,
+            latestEmail: newestEmail,
+            latestDate: newestDate
+        )
+    }
+
+    /// Marks a bucket as seen up to its newest message.
+    func markBucketSeen(_ bucket: GmailBucket) {
+        guard let accountId = currentAccountId else { return }
+        let messages = getMessagesForBucket(bucket)
+        guard let newestDate = messages.map(\.date).max() else { return }
+        BucketSeenStore.shared.setLastSeenDate(accountEmail: accountId, bucket: bucket, date: newestDate)
+        scheduleRecompute()
+    }
+
+    /// Total cached messages for a bucket in the current mailbox.
+    func bucketTotalCount(_ bucket: GmailBucket) -> Int {
+        getMessagesForBucket(bucket).count
+    }
+
+    /// Unseen count for a bucket (messages newer than last seen marker).
+    func bucketUnseenCount(_ bucket: GmailBucket) -> Int {
+        guard let accountId = currentAccountId else { return 0 }
+        let messages = getMessagesForBucket(bucket)
+        guard !messages.isEmpty else { return 0 }
+        if let lastSeen = BucketSeenStore.shared.getLastSeenDate(accountEmail: accountId, bucket: bucket) {
+            return messages.filter { $0.date > lastSeen }.count
+        }
+        return messages.count
+    }
+
 #if DEBUG
     func refreshViewStateForTests() async -> InboxViewState {
         let snapshots: [EmailSnapshot] = emails.map { email in
-            let labelKey = (email.labelIds ?? []).sorted().joined(separator: "|")
+            let labelKey = email.labelIds.sorted().joined(separator: "|")
             return EmailSnapshot(
                 id: email.id,
                 threadId: email.threadId,
@@ -875,7 +1081,8 @@ final class InboxViewModel: ObservableObject {
             pinnedTabOption: pinnedTabOption,
             activeFilter: activeFilter,
             currentAccountEmail: currentAccountEmail,
-            searchFilter: searchFilter
+            searchFilter: searchFilter,
+            viewingCategory: viewingCategory
         )
         viewState = state
         return state
@@ -901,8 +1108,8 @@ final class InboxViewModel: ObservableObject {
         // Cancel any existing preload
         preloadTask?.cancel()
         preloadTask = Task { @MainActor in
-            // Yield to let UI settle first
-            try? await Task.sleep(for: .milliseconds(150))
+            // Yield to let UI settle first (replaces 150ms sleep for faster startup)
+            await Task.yield()
             guard !Task.isCancelled else { return }
 
             StallLogger.mark("InboxViewModel.preloadCachedEmails.start")
@@ -925,20 +1132,11 @@ final class InboxViewModel: ObservableObject {
 
             StallLogger.mark("InboxViewModel.preloadCachedEmails.cacheReady")
 
-            // STAGED RENDERING: Show first batch immediately, append rest after delay
-            // This reduces "single frame" work from 50+ rows to ~20 rows
-            let initialBatchSize = 20
-            if deduped.count > initialBatchSize {
-                // Render first batch immediately
-                applyEmailUpdate(Array(deduped.prefix(initialBatchSize)))
-
-                // Append remaining after animation settles
-                try? await Task.sleep(for: .milliseconds(200))
-                guard !Task.isCancelled else { return }
-                applyEmailUpdate(deduped) // Full list replaces partial
-            } else {
-                applyEmailUpdate(deduped)
-            }
+            // Single update - batching causes more SwiftUI re-renders (each batch triggers @Observable)
+            // which actually makes startup slower than a single update
+            StallLogger.mark("preload.applyAll.start count=\(deduped.count)")
+            applyEmailUpdateNoAnim(deduped, isFinal: true)
+            StallLogger.mark("preload.applyAll.end")
 
             // Enable pagination until first real fetch
             nextPageToken = "cached_placeholder"
@@ -1193,6 +1391,13 @@ final class InboxViewModel: ObservableObject {
     func undoArchive() {
         // Cancel the pending archive task
         clearUndoState()
+
+        // Check for block/spam undo first (different undo mechanism)
+        if pendingBlockSpamAction != nil {
+            undoBlockSpamAction()
+            HapticFeedback.light()
+            return
+        }
 
         if let pendingBulkAction {
             restoreBulkAction(pendingBulkAction)
@@ -1787,6 +1992,25 @@ final class InboxViewModel: ObservableObject {
         }
     }
 
+    /// Update local email labels when moved to Primary (removes category labels, adds CATEGORY_PERSONAL)
+    private func updateEmailLabelsToPrimary(messageId: String) {
+        let categoriesToRemove: Set<String> = [
+            "CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"
+        ]
+
+        // Update the email in the emails array (SwiftData model)
+        if let email = emails.first(where: { $0.id == messageId }) {
+            var updatedLabels = email.labelIds.filter { !categoriesToRemove.contains($0) }
+            if !updatedLabels.contains("CATEGORY_PERSONAL") {
+                updatedLabels.append("CATEGORY_PERSONAL")
+            }
+            email.labelIds = updatedLabels
+        }
+
+        // Trigger recompute so category bundles update
+        scheduleRecompute()
+    }
+
     private func undoDelaySeconds() -> Int {
         let accountEmail = AuthService.shared.currentAccount?.email
         if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
@@ -1820,6 +2044,189 @@ final class InboxViewModel: ObservableObject {
         animate(.easeOut(duration: 0.2)) {
             showingUndoToast = false
         }
+    }
+
+    // MARK: - Block/Spam Undo Support
+
+    private func handleSenderBlockedNotification(_ notification: Notification) {
+        guard let senderName = notification.userInfo?["senderName"] as? String,
+              let senderEmail = notification.userInfo?["senderEmail"] as? String,
+              let threadId = notification.userInfo?["threadId"] as? String else { return }
+
+        // Cancel any existing undo tasks (block notification supersedes trash notification)
+        undoTask?.cancel()
+        undoTask = nil
+        undoCountdownTask?.cancel()
+        undoCountdownTask = nil
+
+        // Check if the email was already removed by the trash notification
+        // If so, grab it from the pending bulk action (match by threadId)
+        var email: Email?
+        var idx: Int?
+
+        if let pendingBulk = pendingBulkAction,
+           let item = pendingBulk.items.first(where: { $0.email.threadId == threadId }) {
+            // Email was removed by trash handler - use its data
+            email = item.email
+            idx = item.index
+            // Clear the pending bulk action since we're taking over
+            pendingBulkAction = nil
+        } else if let foundIdx = emails.firstIndex(where: { $0.threadId == threadId }) {
+            // Email still in list
+            email = emails[foundIdx]
+            idx = foundIdx
+            // Remove from list
+            animate {
+                emails.remove(at: foundIdx)
+            }
+            updateFilterCounts()
+        }
+
+        guard let email, let idx else { return }
+
+        // Cancel any existing block/spam undo
+        if let pending = pendingBlockSpamAction {
+            finalizeBlockSpamAction(pending)
+        }
+
+        // Store pending action for undo
+        pendingBlockSpamAction = PendingBlockSpamAction(
+            email: email,
+            index: idx,
+            senderEmail: senderEmail,
+            senderName: senderName,
+            actionType: .block
+        )
+
+        // Show undo toast
+        undoToastMessage = "\(senderName) blocked"
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showingUndoToast = true
+        }
+
+        let delaySeconds = undoDelaySeconds()
+        startUndoCountdown(seconds: delaySeconds)
+
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delaySeconds))
+            guard !Task.isCancelled else { return }
+            guard let self, let pending = self.pendingBlockSpamAction else { return }
+            self.finalizeBlockSpamAction(pending)
+        }
+    }
+
+    private func handleSpamReportedNotification(_ notification: Notification) {
+        guard let senderName = notification.userInfo?["senderName"] as? String,
+              let threadId = notification.userInfo?["threadId"] as? String else { return }
+
+        // Cancel any existing undo tasks
+        undoTask?.cancel()
+        undoTask = nil
+        undoCountdownTask?.cancel()
+        undoCountdownTask = nil
+
+        // Find the email (may still be in list since spam doesn't call trash)
+        var email: Email?
+        var idx: Int?
+
+        if let foundIdx = emails.firstIndex(where: { $0.threadId == threadId }) {
+            email = emails[foundIdx]
+            idx = foundIdx
+            // Remove from list
+            animate {
+                emails.remove(at: foundIdx)
+            }
+            updateFilterCounts()
+        }
+
+        guard let email, let idx else { return }
+
+        // Cancel any existing block/spam undo
+        if let pending = pendingBlockSpamAction {
+            finalizeBlockSpamAction(pending)
+        }
+
+        // Store pending action for undo
+        pendingBlockSpamAction = PendingBlockSpamAction(
+            email: email,
+            index: idx,
+            senderEmail: "",
+            senderName: senderName,
+            actionType: .spam
+        )
+
+        // Show undo toast
+        undoToastMessage = "Reported as spam"
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showingUndoToast = true
+        }
+
+        let delaySeconds = undoDelaySeconds()
+        startUndoCountdown(seconds: delaySeconds)
+
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delaySeconds))
+            guard !Task.isCancelled else { return }
+            guard let self, let pending = self.pendingBlockSpamAction else { return }
+            self.finalizeBlockSpamAction(pending)
+        }
+    }
+
+    private func undoBlockSpamAction() {
+        guard let pending = pendingBlockSpamAction else { return }
+
+        Task {
+            do {
+                switch pending.actionType {
+                case .block:
+                    // Remove sender from blocked list
+                    let settingsAccountEmail = AuthService.shared.currentAccount?.email
+                    var blockedSenders = AccountDefaults.stringArray(for: "blockedSenders", accountEmail: settingsAccountEmail)
+                    blockedSenders.removeAll { $0.lowercased() == pending.senderEmail.lowercased() }
+                    AccountDefaults.setStringArray(blockedSenders, for: "blockedSenders", accountEmail: settingsAccountEmail)
+                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
+
+                    // Move email back from trash to inbox
+                    if let account = accountForEmail(pending.email) {
+                        try await GmailService.shared.untrash(messageId: pending.email.id, account: account)
+                    } else {
+                        try await GmailService.shared.untrash(messageId: pending.email.id)
+                    }
+
+                case .spam:
+                    // Move email back from spam to inbox
+                    if let account = accountForEmail(pending.email) {
+                        try await GmailService.shared.unmarkSpam(messageId: pending.email.id, account: account)
+                    } else {
+                        try await GmailService.shared.unmarkSpam(messageId: pending.email.id)
+                    }
+                }
+
+                // Restore email to list
+                await MainActor.run {
+                    let insertIndex = min(pending.index, emails.count)
+                    animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        emails.insert(pending.email, at: insertIndex)
+                        showingUndoToast = false
+                    }
+                    pendingBlockSpamAction = nil
+                    updateFilterCounts()
+                }
+            } catch {
+                logger.error("Failed to undo block/spam action: \(error.localizedDescription)")
+                await MainActor.run {
+                    clearUndoState()
+                    pendingBlockSpamAction = nil
+                }
+            }
+        }
+    }
+
+    private func finalizeBlockSpamAction(_ pending: PendingBlockSpamAction) {
+        // Action already happened on backend (block/spam was called from EmailDetailView)
+        // Just clean up state
+        clearUndoState()
+        pendingBlockSpamAction = nil
     }
 
 #if DEBUG

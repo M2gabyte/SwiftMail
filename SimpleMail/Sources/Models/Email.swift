@@ -22,6 +22,10 @@ struct EmailDTO: Sendable, Identifiable, Hashable {
     let precedence: String?
     let autoSubmitted: String?
 
+    // Cached display fields (precomputed in init; avoids per-row regex/string work in SwiftUI)
+    private(set) var displaySubject: String = ""
+    private(set) var displaySnippet: String = ""
+
     var senderEmail: String {
         EmailParser.extractSenderEmail(from: from)
     }
@@ -37,6 +41,46 @@ struct EmailDTO: Sendable, Identifiable, Hashable {
             return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
         }
         return String(name.prefix(2)).uppercased()
+    }
+
+    // Custom init to precompute display fields
+    init(
+        id: String,
+        threadId: String,
+        snippet: String,
+        subject: String,
+        from: String,
+        date: Date,
+        isUnread: Bool,
+        isStarred: Bool,
+        hasAttachments: Bool,
+        labelIds: [String],
+        messagesCount: Int,
+        accountEmail: String?,
+        listUnsubscribe: String?,
+        listId: String?,
+        precedence: String?,
+        autoSubmitted: String?
+    ) {
+        self.id = id
+        self.threadId = threadId
+        self.snippet = snippet
+        self.subject = subject
+        self.from = from
+        self.date = date
+        self.isUnread = isUnread
+        self.isStarred = isStarred
+        self.hasAttachments = hasAttachments
+        self.labelIds = labelIds
+        self.messagesCount = messagesCount
+        self.accountEmail = accountEmail
+        self.listUnsubscribe = listUnsubscribe
+        self.listId = listId
+        self.precedence = precedence
+        self.autoSubmitted = autoSubmitted
+        // Precompute display fields at creation time (off main thread during parsing)
+        self.displaySubject = EmailPreviewNormalizer.normalizeSubjectForDisplay(subject)
+        self.displaySnippet = EmailPreviewNormalizer.normalizeSnippetForDisplay(snippet)
     }
 }
 

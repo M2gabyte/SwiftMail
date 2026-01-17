@@ -57,6 +57,7 @@ final class WKWebViewPool {
         webView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         return webView
     }
 
@@ -103,6 +104,7 @@ actor BodyRenderActor {
         if settings.stripTrackingParameters {
             processedHTML = HTMLSanitizer.stripTrackingParameters(processedHTML)
         }
+        processedHTML = await HTMLSanitizer.inlineCriticalImages(processedHTML)
 
         // Build the complete styled HTML (this avoids doing it on main thread)
         let trackingCSS = settings.blockTrackingPixels ? """
@@ -197,6 +199,9 @@ struct EmailDetailView: View {
     @State private var showingReplySheet = false
     @State private var showingActionSheet = false
     @State private var showingSnoozeSheet = false
+    @State private var bottomBarHeight: CGFloat = 0
+    @State private var safeAreaBottom: CGFloat = 0
+    @State private var pendingChipAction: PendingChipAction?
 
     init(emailId: String, threadId: String, accountEmail: String? = nil) {
         self.emailId = emailId
@@ -220,59 +225,53 @@ struct EmailDetailView: View {
                     .padding(40)
                 } else {
                     // AI Summary at thread level (for long emails)
-                    // Check plain text length, not HTML length, to avoid false negatives
+                    // Check plain text length using full body, not the snippet placeholder
                     if viewModel.autoSummarizeEnabled,
                        let latestMessage = viewModel.messages.last,
-                       EmailTextHelper.plainTextLength(latestMessage.body) > 300 {
+                       let fullBody = viewModel.latestMessageFullBody,
+                       EmailTextHelper.plainTextLength(fullBody) > 300 {
                         EmailSummaryView(
                             emailId: latestMessage.id,
                             accountEmail: latestMessage.accountEmail,
-                            emailBody: latestMessage.body,
+                            emailBody: fullBody,
                             isExpanded: $viewModel.summaryExpanded
                         )
                         .padding(.horizontal)
                         .padding(.top, 8)
                     }
 
-                    // Action Badges Row (Trackers, Unsubscribe, Block, Spam)
-                    EmailActionBadgesView(
+                    // Action Chips Row (Trackers, Unsubscribe, Block, Spam)
+                    EmailActionChipsView(
                         canUnsubscribe: viewModel.canUnsubscribe,
                         senderName: viewModel.senderName ?? "sender",
                         isReply: viewModel.subject.lowercased().hasPrefix("re:"),
                         trackersBlocked: viewModel.trackersBlocked,
-                        trackerNames: viewModel.trackerNames,
-                        onUnsubscribe: {
-                            Task { await viewModel.unsubscribe() }
-                        },
-                        onBlockSender: {
-                            Task {
-                                await viewModel.blockSender()
-                                NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                                dismiss()
-                            }
-                        },
-                        onReportSpam: {
-                            Task {
-                                await viewModel.reportSpam()
-                                NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                                dismiss()
-                            }
-                        }
+                        pendingAction: $pendingChipAction
                     )
 
-                    ForEach(viewModel.messages) { message in
+                    ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
+                        let isLastMessage = index == viewModel.messages.count - 1
                         EmailMessageCard(
                             message: message,
                             styledHTML: viewModel.styledHTML(for: message),
                             renderedPlain: viewModel.plainText(for: message),
                             isExpanded: viewModel.expandedMessageIds.contains(message.id),
+                            bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 28 : 0,
                             onToggleExpand: { viewModel.toggleExpanded(message.id) }
                         )
                     }
                 }
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(
+            GeometryReader { geometry in
+                Color(.systemGroupedBackground)
+                    .onAppear { safeAreaBottom = geometry.safeAreaInsets.bottom }
+                    .onChange(of: geometry.safeAreaInsets.bottom) { _, newValue in
+                        safeAreaBottom = newValue
+                    }
+            }
+        )
         .accessibilityIdentifier("emailDetailView")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -296,39 +295,31 @@ struct EmailDetailView: View {
                 }
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .bottomBar) {
-                // Reply: tap = Reply, long-press = options
-                Button(action: { showingReplySheet = true }) {
-                    Image(systemName: "arrowshape.turn.up.left")
-                }
-                .contextMenu {
-                    Button(action: { showingReplySheet = true }) {
-                        Label("Reply", systemImage: "arrowshape.turn.up.left")
-                    }
-                    Button(action: { showingReplySheet = true }) {
-                        Label("Reply All", systemImage: "arrowshape.turn.up.left.2")
-                    }
-                    Button(action: { }) {
-                        Label("Forward", systemImage: "arrowshape.turn.up.right")
-                    }
-                }
-            }
-
-            ToolbarItem(placement: .bottomBar) {
-                Spacer()
-            }
-
-            ToolbarItem(placement: .bottomBar) {
-                Button {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            DetailBottomBar(
+                onReply: { showingReplySheet = true },
+                onArchive: {
                     Task {
                         await viewModel.archive()
                         dismiss()
                     }
-                } label: {
-                    Image(systemName: "archivebox")
+                },
+                onTrash: {
+                    Task {
+                        await viewModel.trash()
+                        dismiss()
+                    }
                 }
-            }
+            )
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { bottomBarHeight = geo.size.height }
+                        .onChange(of: geo.size.height) { _, newHeight in
+                            bottomBarHeight = newHeight
+                        }
+                }
+            )
         }
         .sheet(isPresented: $showingReplySheet) {
             if let latestMessage = viewModel.messages.last {
@@ -367,6 +358,12 @@ struct EmailDetailView: View {
                 viewModel.printEmail()
             }
 
+            if viewModel.isInNonPrimaryCategory {
+                Button("Move to Primary") {
+                    Task { await viewModel.moveToPrimary() }
+                }
+            }
+
             Button("Move to Trash", role: .destructive) {
                 Task {
                     await viewModel.trash()
@@ -374,6 +371,18 @@ struct EmailDetailView: View {
                 }
             }
         }
+        .modifier(ChipDialogModifier(
+            pendingAction: $pendingChipAction,
+            trackersBlocked: viewModel.trackersBlocked,
+            senderName: viewModel.senderName ?? "Sender",
+            senderEmail: viewModel.senderEmail,
+            emailId: emailId,
+            threadId: threadId,
+            onUnsubscribe: { await viewModel.unsubscribe() },
+            onBlockSender: { await viewModel.blockSender() },
+            onReportSpam: { await viewModel.reportSpam() },
+            onDismiss: { dismiss() }
+        ))
         .task {
             // WebKit warmup now happens on row tap (before navigation starts)
             // so it overlaps with the push animation instead of competing with it
@@ -391,6 +400,7 @@ struct EmailMessageCard: View {
     let styledHTML: String?     // nil = not ready yet, show skeleton
     let renderedPlain: String
     let isExpanded: Bool
+    var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     let onToggleExpand: () -> Void
 
     var body: some View {
@@ -441,7 +451,7 @@ struct EmailMessageCard: View {
                 Divider()
                     .padding(.leading)
 
-                EmailBodyView(styledHTML: styledHTML)
+                EmailBodyView(styledHTML: styledHTML, bottomInset: bottomInset)
                     .frame(minHeight: 100)
             }
         }
@@ -518,6 +528,7 @@ struct EmailBodySkeleton: View {
 
 struct EmailBodyView: View {
     let styledHTML: String?  // nil = not ready yet, show skeleton
+    var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     @State private var contentHeight: CGFloat = 200
     @State private var showSkeleton = false
     @State private var webViewReady = false
@@ -539,7 +550,8 @@ struct EmailBodyView: View {
                     onContentReady: {
                         webViewReady = true
                         StallLogger.mark("EmailBodyView.webReady")
-                    }
+                    },
+                    bottomInset: bottomInset
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: contentHeight)
@@ -693,6 +705,49 @@ enum HTMLSanitizer {
             result = result.replacingOccurrences(of: pattern, with: "$1https://", options: [.regularExpression, .caseInsensitive])
         }
         return result
+    }
+
+    static func inlineCriticalImages(_ html: String) async -> String {
+        let allowHosts = ["maps.googleapis.com", "photos.zillowstatic.com", "zillowstatic.com"]
+        let maxImages = 4
+
+        var urls: [String] = []
+        let imgSrcPattern = try! NSRegularExpression(pattern: "<img[^>]*src\\s*=\\s*[\"']([^\"'>]+)[\"'][^>]*>", options: .caseInsensitive)
+        let bgPattern = try! NSRegularExpression(pattern: "background\\s*=\\s*[\"']([^\"'>]+)[\"']", options: .caseInsensitive)
+
+        func extract(_ regex: NSRegularExpression, _ text: String) {
+            let range = NSRange(text.startIndex..., in: text)
+            for m in regex.matches(in: text, options: [], range: range) {
+                if let r = Range(m.range(at: 1), in: text) {
+                    urls.append(String(text[r]))
+                }
+            }
+        }
+        extract(imgSrcPattern, html)
+        extract(bgPattern, html)
+
+        let filtered = Array(NSOrderedSet(array: urls.filter { u in
+            guard let host = URL(string: u)?.host?.lowercased() else { return false }
+            return allowHosts.contains(where: { host.hasSuffix($0) })
+        })) as? [String] ?? []
+        let targets = filtered.prefix(maxImages)
+        guard !targets.isEmpty else { return html }
+
+        var output = html
+        for urlStr in targets {
+            guard let url = URL(string: urlStr) else { continue }
+            var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 8)
+            request.setValue("https://www.zillow.com", forHTTPHeaderField: "Referer")
+            do {
+                let (data, resp) = try await URLSession.shared.data(for: request)
+                guard let mime = resp.mimeType, data.count < 3_500_000 else { continue }
+                let dataUri = "data:\(mime);base64,\(data.base64EncodedString())"
+                output = output.replacingOccurrences(of: urlStr, with: dataUri)
+            } catch {
+                continue
+            }
+        }
+        return output
     }
 
     /// Remove zero-width characters that create empty space in marketing emails
@@ -883,6 +938,7 @@ struct EmailBodyWebView: UIViewRepresentable {
     let styledHTML: String      // Pre-rendered complete HTML document
     @Binding var contentHeight: CGFloat
     var onContentReady: (() -> Void)?  // Called when WebView commits navigation (content visible)
+    var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar
     var webViewPool = WKWebViewPool.shared
 
     func makeUIView(context: Context) -> WKWebView {
@@ -896,6 +952,12 @@ struct EmailBodyWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        // Always apply bottom inset for toolbar clearance (even if HTML unchanged)
+        if webView.scrollView.contentInset.bottom != bottomInset {
+            webView.scrollView.contentInset.bottom = bottomInset
+            webView.scrollView.scrollIndicatorInsets.bottom = bottomInset
+        }
+
         // Use object identity of the string to detect changes
         // (styledHTML is immutable and comes from pre-rendered cache)
         let key = ObjectIdentifier(styledHTML as NSString)
@@ -1011,7 +1073,7 @@ private extension String {
     }
 }
 
-// MARK: - Email Summary View
+// MARK: - Email Summary View (MessageSummaryCard)
 
 struct EmailSummaryView: View {
     let emailId: String
@@ -1023,68 +1085,117 @@ struct EmailSummaryView: View {
     @State private var isGenerating = false
     @State private var summaryError: String?
 
+    private let cardShape = RoundedRectangle(cornerRadius: GlassTokens.radiusLarge, style: .continuous)
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header
-            Button(action: { withAnimation(.spring(response: 0.3)) { isExpanded.toggle() } }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "apple.intelligence")
-                        .font(.caption)
-                        .foregroundStyle(.purple)
-
-                    Text("Summary")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.purple)
-
-                    Spacer()
-
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            // Summary Content
-            if isExpanded {
-                if isGenerating {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Summarizing…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                } else if let error = summaryError {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .italic()
-                } else if !summary.isEmpty {
-                    Text(summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                } else {
-                    Text("Summary unavailable")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .italic()
-                }
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.purple.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.purple.opacity(0.2), lineWidth: 1)
+        Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isExpanded.toggle() } }) {
+            HStack(spacing: 0) {
+                // Left accent bar with gradient and inset
+                LinearGradient(
+                    colors: [Color.purple.opacity(0.45), Color.purple.opacity(0.25)],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
-        )
+                .frame(width: 3)
+                .clipShape(RoundedRectangle(cornerRadius: 1.5))
+                .padding(.vertical, 7)
+                .padding(.leading, 2)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    // Header row with chevron
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+
+                        Text("Summary")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        // Rotating chevron with larger hitbox
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                            .padding(6)
+                            .contentShape(Rectangle())
+                    }
+                    .padding(.trailing, -6) // compensate for chevron padding
+
+                    // Summary content with fade when collapsed
+                    summaryContent
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 10)
+                .padding(.top, 6)
+                .padding(.bottom, 8)
+            }
+            .background(
+                cardShape.fill(GlassTokens.secondaryGroupedBackground)
+            )
+            .overlay(
+                cardShape.stroke(
+                    GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity),
+                    lineWidth: GlassTokens.strokeWidth
+                )
+            )
+            .clipShape(cardShape)
+            .shadow(
+                color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity),
+                radius: GlassTokens.shadowRadius,
+                y: GlassTokens.shadowY
+            )
+        }
+        .buttonStyle(.plain)
         .onAppear {
             generateSummary()
+        }
+    }
+
+    @ViewBuilder
+    private var summaryContent: some View {
+        if isGenerating {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .scaleEffect(0.7)
+                Text("Summarizing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else if let error = summaryError {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .italic()
+        } else if !summary.isEmpty {
+            Text(summary)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .lineLimit(isExpanded ? nil : 3)
+                .multilineTextAlignment(.leading)
+                .mask {
+                    if isExpanded {
+                        Rectangle()
+                    } else {
+                        // Subtle fade at bottom when collapsed
+                        VStack(spacing: 0) {
+                            Rectangle()
+                            LinearGradient(
+                                colors: [.black, .black.opacity(0)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 14)
+                        }
+                    }
+                }
+        } else {
+            Text("Summary unavailable")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .italic()
         }
     }
 
@@ -1408,11 +1519,8 @@ struct EmailSummaryView: View {
     }
 }
 
-// MARK: - Email Action Badges View (Unsubscribe, Block, Spam, Trackers)
+// MARK: - Pending Chip Action (for confirmation dialogs)
 
-<<<<<<< HEAD
-struct EmailActionBadgesView: View {
-=======
 enum PendingChipAction: Identifiable {
     case tracker
     case unsubscribe
@@ -1532,133 +1640,17 @@ struct ChipDialogModifier: ViewModifier {
 // MARK: - Email Action Chips View
 
 struct EmailActionChipsView: View {
->>>>>>> c2fda10 (Email rendering: allow images, strip trackers, minimal CSS)
     let canUnsubscribe: Bool
     let senderName: String
     let isReply: Bool
     let trackersBlocked: Int
-    let trackerNames: [String]
-    let onUnsubscribe: () -> Void
-    let onBlockSender: () -> Void
-    let onReportSpam: () -> Void
 
-    @State private var showBlockConfirm = false
-    @State private var showSpamConfirm = false
-    @State private var showTrackersInfo = false
+    @Binding var pendingAction: PendingChipAction?
 
     // Standard stroke opacity for all action chips
     private let chipStrokeOpacity: Double = 0.20
 
     var body: some View {
-<<<<<<< HEAD
-        // Always show the action buttons row
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                // Trackers Blocked badge (green, like React version)
-                if trackersBlocked > 0 {
-                    Button {
-                        showTrackersInfo = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "shield.checkered")
-                                .font(.caption2)
-                            Text("\(trackersBlocked) blocked")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                        }
-                        .foregroundStyle(.green)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.green.opacity(0.1))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Unsubscribe button
-                if canUnsubscribe {
-                    Button(action: onUnsubscribe) {
-                        Text("Unsubscribe")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Block Sender button
-                Button {
-                    showBlockConfirm = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "hand.raised")
-                            .font(.caption2)
-                        Text("Block")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                    }
-                    .foregroundStyle(.red.opacity(0.8))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-
-                // Report Spam button (only for non-replies, like React version)
-                if !isReply {
-                    Button {
-                        showSpamConfirm = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.shield")
-                                    .font(.caption2)
-                                Text("Spam")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                            }
-                            .foregroundStyle(.orange.opacity(0.9))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-            }
-            .alert("Block \(senderName)?", isPresented: $showBlockConfirm) {
-                Button("Cancel", role: .cancel) { }
-                Button("Block Sender", role: .destructive, action: onBlockSender)
-            } message: {
-                Text("You won't see emails from this sender.")
-            }
-            .alert("Mark as spam?", isPresented: $showSpamConfirm) {
-                Button("Cancel", role: .cancel) { }
-                Button("Mark as Spam", role: .destructive, action: onReportSpam)
-            } message: {
-                Text("This email will be moved to Spam.")
-            }
-            .alert("Trackers Blocked", isPresented: $showTrackersInfo) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text("SimpleMail blocked \(trackersBlocked) tracking pixel\(trackersBlocked > 1 ? "s" : "") that would have notified the sender when you opened this email.\n\nBlocked: \(trackerNames.joined(separator: ", "))")
-            }
-=======
         VStack(spacing: 0) {
             // Chip row - all chips grouped together, left-aligned
             HStack(spacing: 10) {
@@ -1934,7 +1926,6 @@ struct DetailBottomBar: View {
         .glassShadow()
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
->>>>>>> c2fda10 (Email rendering: allow images, strip trackers, minimal CSS)
     }
 }
 
@@ -1947,9 +1938,11 @@ class EmailDetailViewModel: ObservableObject {
 
     @Published var messages: [EmailDetail] = []
     @Published var expandedMessageIds: Set<String> = []
-    @Published var summaryExpanded: Bool = true
+    @Published var summaryExpanded: Bool = false  // Collapsed by default, tap to expand
     @Published var isLoading = false
     @Published var error: Error?
+    /// Full body of latest message (for AI summary check - not the placeholder snippet)
+    @Published var latestMessageFullBody: String?
     @Published var unsubscribeURL: URL?
     @Published var trackersBlocked: Int = 0
     @Published var trackerNames: [String] = []
@@ -1992,12 +1985,12 @@ class EmailDetailViewModel: ObservableObject {
     ]
 
     // Precomputed lowercased domains for O(1) contains checks
-    private static let trackerDomainsLowercased: [(domain: String, name: String)] = {
+    nonisolated(unsafe) private static let trackerDomainsLowercased: [(domain: String, name: String)] = {
         trackerDomains.map { (domain: $0.key.lowercased(), name: $0.value) }
     }()
 
     // Short-circuit keywords to skip expensive regex if no trackers likely present
-    private static let trackerHintKeywords = ["pixel", "track", "beacon", "open", "click"]
+    nonisolated(unsafe) private static let trackerHintKeywords = ["pixel", "track", "beacon", "open", "click"]
 
     var subject: String {
         messages.first?.subject ?? ""
@@ -2032,6 +2025,24 @@ class EmailDetailViewModel: ObservableObject {
         return vipSenders.contains(email.lowercased())
     }
 
+    /// Check if the email is in a non-Primary Gmail category (Promotions, Social, Updates, Forums)
+    var isInNonPrimaryCategory: Bool {
+        let nonPrimaryCategories = ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]
+        guard let labelIds = messages.first?.labelIds else { return false }
+        return !nonPrimaryCategories.filter { labelIds.contains($0) }.isEmpty
+    }
+
+    /// The category this email is in, if any
+    var currentCategory: GmailCategory? {
+        guard let labelIds = messages.first?.labelIds else { return nil }
+        for category in GmailCategory.allCases {
+            if labelIds.contains(category.rawValue) {
+                return category
+            }
+        }
+        return nil
+    }
+
     var autoSummarizeEnabled: Bool {
         let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
         guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
@@ -2054,18 +2065,17 @@ class EmailDetailViewModel: ObservableObject {
     private var renderSettings: BodyRenderActor.RenderSettings {
         let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
         guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
-            return BodyRenderActor.RenderSettings(blockImages: false, blockTrackingPixels: true, stripTrackingParameters: true)
+            return BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
         }
         do {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             return BodyRenderActor.RenderSettings(
-                // Render full-fidelity by default; trackers are handled separately.
-                blockImages: false,
+                blockImages: settings.blockRemoteImages,
                 blockTrackingPixels: settings.blockTrackingPixels,
                 stripTrackingParameters: settings.stripTrackingParameters
             )
         } catch {
-            return BodyRenderActor.RenderSettings(blockImages: false, blockTrackingPixels: true, stripTrackingParameters: true)
+            return BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
         }
     }
 
@@ -2154,12 +2164,14 @@ class EmailDetailViewModel: ObservableObject {
             // FAST PATH: Show minimal placeholders immediately WITHOUT HTML processing on main
             // Use snippet (already available) as placeholder text to avoid HTMLSanitizer.plainText() on main
             let placeholders = messageDTOs.map { dto -> EmailDetail in
-                var detail = EmailDetail(dto: dto)
+                let detail = EmailDetail(dto: dto)
                 // Use snippet as quick placeholder - real HTML will be swapped in from background
                 detail.body = HTMLSanitizer.inlinePlainHTML(dto.snippet)
                 return detail
             }
             messages = placeholders
+            // Store full body for AI summary check (not the snippet placeholder)
+            latestMessageFullBody = messageDTOs.last?.body
             StallLogger.mark("EmailDetail.threadLoaded")
 
             // Expand the latest message by default
@@ -2183,6 +2195,10 @@ class EmailDetailViewModel: ObservableObject {
             Task.detached(priority: .userInitiated) { [weak self, renderActor] in
                 guard let self else { return }
 
+#if DEBUG
+                let renderStart = CFAbsoluteTimeGetCurrent()
+#endif
+
                 // Get render settings on main actor (do this first, before any heavy work)
                 let settings = await MainActor.run { [weak self] in
                     self?.renderSettings ?? BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
@@ -2198,6 +2214,10 @@ class EmailDetailViewModel: ObservableObject {
                         self.renderedBodies[latestSnapshot.id] = rendered
                         StallLogger.mark("EmailDetail.bodySwap")
                         self.didLogBodySwap = true
+#if DEBUG
+                        let ms = Int((CFAbsoluteTimeGetCurrent() - renderStart) * 1000)
+                        detailLogger.info("render.latest id=\(latestId, privacy: .public) ms=\(ms)")
+#endif
                     }
                 }
 
@@ -2225,6 +2245,11 @@ class EmailDetailViewModel: ObservableObject {
                         self.trackersBlocked = trackerNamesSorted.count
                     }
                 }
+
+#if DEBUG
+                let totalMs = Int((CFAbsoluteTimeGetCurrent() - renderStart) * 1000)
+                detailLogger.info("render.all complete ms=\(totalMs)")
+#endif
             }
 
             // Mark as read (fire off async, don't block)
@@ -2349,6 +2374,27 @@ class EmailDetailViewModel: ObservableObject {
                 }
             }
             await loadThread()
+        } catch {
+            self.error = error
+        }
+    }
+
+    func moveToPrimary() async {
+        guard let lastMessage = messages.last else { return }
+        do {
+            if let account = accountForThread() {
+                try await GmailService.shared.moveToPrimary(messageId: lastMessage.id, account: account)
+            } else {
+                try await GmailService.shared.moveToPrimary(messageId: lastMessage.id)
+            }
+            // Notify inbox to update local email labels
+            NotificationCenter.default.post(
+                name: .movedToPrimaryRequested,
+                object: nil,
+                userInfo: ["messageId": lastMessage.id]
+            )
+            await loadThread()
+            HapticFeedback.success()
         } catch {
             self.error = error
         }

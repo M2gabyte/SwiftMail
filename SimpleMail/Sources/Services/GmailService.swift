@@ -1166,12 +1166,35 @@ actor GmailService: GmailAPIProvider {
         try await modifyLabels(messageId: messageId, addLabels: ["INBOX"], removeLabels: ["SPAM"])
     }
 
+    func unmarkSpam(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["INBOX"], removeLabels: ["SPAM"], account: account)
+    }
+
     func markImportant(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, addLabels: ["IMPORTANT"])
     }
 
     func unmarkImportant(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, removeLabels: ["IMPORTANT"])
+    }
+
+    /// Move an email to Primary by removing category labels and adding CATEGORY_PERSONAL.
+    /// This trains Gmail to classify similar emails as Primary in the future.
+    func moveToPrimary(messageId: String) async throws {
+        try await modifyLabels(
+            messageId: messageId,
+            addLabels: ["CATEGORY_PERSONAL"],
+            removeLabels: ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]
+        )
+    }
+
+    func moveToPrimary(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(
+            messageId: messageId,
+            addLabels: ["CATEGORY_PERSONAL"],
+            removeLabels: ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"],
+            account: account
+        )
     }
 
     private func modifyLabels(

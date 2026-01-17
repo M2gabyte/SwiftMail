@@ -332,7 +332,7 @@ struct InboxFilterEngine {
         if primary.contains(sender) { return .primary }
 
         let other = alwaysOtherSenders(for: accountEmail)
-        if other.contains(sender) { return .pinned }
+        if other.contains(sender) { return .custom }
 
         return nil
     }
@@ -481,39 +481,20 @@ struct InboxFilterEngine {
         classification: Classification,
         currentAccountEmail: String?
     ) -> Bool {
+        // User override takes precedence
         if let override = senderOverride(for: email, currentAccountEmail: currentAccountEmail) {
             return override == .primary
         }
 
         let labelIds = Set(email.labelIdsKey.split(separator: "|").map(String.init))
 
-        for rule in PrimaryRule.allCases {
-            if isPrimaryRuleEnabledSync(rule) == false { continue }
-            switch rule {
-            case .people:
-                if classification.isPeople { return true }
-            case .vip:
-                if isVIPSender(email) { return true }
-            case .security:
-                if classification.isSecurity { return true }
-            case .money:
-                if classification.isMoney { return true }
-            case .deadlines:
-                if classification.isDeadline { return true }
-            case .newsletters:
-                if classification.isNewsletter { return true }
-            case .promotions:
-                if labelIds.contains("CATEGORY_PROMOTIONS") { return true }
-            case .social:
-                if labelIds.contains("CATEGORY_SOCIAL") { return true }
-            case .forums:
-                if labelIds.contains("CATEGORY_FORUMS") { return true }
-            case .updates:
-                if labelIds.contains("CATEGORY_UPDATES") { return true }
-            }
-        }
+        // Match Gmail's Primary: CATEGORY_PERSONAL or no category label
+        // Gmail puts emails in Primary if they have CATEGORY_PERSONAL,
+        // or if they don't have any of the other category labels
+        let nonPrimaryCategories = ["CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS"]
+        let hasNonPrimaryCategory = nonPrimaryCategories.contains { labelIds.contains($0) }
 
-        return false
+        return !hasNonPrimaryCategory
     }
 
     private static func matchesPinned(
@@ -557,7 +538,7 @@ struct InboxFilterEngine {
                 guard let classification = classifications[email.id] else { return false }
                 return isPrimary(email, classification: classification, currentAccountEmail: currentAccountEmail)
             }
-        case .pinned:
+        case .custom:
             filtered = filtered.filter { email in
                 matchesPinned(
                     email,
@@ -610,5 +591,52 @@ struct InboxFilterEngine {
             isBulk: isBulk,
             isNeedsReply: isNeedsReply
         )
+    }
+
+    // MARK: - Category Bundles
+
+    /// Compute category bundles for non-Primary emails (Promotions, Social, Updates, Forums)
+    /// Only computed when viewing Primary tab to show collapsed bundles
+    static func computeCategoryBundles(from emails: [EmailSnapshot]) -> [CategoryBundle] {
+        var bundleData: [GmailCategory: (unread: Int, total: Int, latest: EmailSnapshot?)] = [:]
+
+        // Initialize all categories
+        for category in GmailCategory.allCases {
+            bundleData[category] = (unread: 0, total: 0, latest: nil)
+        }
+
+        // Sort emails by date descending to get latest first
+        let sortedEmails = emails.sorted { $0.date > $1.date }
+
+        for email in sortedEmails {
+            let labelIds = Set(email.labelIdsKey.split(separator: "|").map(String.init))
+
+            for category in GmailCategory.allCases {
+                if labelIds.contains(category.rawValue) {
+                    var data = bundleData[category]!
+                    data.total += 1
+                    if email.isUnread {
+                        data.unread += 1
+                    }
+                    // First match is the latest (already sorted by date)
+                    if data.latest == nil {
+                        data.latest = email
+                    }
+                    bundleData[category] = data
+                    break  // Email belongs to one category
+                }
+            }
+        }
+
+        // Convert to CategoryBundle array, only include non-empty bundles
+        return GmailCategory.allCases.compactMap { category in
+            guard let data = bundleData[category], data.total > 0 else { return nil }
+            return CategoryBundle(
+                category: category,
+                unreadCount: data.unread,
+                totalCount: data.total,
+                latestEmail: data.latest?.toDTO()
+            )
+        }
     }
 }

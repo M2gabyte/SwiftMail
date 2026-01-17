@@ -12,6 +12,19 @@ This file defines **durable rules** for how to work in this repo. When in doubt:
 
 ---
 
+## Apple Documentation
+
+Use the `applekb` CLI tool to search Apple developer documentation when working with iOS/macOS APIs:
+
+```bash
+applekb query "WKWebView contentInset"
+applekb query "safeAreaInset SwiftUI"
+```
+
+Use this for UIKit, SwiftUI, WebKit, and other Apple framework questions.
+
+---
+
 ## Task Management
 
 - Always use a TODO list for any multi-step task.
@@ -27,21 +40,21 @@ These are **decisions**, not suggestions. Do not "improve" them without an expli
 ### Inbox (Native Triage)
 - App is single-view (no TabView).
 - Inbox is a single `List` with a **scrollable** header block (not pinned, not overlay).
-- Search is native `.searchable`. Any search button only **focuses** `.searchable`; no custom search screen.
-- Mailbox switching uses the **navigation title menu** (`.toolbarTitleMenu`), not a custom picker in the header.
-- Top-right is `ellipsis.circle` opening a `Menu` that includes **Settings** (Settings opens as a sheet).
-- iOS 26+: accept system "glass/shared background" styling for toolbars; do not fight it.
-- Triage filters stay as chips, but must be visually quiet (no loud filled capsules competing with toolbar glass).
+- Search uses a **bottom command surface** (`BottomCommandSurface`) matching iOS 26 Mail's bottom search pattern. Tapping search opens a full-screen `SearchOverlayView` with recent searches and live results.
+- Mailbox switching uses a **location sheet** triggered from the top-left toolbar button.
+- Top-right is `gearshape` opening **Settings** as a sheet.
+- iOS 26+: accept system "Liquid Glass" styling for toolbars; do not fight it.
+- Triage filters stay as chips in the header, visually quiet (no loud filled capsules competing with toolbar glass).
 
 ---
 
 ## Hard Constraints (Must Not Violate)
 
 ### UI / Navigation
-- No custom bottom bars.
+- Bottom command surface (`BottomCommandSurface`) is the only custom bottom bar allowed - contains search, compose, and filter actions.
 - No floating action buttons.
-- No persistent UI chrome implemented via `ZStack` overlays (no overlay toolbars, overlay nav bars).
-- No separate "Search screen" for inbox search. Use `.searchable`.
+- No persistent UI chrome implemented via `ZStack` overlays (no overlay toolbars, overlay nav bars) - except the bottom command surface.
+- Search overlay (`SearchOverlayView`) is the designated search experience - do not add additional search screens.
 - Do not rebuild the navigation title inside content.
 
 ### Feature Changes

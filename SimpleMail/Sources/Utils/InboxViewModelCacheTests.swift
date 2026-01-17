@@ -140,7 +140,7 @@ enum InboxViewModelCacheTests {
         )
         viewModel.emails = [invoice]
 
-        viewModel.currentTab = .pinned
+        viewModel.currentTab = .custom
         viewModel.pinnedTabOption = .money
         let moneyState = await viewModel.refreshViewStateForTests()
         let moneyCount = totalEmailCount(moneyState.sections)

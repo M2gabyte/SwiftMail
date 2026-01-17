@@ -34,11 +34,16 @@ struct InboxView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var restoredComposeMode: ComposeMode?
     @State private var showingFilterSheet = false
+    @State private var showingLanePickerSheet = false
     @State private var showAvatars = true
+    @State private var showCategoryBundles = true
+    @State private var showCategoryBundlesInline = false
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
     @State private var inboxScope: InboxLocationScope = .unified
+    @State private var bottomBarHeight: CGFloat = 56
+    @State private var safeAreaBottom: CGFloat = 0
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
 
@@ -119,7 +124,6 @@ struct InboxView: View {
                     isFirstInSenderRun: isFirst
                 )
                 .tag(email.threadId)
-                .padding(.top, emailIndex == 0 ? 0 : 0)
             }
         } header: {
             SectionHeaderRow(title: section.title, isFirst: sectionIndex == 0)
@@ -149,27 +153,20 @@ struct InboxView: View {
         .listRowInsets(EdgeInsets(top: isFirstInSenderRun ? 9 : 5, leading: 16, bottom: 5, trailing: 16))
         .listRowSeparator(.visible)
         .listRowSeparatorTint(Color(.separator).opacity(0.35))
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button { viewModel.toggleRead(emailId: email.id) } label: {
-                Label(email.isUnread ? "Read" : "Unread",
-                      systemImage: email.isUnread ? "envelope.open" : "envelope.badge")
-            }
-            .tint(Color.accentColor)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { viewModel.archiveEmail(id: email.id) } label: {
-                Label("Archive", systemImage: "archivebox")
-            }
-            .tint(.green)
-        }
+        .modifier(InstantSwipeModifier(
+            onSwipeLeft: { viewModel.archiveEmail(id: email.id) },
+            onSwipeRight: { viewModel.toggleRead(emailId: email.id) },
+            leftColor: .green,
+            rightColor: .accentColor,
+            leftIcon: "archivebox",
+            rightIcon: email.isUnread ? "envelope.open" : "envelope.badge"
+        ))
         .onTapGesture {
             if isSelectionMode {
                 toggleSelection(threadId: email.threadId)
             } else {
-                if isSearchMode {
-                    isSearchMode = false
-                    searchFieldFocused = false
-                }
+                // Dismiss keyboard but keep search mode active so user returns to search results
+                searchFieldFocused = false
                 withAnimation(.easeInOut(duration: 0.2)) {
                     viewModel.openEmail(id: email.id)
                 }
@@ -208,9 +205,18 @@ struct InboxView: View {
             .sheet(isPresented: $showingFilterSheet) {
                 FilterSheet(
                     activeFilter: $viewModel.activeFilter,
-                    filterCounts: viewModel.filterCounts
+                    filterCounts: viewModel.filterCounts,
+                    bucketTotals: { viewModel.bucketTotalCount($0) },
+                    bucketUnseen: { viewModel.bucketUnseenCount($0) },
+                    onSelectCategory: { bucket in
+                        handleBucketTap(bucket)
+                        showingFilterSheet = false
+                    }
                 )
                 .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showingLanePickerSheet) {
+                CustomLanePickerSheet(selectedLane: $viewModel.pinnedTabOption)
             }
             // MARK: - Dialogs & Navigation
             .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
@@ -328,38 +334,44 @@ struct InboxView: View {
     }
 
     private var baseContentView: some View {
-        ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+        GeometryReader { geometry in
+            ZStack {
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
 
-            if !isSearchMode {
-                inboxList
-                    .allowsHitTesting(true)
+                if !isSearchMode {
+                    inboxList
+                        .allowsHitTesting(true)
+                }
+
+                if isSearchMode || hasPrewarmedSearch {
+                    SearchOverlayView(
+                        searchText: $searchText,
+                        debouncedSearchText: $debouncedSearchText,
+                        searchHistory: searchHistory,
+                        isSelectionMode: isSelectionMode,
+                        isSearching: isSearchMode ? viewModel.isSearching : false,
+                        results: isSearchMode ? searchModeResults : [],
+                        onSelectRecent: { query in
+                            searchText = query
+                            debouncedSearchText = query
+                        },
+                        onTapBackground: {
+                            searchFieldFocused = false
+                        },
+                        emailRowView: { email in
+                            emailRowView(for: email, isSelectionMode: isSelectionMode)
+                        }
+                    )
+                    .opacity(isSearchMode ? 1 : 0)
+                    .allowsHitTesting(isSearchMode)
+                }
+
             }
-
-            if isSearchMode || hasPrewarmedSearch {
-                SearchOverlayView(
-                    searchText: $searchText,
-                    debouncedSearchText: $debouncedSearchText,
-                    searchHistory: searchHistory,
-                    isSelectionMode: isSelectionMode,
-                    isSearching: isSearchMode ? viewModel.isSearching : false,
-                    results: isSearchMode ? searchModeResults : [],
-                    onSelectRecent: { query in
-                        searchText = query
-                        debouncedSearchText = query
-                    },
-                    onTapBackground: {
-                        searchFieldFocused = false
-                    },
-                    emailRowView: { email in
-                        emailRowView(for: email, isSelectionMode: isSelectionMode)
-                    }
-                )
-                .opacity(isSearchMode ? 1 : 0)
-                .allowsHitTesting(isSearchMode)
+            .onAppear { safeAreaBottom = geometry.safeAreaInsets.bottom }
+            .onChange(of: geometry.safeAreaInsets.bottom) { _, newValue in
+                safeAreaBottom = newValue
             }
-
         }
         .animation(.easeInOut(duration: 0.3), value: isSearchMode)
         .navigationTitle("")
@@ -371,62 +383,70 @@ struct InboxView: View {
         .autocorrectionDisabled(true)
         .overlay { overlayContent }
         .overlay(alignment: .top) { offlineBannerContent }
-            .overlay(alignment: .bottom) {
-                bulkToastContent
-                    .padding(.bottom, 62)
-                    .zIndex(25)
-            }
-            .overlay(alignment: .bottom) {
-                if !isSelectionMode && !showingFilterSheet {
-                    BottomCommandSurface(
-                        isFilterActive: viewModel.activeFilter != nil,
-                        activeFilterLabel: activeFilterLabel,
-                        activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
-                        searchMode: (isSearchMode || searchFieldFocused) ? .editing : .idle,
-                        showSearchField: true,
-                        searchText: $searchText,
-                        searchFocused: $searchFieldFocused,
-                        onSubmitSearch: {
-                            commitSearch()
-                            debouncedSearchText = searchText
-                            Task { await viewModel.performSearch(query: searchText) }
-                        },
-                        onTapSearch: {
-                            searchFieldFocused = true
-                            DispatchQueue.main.async {
-                                withAnimation(.easeOut(duration: 0.15)) {
-                                    isSearchMode = true
-                                }
-                            }
-                        },
-                        onCancelSearch: {
+        .overlay(alignment: .bottom) {
+            bulkToastContent
+                .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
+                .zIndex(25)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !isSelectionMode && !showingFilterSheet {
+                BottomCommandSurface(
+                    isFilterActive: viewModel.activeFilter != nil,
+                    activeFilterLabel: activeFilterLabel,
+                    activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
+                    searchMode: (isSearchMode || searchFieldFocused) ? .editing : .idle,
+                    showSearchField: true,
+                    searchText: $searchText,
+                    searchFocused: $searchFieldFocused,
+                    onSubmitSearch: {
+                        commitSearch()
+                        debouncedSearchText = searchText
+                        Task { await viewModel.performSearch(query: searchText) }
+                    },
+                    onTapSearch: {
+                        searchFieldFocused = true
+                        DispatchQueue.main.async {
                             withAnimation(.easeOut(duration: 0.15)) {
-                                isSearchMode = false
+                                isSearchMode = true
                             }
-                            searchFieldFocused = false
-                            searchText = ""
-                            debouncedSearchText = ""
-                            viewModel.clearSearch()
-                        },
-                        onTapFilter: { showingFilterSheet = true },
-                        onTapCompose: { showingCompose = true }
-                    )
-                    .zIndex(20)
-                }
+                        }
+                    },
+                    onCancelSearch: {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            isSearchMode = false
+                        }
+                        searchFieldFocused = false
+                        searchText = ""
+                        debouncedSearchText = ""
+                        viewModel.clearSearch()
+                    },
+                    onTapFilter: { showingFilterSheet = true },
+                    onTapCompose: { showingCompose = true }
+                )
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { bottomBarHeight = geo.size.height }
+                            .onChange(of: geo.size.height) { _, newHeight in
+                                bottomBarHeight = newHeight
+                            }
+                    }
+                )
             }
-            .overlay(alignment: .bottom) {
-                undoActionToastContent
-                    .padding(.bottom, 62)
-                    .zIndex(28)
-                    .animation(.easeInOut(duration: 0.25), value: viewModel.showingUndoToast)
-            }
-            .overlay(alignment: .bottom) {
-                undoSendToastContent
-                    .padding(.bottom, 62)
-                    .zIndex(30)
-                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
-                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
-            }
+        }
+        .overlay(alignment: .bottom) {
+            undoActionToastContent
+                .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
+                .zIndex(28)
+                .animation(.easeInOut(duration: 0.25), value: viewModel.showingUndoToast)
+        }
+        .overlay(alignment: .bottom) {
+            undoSendToastContent
+                .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
+                .zIndex(30)
+                .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
+                .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
+        }
     }
 
     // MARK: - Extracted View Components
@@ -440,11 +460,13 @@ struct InboxView: View {
             if !isSearchMode {
                 InboxHeaderBlock(
                     currentTab: currentTabBinding,
-                    pinnedTitle: viewModel.pinnedTabOption.title,
+                    customLaneTitle: viewModel.pinnedTabOption.title,
                     activeFilter: $viewModel.activeFilter,
                     filterCounts: viewModel.filterCounts,
                     isCollapsed: isHeaderCollapsed,
-                    onOpenFilters: { showingFilterSheet = true }
+                    isPickerOpen: showingLanePickerSheet,
+                    onOpenFilters: { showingFilterSheet = true },
+                    onTapCustomWhileSelected: { showingLanePickerSheet = true }
                 )
                 .background(
                     GeometryReader { proxy in
@@ -473,10 +495,46 @@ struct InboxView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
+
+                // Category viewing header (when drilled into a category from bundle tap)
+                if let category = viewModel.viewingCategory {
+                    CategoryViewingHeader(category: category) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.viewingCategory = nil
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+                // Category bundles (top block) when not inline
+                else if showCategoryBundles && !showCategoryBundlesInline && viewModel.currentTab == .primary && !viewModel.bucketRows.isEmpty {
+                    CategoryBundlesSection(bundles: viewModel.bucketRows) { bucket in
+                        handleBucketTap(bucket)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
             }
 
-            ForEach(Array(displaySections.enumerated()), id: \.element.id) { sectionIndex, section in
-                sectionView(section: section, sectionIndex: sectionIndex)
+            let inlineBlocks = inlineCategoryBlocks(
+                sections: displaySections,
+                bundles: (showCategoryBundles && showCategoryBundlesInline && viewModel.currentTab == .primary) ? viewModel.bucketRows : []
+            )
+
+            ForEach(Array(inlineBlocks.enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .section(let index, let section):
+                    sectionView(section: section, sectionIndex: index)
+                case .bucket(let bundle):
+                    CategoryBundleRow(model: bundle) {
+                        handleBucketTap(bundle.bucket)
+                    }
+                    .listRowSeparator(.visible)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowBackground(Color(.systemBackground))
+                }
             }
 
             if !isSearchMode {
@@ -494,9 +552,10 @@ struct InboxView: View {
             }
         }
         .listStyle(.plain)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: viewModel.bucketRows)
         .listSectionSpacing(2)
         .contentMargins(.top, 0, for: .scrollContent)
-        .contentMargins(.bottom, 56, for: .scrollContent)
+        .contentMargins(.bottom, bottomBarHeight + safeAreaBottom + 8, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
         .coordinateSpace(name: "inboxScroll")
@@ -516,26 +575,26 @@ struct InboxView: View {
         let onTapBackground: () -> Void
         let emailRowView: (EmailDTO) -> Row
 
+        @Environment(\.colorScheme) private var colorScheme
+
         var body: some View {
+            let bgColor = colorScheme == .dark ? Color.black : Color(.systemBackground)
+
             ZStack {
-                Color.black.opacity(0.85)
+                bgColor
                     .ignoresSafeArea()
                     .onTapGesture { onTapBackground() }
 
-                VStack(spacing: 0) {
-                    SearchResultsCard(
-                        searchText: $searchText,
-                        debouncedSearchText: $debouncedSearchText,
-                        searchHistory: searchHistory,
-                        isSearching: isSearching,
-                        results: results,
-                        onSelectRecent: onSelectRecent,
-                        emailRowView: emailRowView
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 80)
-                }
+                SearchResultsCard(
+                    searchText: $searchText,
+                    debouncedSearchText: $debouncedSearchText,
+                    searchHistory: searchHistory,
+                    isSearching: isSearching,
+                    results: results,
+                    onSelectRecent: onSelectRecent,
+                    emailRowView: emailRowView
+                )
+                .padding(.bottom, 80)
             }
         }
     }
@@ -549,12 +608,18 @@ struct InboxView: View {
         let onSelectRecent: (String) -> Void
         let emailRowView: (EmailDTO) -> Row
 
+        @Environment(\.colorScheme) private var colorScheme
+
+        private var rowBackground: Color {
+            colorScheme == .dark ? Color.black : Color(.systemBackground)
+        }
+
         var body: some View {
             ZStack {
                 List {
                     if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         if !searchHistory.recentSearches.isEmpty {
-                            Section("Recent") {
+                            Section {
                                 ForEach(searchHistory.recentSearches.prefix(8), id: \.self) { query in
                                     Button {
                                         onSelectRecent(query)
@@ -562,24 +627,36 @@ struct InboxView: View {
                                         Label(query, systemImage: "clock.arrow.circlepath")
                                     }
                                     .foregroundStyle(.primary)
+                                    .listRowBackground(rowBackground)
                                 }
+                            } header: {
+                                Text("Recent")
+                                    .foregroundStyle(.secondary)
                             }
-                        } else {
-                            ContentUnavailableView.search(text: "")
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
                         }
                     } else {
-                        ForEach(results.prefix(50)) { email in
-                            emailRowView(email)
+                        if !results.isEmpty {
+                            Section {
+                                ForEach(results.prefix(50)) { email in
+                                    emailRowView(email)
+                                        .listRowBackground(rowBackground)
+                                }
+                            } header: {
+                                Text("Top Hits")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         if results.isEmpty && !isSearching {
                             ContentUnavailableView.search(text: searchText)
-                                .listRowBackground(Color.clear)
+                                .listRowBackground(rowBackground)
                                 .listRowSeparator(.hidden)
                         }
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(rowBackground)
+
                 if isSearching {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -590,10 +667,6 @@ struct InboxView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Color.clear)
-            .listRowSeparatorTint(Color.white.opacity(0.12))
         }
     }
 
@@ -1074,6 +1147,35 @@ struct InboxView: View {
         } catch { }
     }
 
+    // MARK: - Inline category blocks (Gmail-style)
+    private enum InlineBlock {
+        case section(index: Int, section: EmailSection)
+        case bucket(BucketRowModel)
+    }
+
+    private func inlineCategoryBlocks(sections: [EmailSection], bundles: [BucketRowModel]) -> [InlineBlock] {
+        // Derive a sort key (latest date) for each section and bundle
+        var blocks: [(Date, InlineBlock)] = []
+
+        for (idx, section) in sections.enumerated() {
+            if let date = section.emails.first?.date {
+                blocks.append((date, .section(index: idx, section: section)))
+            } else {
+                blocks.append((.distantPast, .section(index: idx, section: section)))
+            }
+        }
+
+        for bundle in bundles {
+            let date = bundle.latestDate ?? .distantPast
+            blocks.append((date, .bucket(bundle)))
+        }
+
+        // Sort by date descending (newest first)
+        blocks.sort { $0.0 > $1.0 }
+
+        return blocks.map { $0.1 }
+    }
+
     private func handleAppear() {
         StallLogger.mark("InboxView.appear")
         loadSettings()
@@ -1105,6 +1207,8 @@ struct InboxView: View {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             listDensity = settings.listDensity
             showAvatars = settings.showAvatars
+            showCategoryBundles = settings.showCategoryBundles
+            showCategoryBundlesInline = settings.showCategoryBundlesInline
 
             // Update threading setting on viewModel
             let threadingChanged = viewModel.conversationThreading != settings.conversationThreading
@@ -1121,6 +1225,15 @@ struct InboxView: View {
         }
     }
 
+    private func handleBucketTap(_ bucket: GmailBucket) {
+        HapticFeedback.light()
+        // Instantly filter to show this category's emails (no network call)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+            viewModel.markBucketSeen(bucket)
+            viewModel.viewingCategory = bucket.category
+        }
+    }
+
     private var emptyStateTitle: String {
         if let filter = viewModel.activeFilter {
             return "No \(filter.rawValue)"
@@ -1128,7 +1241,7 @@ struct InboxView: View {
         if viewModel.currentTab == .primary {
             return "No Primary"
         }
-        if viewModel.currentTab == .pinned {
+        if viewModel.currentTab == .custom {
             return "No \(viewModel.pinnedTabOption.title)"
         }
         return "Inbox Zero"
@@ -1141,7 +1254,7 @@ struct InboxView: View {
         if viewModel.currentTab == .primary {
             return "No primary emails yet."
         }
-        if viewModel.currentTab == .pinned {
+        if viewModel.currentTab == .custom {
             return "No \(viewModel.pinnedTabOption.title.lowercased()) emails yet."
         }
         return "You're all caught up."
@@ -1151,7 +1264,7 @@ struct InboxView: View {
         if viewModel.activeFilter != nil {
             return "line.3.horizontal.decrease.circle"
         }
-        if viewModel.currentTab == .pinned {
+        if viewModel.currentTab == .custom {
             return "tray.2"
         }
         return "tray"
@@ -1162,24 +1275,31 @@ struct InboxView: View {
 
 struct InboxHeaderBlock: View {
     @Binding var currentTab: InboxTab
-    let pinnedTitle: String
+    let customLaneTitle: String
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
     let isCollapsed: Bool
+    var isPickerOpen: Bool = false
     let onOpenFilters: () -> Void
+    let onTapCustomWhileSelected: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // All/Primary/Other segmented control - always visible
-            Picker("", selection: $currentTab) {
-                Text(InboxTab.all.rawValue).tag(InboxTab.all)
-                Text(InboxTab.primary.rawValue).tag(InboxTab.primary)
-                Text(pinnedTitle).tag(InboxTab.pinned)
-            }
-            .pickerStyle(.segmented)
+            InboxTabBar(
+                selectedTab: currentTab,
+                customLaneTitle: customLaneTitle,
+                isPickerOpen: isPickerOpen,
+                onTapAll: { currentTab = .all },
+                onTapPrimary: { currentTab = .primary },
+                onTapCustom: {
+                    if currentTab == .custom {
+                        onTapCustomWhileSelected()
+                    } else {
+                        currentTab = .custom
+                    }
+                }
+            )
             .padding(.horizontal, 16)
-            .padding(.top, 0)
-            .padding(.bottom, 0)
         }
         .padding(.top, 0)
         .padding(.bottom, 0)
@@ -1200,7 +1320,7 @@ struct SectionHeaderRow: View {
                 .textCase(nil)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
-                .padding(.top, isFirst ? 6 : 10)
+                .padding(.top, isFirst ? 2 : 8)
                 .padding(.bottom, 4)
                 .accessibilityAddTraits(.isHeader)
 
@@ -1543,8 +1663,7 @@ struct EmailRow: View {
                 // Top row: sender + metadata cluster
                 HStack(alignment: .center, spacing: 6) {
                     // Sender name: reduced emphasis for sender-run continuation
-                    highlightedText(email.senderName, font: senderFont)
-                        .foregroundStyle(senderColor)
+                    highlightedText(email.senderName, font: senderFont, baseColor: senderColor)
                         .lineLimit(1)
 
                     if isVIPSender && !isContinuationInSenderRun {
@@ -1573,31 +1692,23 @@ struct EmailRow: View {
                             .font(MailTypography.meta)
                             .foregroundStyle(metaColor)
 
-                        // Unread dot aligned with timestamp
-                        if email.isUnread {
-                            Circle()
-                                .fill(.blue)
-                                .frame(width: 8, height: 8)
-                        }
+                        // Unread dot - always reserve space for alignment
+                        Circle()
+                            .fill(.blue)
+                            .frame(width: 8, height: 8)
+                            .opacity(email.isUnread ? 1 : 0)
                     }
                     .frame(minWidth: 78, alignment: .trailing)
                 }
 
-                // Subject line (normalized to remove Fwd:/Re: prefixes)
-                highlightedText(EmailPreviewNormalizer.normalizeSubjectForDisplay(email.subject), font: subjectFont)
-                    .foregroundStyle(subjectColor)
+                // Subject line (pre-normalized in EmailDTO to avoid per-row regex)
+                highlightedText(email.displaySubject, font: subjectFont, baseColor: subjectColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                // Snippet (not in compact mode, normalized to remove forwarded boilerplate)
+                // Snippet (not in compact mode, pre-normalized in EmailDTO)
                 if !isCompact {
-                    highlightedText(
-                        EmailPreviewNormalizer.normalizeSnippetForDisplay(email.snippet),
-                        font: MailTypography.snippet,
-                        baseColor: snippetColor
-                    )
-                        .font(MailTypography.snippet)
-                        .foregroundStyle(snippetColor)
+                    highlightedText(email.displaySnippet, font: MailTypography.snippet, baseColor: snippetColor)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1770,10 +1881,14 @@ struct TimeOfDayGradient: View {
 struct FilterSheet: View {
     @Binding var activeFilter: InboxFilter?
     let filterCounts: [InboxFilter: Int]
+    let bucketTotals: (GmailBucket) -> Int
+    let bucketUnseen: (GmailBucket) -> Int
+    let onSelectCategory: (GmailBucket) -> Void
     @Environment(\.dismiss) private var dismiss
 
     private let smartFilters: [InboxFilter] = [.unread, .needsReply, .deadlines, .money]
     private let otherFilters: [InboxFilter] = [.newsletters]
+    private let categoryBuckets: [GmailBucket] = GmailBucket.allCases
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
@@ -1782,6 +1897,7 @@ struct FilterSheet: View {
                 VStack(alignment: .leading, spacing: 20) {
                     filterSection(title: "Smart", filters: smartFilters)
                     filterSection(title: "Other", filters: otherFilters)
+                    categorySection()
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -1833,6 +1949,89 @@ struct FilterSheet: View {
     private func selectFilter(_ filter: InboxFilter) {
         activeFilter = (activeFilter == filter) ? nil : filter
     }
+
+    @ViewBuilder
+    private func categorySection() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Categories")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            VStack(spacing: 10) {
+                ForEach(categoryBuckets, id: \.self) { bucket in
+                    categoryRow(bucket: bucket)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func categoryRow(bucket: GmailBucket) -> some View {
+        let total = bucketTotals(bucket)
+        let unseen = bucketUnseen(bucket)
+        let category = bucket.category
+
+        Button {
+            selectCategory(bucket)
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(category.color.opacity(0.14))
+                        .frame(width: 32, height: 32)
+
+                    Image(systemName: category.icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(category.color)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(category.displayName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        if unseen > 0 {
+                            Text("\(unseen) new")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(category.color)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(category.color.opacity(0.12))
+                                )
+                        }
+                    }
+
+                    Text(total == 0 ? "No mail yet" : "\(total) total")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+        .buttonStyle(.plain)
+        .opacity(total == 0 ? 0.5 : 1)
+        .disabled(total == 0)
+    }
+
+    private func selectCategory(_ bucket: GmailBucket) {
+        onSelectCategory(bucket)
+        dismiss()
+    }
 }
 
 struct SmartFilterCard: View {
@@ -1869,6 +2068,80 @@ struct SmartFilterCard: View {
         )
         .opacity(count == 0 ? 0.5 : 1)
         .disabled(count == 0)
+    }
+}
+
+// MARK: - Instant Swipe Modifier
+
+private struct InstantSwipeModifier: ViewModifier {
+    let onSwipeLeft: () -> Void
+    let onSwipeRight: () -> Void
+    let leftColor: Color
+    let rightColor: Color
+    let leftIcon: String
+    let rightIcon: String
+
+    @State private var offset: CGFloat = 0
+    @State private var hasTriggered = false
+
+    private let threshold: CGFloat = 80
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .background {
+                // Only show backgrounds when actively swiping
+                if offset != 0 {
+                    HStack(spacing: 0) {
+                        // Right swipe background (toggle read)
+                        rightColor
+                            .overlay(alignment: .leading) {
+                                Image(systemName: rightIcon)
+                                    .font(.title2)
+                                    .foregroundStyle(.white)
+                                    .padding(.leading, 20)
+                            }
+                            .opacity(offset > 0 ? 1 : 0)
+
+                        // Left swipe background (archive)
+                        leftColor
+                            .overlay(alignment: .trailing) {
+                                Image(systemName: leftIcon)
+                                    .font(.title2)
+                                    .foregroundStyle(.white)
+                                    .padding(.trailing, 20)
+                            }
+                            .opacity(offset < 0 ? 1 : 0)
+                    }
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                        offset = value.translation.width
+
+                        if !hasTriggered {
+                            if offset > threshold {
+                                hasTriggered = true
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                onSwipeRight()
+                            } else if offset < -threshold {
+                                hasTriggered = true
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                onSwipeLeft()
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        withAnimation(.spring(response: 0.3)) {
+                            offset = 0
+                        }
+                        hasTriggered = false
+                    }
+            )
     }
 }
 

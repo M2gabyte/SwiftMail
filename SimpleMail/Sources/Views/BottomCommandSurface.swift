@@ -16,13 +16,19 @@ struct BottomCommandSurface: View {
     let onTapFilter: () -> Void
     let onTapCompose: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var fieldBackground: Color {
+        colorScheme == .dark ? Color(white: 0.15) : Color(.secondarySystemBackground)
+    }
+
     var body: some View {
         let isSearchActive = (searchMode == .editing) || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isEditing = searchMode == .editing
         HStack(spacing: isEditing ? 6 : 8) {
             if !isEditing {
                 leftButton
-                    .frame(width: 50, height: 50)
+                    .frame(width: 44, height: 44)
             }
 
             centerSearchContent
@@ -31,14 +37,15 @@ struct BottomCommandSurface: View {
 
             if isEditing {
                 Button(action: { onCancelSearch() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 34, weight: .regular))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 56, height: 56)
-                        .contentShape(Rectangle())
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(GlassTokens.surfaceMaterial))
+                        .glassStroke(Circle())
                 }
                 .buttonStyle(.plain)
-                .frame(width: 56, height: 56)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Cancel search")
             } else {
@@ -46,22 +53,21 @@ struct BottomCommandSurface: View {
             }
         }
         .padding(.horizontal, isEditing ? 8 : 12)
-        .padding(.vertical, 9)
-        .padding(.bottom, 2)
+        .padding(.vertical, 2)
+        .padding(.bottom, -2) // sink closer to bottom edge
         .animation(.snappy(duration: 0.22), value: isSearchActive)
     }
 
     private var leftButton: some View {
         Button(action: onTapFilter) {
-            Image(systemName: isFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal")
-                .font(.system(size: 22, weight: .regular))
-                .foregroundStyle(isFilterActive ? Color.accentColor : .secondary)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(.ultraThinMaterial))
-                .overlay(
-                    Circle()
-                        .stroke(Color(.separator).opacity(0.22), lineWidth: 0.5)
-                )
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 21, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(isFilterActive ? Color.accentColor.opacity(0.8) : .secondary)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(GlassTokens.chromeMaterial))
+                .glassStroke(Circle())
+                .glassShadow()
                 .overlay(alignment: .topTrailing) {
                     if isFilterActive {
                         FilterActiveBadge(count: activeFilterCount)
@@ -79,25 +85,20 @@ struct BottomCommandSurface: View {
     }
 
     private var rightButton: some View {
-        ZStack {
-            Button(action: onTapCompose) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 38, height: 38)
-                    .background(Circle().fill(.ultraThinMaterial))
-                    .overlay(
-                        Circle()
-                            .stroke(Color(.separator).opacity(0.22), lineWidth: 0.5)
-                    )
-            }
-            .buttonStyle(.plain)
-            .frame(width: 50, height: 50)
-            .contentShape(Rectangle())
-            .accessibilityLabel("Compose new email")
-            .accessibilityHint("Double tap to write a new message")
-
+        Button(action: onTapCompose) {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(GlassTokens.chromeMaterial))
+                .glassStroke(Circle())
+                .glassShadow()
         }
+        .buttonStyle(.plain)
+        .frame(width: 50, height: 50)
+        .contentShape(Rectangle())
+        .accessibilityLabel("Compose new email")
+        .accessibilityHint("Double tap to write a new message")
     }
 
     @ViewBuilder
@@ -108,15 +109,9 @@ struct BottomCommandSurface: View {
             onSubmit: onSubmitSearch,
             onBeginEditing: onTapSearch
         )
-        .frame(height: 46)
-        .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            Capsule()
-                .stroke(Color(.separator).opacity(0.14), lineWidth: 0.5)
-        )
+        .frame(height: 44)
+        .background(Capsule().fill(fieldBackground))
+        .glassStroke(Capsule())
         .opacity(showSearchField ? 1 : 0)
         .allowsHitTesting(showSearchField)
         .accessibilityHidden(!showSearchField)
