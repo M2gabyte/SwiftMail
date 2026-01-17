@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import OSLog
+import CryptoKit
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -707,10 +708,17 @@ enum HTMLSanitizer {
         return result
     }
 
+    /// Inline external images and background URLs as data URIs so that layouts stay intact
+    /// even when the network is slow or blocked. This mirrors Gmail/Mail behavior by
+    /// eagerly fetching reasonable-size images, caching them, and replacing src/background
+    /// URLs with data URIs. Tracking pixels (tiny images) are already stripped earlier.
     static func inlineCriticalImages(_ html: String) async -> String {
-        let allowHosts = ["maps.googleapis.com", "photos.zillowstatic.com", "zillowstatic.com"]
-        let maxImages = 10
+        // Limit total work to keep memory reasonable.
+        let maxImages = 20
+        let maxBytesPerImage = 4_000_000
+        let maxTotalBytes = 8_000_000
 
+        // Extract candidate URLs from img src and background attributes.
         var urls: [String] = []
         let imgSrcPattern = try! NSRegularExpression(pattern: "<img[^>]*src\\s*=\\s*[\"']([^\"'>]+)[\"'][^>]*>", options: .caseInsensitive)
         let bgPattern = try! NSRegularExpression(pattern: "background\\s*=\\s*[\"']([^\"'>]+)[\"']", options: .caseInsensitive)
@@ -726,28 +734,99 @@ enum HTMLSanitizer {
         extract(imgSrcPattern, html)
         extract(bgPattern, html)
 
-        let filtered = Array(NSOrderedSet(array: urls.filter { u in
-            guard let host = URL(string: u)?.host?.lowercased() else { return false }
-            return allowHosts.contains(where: { host.hasSuffix($0) })
+        // Deduplicate and keep only http(s) URLs (skip cid:, data:, blocked-src)
+        let candidates = Array(NSOrderedSet(array: urls.compactMap { u -> String? in
+            guard u.lowercased().hasPrefix("http") else { return nil }
+            if u.lowercased().hasPrefix("data:") { return nil }
+            if u.contains("data-blocked-src") { return nil }
+            return u
         })) as? [String] ?? []
-        let targets = filtered.prefix(maxImages)
+
+        let targets = candidates.prefix(maxImages)
         guard !targets.isEmpty else { return html }
 
-        var output = html
+        var totalBytes = 0
+        var replacements: [(String, String)] = []
+
         for urlStr in targets {
             guard let url = URL(string: urlStr) else { continue }
-            var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 8)
-            request.setValue("https://www.zillow.com", forHTTPHeaderField: "Referer")
-            do {
-                let (data, resp) = try await URLSession.shared.data(for: request)
-                guard let mime = resp.mimeType, data.count < 3_500_000 else { continue }
-                let dataUri = "data:\(mime);base64,\(data.base64EncodedString())"
-                output = output.replacingOccurrences(of: urlStr, with: dataUri)
-            } catch {
+
+            // Try cache first
+            if let cached = cachedImage(for: url) {
+                let dataUri = dataURI(data: cached.data, mime: cached.mimeType)
+                replacements.append((urlStr, dataUri))
                 continue
             }
+
+            // Respect total byte budget
+            if totalBytes >= maxTotalBytes { break }
+
+            if let fetched = try? await fetchImage(url: url, maxBytes: maxBytesPerImage) {
+                totalBytes += fetched.data.count
+                let dataUri = dataURI(data: fetched.data, mime: fetched.mimeType)
+                storeImage(data: fetched.data, mime: fetched.mimeType, for: url)
+                replacements.append((urlStr, dataUri))
+            }
+        }
+
+        guard !replacements.isEmpty else { return html }
+
+        var output = html
+        for (needle, value) in replacements {
+            output = output.replacingOccurrences(of: needle, with: value)
         }
         return output
+    }
+
+    // MARK: - Inline image helpers
+    private static let imageCacheDirectory: URL = {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = base.appendingPathComponent("EmailImageCache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private static func cacheKey(for url: URL) -> String {
+        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+        return digest.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func cachedImage(for url: URL) -> (data: Data, mimeType: String)? {
+        let key = cacheKey(for: url)
+        let dataURL = imageCacheDirectory.appendingPathComponent(key)
+        let mimeURL = imageCacheDirectory.appendingPathComponent("\(key).mime")
+        guard let data = try? Data(contentsOf: dataURL) else { return nil }
+        let mime = (try? String(contentsOf: mimeURL))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (data, mime ?? "image/png")
+    }
+
+    private static func storeImage(data: Data, mime: String, for url: URL) {
+        let key = cacheKey(for: url)
+        let dataURL = imageCacheDirectory.appendingPathComponent(key)
+        let mimeURL = imageCacheDirectory.appendingPathComponent("\(key).mime")
+        try? data.write(to: dataURL, options: .atomic)
+        try? mime.data(using: .utf8)?.write(to: mimeURL, options: .atomic)
+    }
+
+    private static func fetchImage(url: URL, maxBytes: Int) async throws -> (data: Data, mimeType: String) {
+        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
+        // Preserve referer for hosts that enforce it (common for CDNs)
+        if request.value(forHTTPHeaderField: "Referer") == nil {
+            if let host = url.host {
+                request.setValue("https://\(host)", forHTTPHeaderField: "Referer")
+            }
+        }
+
+        let (data, resp) = try await URLSession.shared.data(for: request)
+        guard let mime = resp.mimeType, mime.lowercased().hasPrefix("image/") else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        guard data.count <= maxBytes else { throw URLError(.dataLengthExceedsMaximum) }
+        return (data, mime)
+    }
+
+    private static func dataURI(data: Data, mime: String) -> String {
+        "data:\(mime);base64,\(data.base64EncodedString())"
     }
 
     /// Remove zero-width characters that create empty space in marketing emails

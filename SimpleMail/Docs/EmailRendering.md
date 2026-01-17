@@ -3,7 +3,7 @@
 Goal: render sender HTML as faithfully as Gmail/Mail while quietly blocking trackers and keeping layouts intact.
 
 ## Defaults
-- Remote images **allowed** by default.
+- Remote images **allowed** by default and eagerly inlined to data URIs (see Inline images).
 - Tracking pixels stripped: remove 1–2 px images and common pixel filenames; hide `img[width|height<=2]`.
 - Tracking parameters removed from links (`utm_*`, `mc_eid`, `fbclid`, etc.).
 
@@ -19,6 +19,7 @@ Goal: render sender HTML as faithfully as Gmail/Mail while quietly blocking trac
 - No forced padding; no anchor recolor; avoid hiding empty elements (some templating uses them).
 - CSP: `img-src data: https: http: cid:; style-src 'unsafe-inline'; font-src data: https: http:; media-src https: http: data:; connect-src https: http:` (allows CID/HTTP/HTTPS assets).
 - Upgrade `http://` asset URLs to `https://` where possible to satisfy ATS.
+- Inline http(s) images and `background=` URLs to data URIs with a local cache (up to 20 images, 4 MB each, 8 MB total). This makes layouts resilient when CDNs block referers or the network is spotty—similar to Gmail/Mail’s proxying.
 
 ## WebView behavior
 - Content pre-sanitized off-main; WebView only loads final HTML string.
