@@ -17,7 +17,8 @@ Goal: render sender HTML as faithfully as Gmail/Mail while quietly blocking trac
 - Keep email backgrounds: `body { background: transparent; color: inherit; }`.
 - Preserve layout; responsive media only: `img { max-width: 100%; height: auto; }`, same for video/iframe/canvas.
 - No forced padding; no anchor recolor; avoid hiding empty elements (some templating uses them).
-- CSP: `img-src data: https: http: cid:`, `style-src 'unsafe-inline'` (allows HTTPS/HTTP images and CID inline attachments).
+- CSP: `img-src data: https: http: cid:; style-src 'unsafe-inline'; font-src data: https: http:; media-src https: http: data:; connect-src https: http:` (allows CID/HTTP/HTTPS assets).
+- Upgrade `http://` asset URLs to `https://` where possible to satisfy ATS.
 
 ## WebView behavior
 - Content pre-sanitized off-main; WebView only loads final HTML string.
