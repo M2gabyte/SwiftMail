@@ -833,6 +833,14 @@ enum HTMLSanitizer {
                 continue
             }
 
+            // Fallback: route through generic image proxy when direct fetch fails (DNS/ATS/CDN)
+            if let proxied = try? await fetchImageViaProxy(url: url, maxBytes: maxBytesPerImage) {
+                totalBytes += proxied.data.count
+                let dataUri = dataURI(data: proxied.data, mime: proxied.mimeType)
+                storeImage(data: proxied.data, mime: proxied.mimeType, for: url)
+                replacements.append((urlStr, dataUri))
+            }
+
         }
 
         guard !replacements.isEmpty else { return html }
@@ -893,6 +901,26 @@ enum HTMLSanitizer {
 
     private static func dataURI(data: Data, mime: String) -> String {
         "data:\(mime);base64,\(data.base64EncodedString())"
+    }
+
+    /// Generic public image proxy (read-only) used only when direct fetch fails.
+    /// Mirrors Gmail-style resilience when sender CDNs/DNS/ATS block direct loads.
+    private static func fetchImageViaProxy(url: URL, maxBytes: Int) async throws -> (data: Data, mimeType: String) {
+        // Using images.weserv.nl (stateless image relay).
+        var hostless = url.absoluteString
+        if hostless.hasPrefix("https://") { hostless.removeFirst("https://".count) }
+        else if hostless.hasPrefix("http://") { hostless.removeFirst("http://".count) }
+        let encoded = hostless.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? hostless
+        guard let proxyURL = URL(string: "https://images.weserv.nl/?url=\(encoded)") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: proxyURL, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
+        let (data, resp) = try await URLSession.shared.data(for: request)
+        guard let mime = resp.mimeType, mime.lowercased().hasPrefix("image/") else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        guard data.count <= maxBytes else { throw URLError(.dataLengthExceedsMaximum) }
+        return (data, mime)
     }
 
     // No per-sender embedded assets; if fetch fails and cache miss, the browser will
