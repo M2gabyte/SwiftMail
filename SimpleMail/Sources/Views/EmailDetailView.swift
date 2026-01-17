@@ -124,7 +124,7 @@ actor BodyRenderActor {
     /// No JavaScript is injected - height is measured natively via scrollView.contentSize.
     private static func buildStyledHTML(body: String, trackingCSS: String, allowRemoteImages: Bool) -> String {
         let csp = allowRemoteImages
-            ? "default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data: https:;"
+            ? "default-src 'none'; img-src data: https: http: cid:; style-src 'unsafe-inline'; font-src data: https:;"
             : "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;"
 
         return """
