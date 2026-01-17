@@ -212,6 +212,7 @@ struct EmailDetailView: View {
     @State private var showBlockConfirm = false
     @State private var showSpamConfirm = false
     @State private var showTrackerAlert = false
+    @State private var toastMessage: String?
 
     init(emailId: String, threadId: String, accountEmail: String? = nil) {
         self.emailId = emailId
@@ -391,10 +392,11 @@ struct EmailDetailView: View {
         .alert("Block \(viewModel.senderName ?? "Sender")?", isPresented: $showBlockConfirm) {
             Button("Cancel", role: .cancel) { }
             Button("Block", role: .destructive) {
+                let name = viewModel.senderName ?? "Sender"
                 Task {
                     await viewModel.blockSender()
                     NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                    dismiss()
+                    toastMessage = "Blocked \(name)"
                 }
             }
         } message: {
@@ -407,7 +409,7 @@ struct EmailDetailView: View {
                 Task {
                     await viewModel.reportSpam()
                     NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                    dismiss()
+                    toastMessage = "Reported as Spam"
                 }
             }
         } message: {
@@ -426,6 +428,21 @@ struct EmailDetailView: View {
         }
         .toolbar(.hidden, for: .tabBar)
         .onAppear { StallLogger.mark("EmailDetail.appear") }
+        .overlay(alignment: .bottom) {
+            if let message = toastMessage {
+                ActionToast(message: message)
+                    .padding(.bottom, bottomBarHeight + safeAreaBottom + 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toastMessage)
+        .onChange(of: toastMessage) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                dismiss()
+            }
+        }
     }
 }
 
@@ -1591,6 +1608,32 @@ struct ActionPillButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .opacity(configuration.isPressed ? 0.8 : 1.0)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Action Toast
+
+struct ActionToast: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.white)
+
+            Text(message)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(
+            Capsule()
+                .fill(Color(.darkGray))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+        )
     }
 }
 
