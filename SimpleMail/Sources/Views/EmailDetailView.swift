@@ -57,6 +57,7 @@ final class WKWebViewPool {
         webView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         return webView
     }
 
@@ -207,6 +208,7 @@ struct EmailDetailView: View {
     @State private var showingActionSheet = false
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
+    @State private var safeAreaBottom: CGFloat = 0
 
     init(emailId: String, threadId: String, accountEmail: String? = nil) {
         self.emailId = emailId
@@ -271,22 +273,29 @@ struct EmailDetailView: View {
                         }
                     )
 
-                    ForEach(viewModel.messages) { message in
+                    ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
+                        let isLastMessage = index == viewModel.messages.count - 1
                         EmailMessageCard(
                             message: message,
                             styledHTML: viewModel.styledHTML(for: message),
                             renderedPlain: viewModel.plainText(for: message),
                             isExpanded: viewModel.expandedMessageIds.contains(message.id),
+                            bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 8 : 0,
                             onToggleExpand: { viewModel.toggleExpanded(message.id) }
                         )
                     }
-
-                    // Bottom padding to clear the toolbar
-                    Color.clear.frame(height: bottomBarHeight + 8)
                 }
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(
+            GeometryReader { geometry in
+                Color(.systemGroupedBackground)
+                    .onAppear { safeAreaBottom = geometry.safeAreaInsets.bottom }
+                    .onChange(of: geometry.safeAreaInsets.bottom) { _, newValue in
+                        safeAreaBottom = newValue
+                    }
+            }
+        )
         .accessibilityIdentifier("emailDetailView")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -403,6 +412,7 @@ struct EmailMessageCard: View {
     let styledHTML: String?     // nil = not ready yet, show skeleton
     let renderedPlain: String
     let isExpanded: Bool
+    var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     let onToggleExpand: () -> Void
 
     var body: some View {
@@ -453,7 +463,7 @@ struct EmailMessageCard: View {
                 Divider()
                     .padding(.leading)
 
-                EmailBodyView(styledHTML: styledHTML)
+                EmailBodyView(styledHTML: styledHTML, bottomInset: bottomInset)
                     .frame(minHeight: 100)
             }
         }
@@ -530,6 +540,7 @@ struct EmailBodySkeleton: View {
 
 struct EmailBodyView: View {
     let styledHTML: String?  // nil = not ready yet, show skeleton
+    var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     @State private var contentHeight: CGFloat = 200
     @State private var showSkeleton = false
     @State private var webViewReady = false
@@ -551,7 +562,8 @@ struct EmailBodyView: View {
                     onContentReady: {
                         webViewReady = true
                         StallLogger.mark("EmailBodyView.webReady")
-                    }
+                    },
+                    bottomInset: bottomInset
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: contentHeight)
@@ -867,6 +879,7 @@ struct EmailBodyWebView: UIViewRepresentable {
     let styledHTML: String      // Pre-rendered complete HTML document
     @Binding var contentHeight: CGFloat
     var onContentReady: (() -> Void)?  // Called when WebView commits navigation (content visible)
+    var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar
     var webViewPool = WKWebViewPool.shared
 
     func makeUIView(context: Context) -> WKWebView {
@@ -880,6 +893,12 @@ struct EmailBodyWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        // Always apply bottom inset for toolbar clearance (even if HTML unchanged)
+        if webView.scrollView.contentInset.bottom != bottomInset {
+            webView.scrollView.contentInset.bottom = bottomInset
+            webView.scrollView.scrollIndicatorInsets.bottom = bottomInset
+        }
+
         // Use object identity of the string to detect changes
         // (styledHTML is immutable and comes from pre-rendered cache)
         let key = ObjectIdentifier(styledHTML as NSString)
@@ -1544,6 +1563,7 @@ struct EmailActionBadgesView: View {
                 }
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
+                .accessibilityLabel("Sender actions")
             }
             .padding(.horizontal)
         }
@@ -1574,11 +1594,9 @@ struct DetailBottomBar: View {
     let onArchive: () -> Void
     let onTrash: () -> Void
 
-    @State private var showReplyOptions = false
-
     var body: some View {
-        HStack(spacing: 0) {
-            // Reply button with context menu
+        HStack(spacing: 16) {
+            // Reply button with context menu (primary action)
             Menu {
                 Button(action: onReply) {
                     Label("Reply", systemImage: "arrowshape.turn.up.left")
@@ -1591,42 +1609,45 @@ struct DetailBottomBar: View {
                 }
             } label: {
                 Image(systemName: "arrowshape.turn.up.left")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             } primaryAction: {
                 onReply()
             }
+            .accessibilityLabel("Reply")
 
-            Spacer()
-
-            // Archive button
+            // Archive button (secondary)
             Button(action: onArchive) {
                 Image(systemName: "archivebox")
                     .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .accessibilityLabel("Archive")
 
-            // Trash button
+            // Trash button (destructive)
             Button(action: onTrash) {
                 Image(systemName: "trash")
                     .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(.red.opacity(0.8))
+                    .foregroundStyle(.red.opacity(0.7))
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .accessibilityLabel("Delete")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
         .background(
-            Rectangle()
-                .fill(GlassTokens.chromeMaterial)
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity))
-                        .frame(height: GlassTokens.strokeWidth)
-                }
+            Capsule()
+                .fill(GlassTokens.controlMaterial)
         )
+        .glassStroke(Capsule())
+        .glassShadow()
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 }
 

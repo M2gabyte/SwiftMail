@@ -53,8 +53,8 @@ struct BottomCommandSurface: View {
             }
         }
         .padding(.horizontal, isEditing ? 8 : 12)
-        .padding(.vertical, 5)
-        .padding(.bottom, -3) // sink closer to bottom edge
+        .padding(.vertical, 2)
+        .padding(.bottom, -2) // sink closer to bottom edge
         .animation(.snappy(duration: 0.22), value: isSearchActive)
     }
 

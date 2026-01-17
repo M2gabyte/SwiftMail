@@ -43,6 +43,7 @@ struct InboxView: View {
     @State private var hasPrewarmedSearch = false
     @State private var inboxScope: InboxLocationScope = .unified
     @State private var bottomBarHeight: CGFloat = 56
+    @State private var safeAreaBottom: CGFloat = 0
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
 
@@ -333,38 +334,44 @@ struct InboxView: View {
     }
 
     private var baseContentView: some View {
-        ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+        GeometryReader { geometry in
+            ZStack {
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
 
-            if !isSearchMode {
-                inboxList
-                    .allowsHitTesting(true)
+                if !isSearchMode {
+                    inboxList
+                        .allowsHitTesting(true)
+                }
+
+                if isSearchMode || hasPrewarmedSearch {
+                    SearchOverlayView(
+                        searchText: $searchText,
+                        debouncedSearchText: $debouncedSearchText,
+                        searchHistory: searchHistory,
+                        isSelectionMode: isSelectionMode,
+                        isSearching: isSearchMode ? viewModel.isSearching : false,
+                        results: isSearchMode ? searchModeResults : [],
+                        onSelectRecent: { query in
+                            searchText = query
+                            debouncedSearchText = query
+                        },
+                        onTapBackground: {
+                            searchFieldFocused = false
+                        },
+                        emailRowView: { email in
+                            emailRowView(for: email, isSelectionMode: isSelectionMode)
+                        }
+                    )
+                    .opacity(isSearchMode ? 1 : 0)
+                    .allowsHitTesting(isSearchMode)
+                }
+
             }
-
-            if isSearchMode || hasPrewarmedSearch {
-                SearchOverlayView(
-                    searchText: $searchText,
-                    debouncedSearchText: $debouncedSearchText,
-                    searchHistory: searchHistory,
-                    isSelectionMode: isSelectionMode,
-                    isSearching: isSearchMode ? viewModel.isSearching : false,
-                    results: isSearchMode ? searchModeResults : [],
-                    onSelectRecent: { query in
-                        searchText = query
-                        debouncedSearchText = query
-                    },
-                    onTapBackground: {
-                        searchFieldFocused = false
-                    },
-                    emailRowView: { email in
-                        emailRowView(for: email, isSelectionMode: isSelectionMode)
-                    }
-                )
-                .opacity(isSearchMode ? 1 : 0)
-                .allowsHitTesting(isSearchMode)
+            .onAppear { safeAreaBottom = geometry.safeAreaInsets.bottom }
+            .onChange(of: geometry.safeAreaInsets.bottom) { _, newValue in
+                safeAreaBottom = newValue
             }
-
         }
         .animation(.easeInOut(duration: 0.3), value: isSearchMode)
         .navigationTitle("")
@@ -378,7 +385,7 @@ struct InboxView: View {
         .overlay(alignment: .top) { offlineBannerContent }
             .overlay(alignment: .bottom) {
                 bulkToastContent
-                    .padding(.bottom, bottomBarHeight + 8)
+                    .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
                     .zIndex(25)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -429,13 +436,13 @@ struct InboxView: View {
             }
             .overlay(alignment: .bottom) {
                 undoActionToastContent
-                    .padding(.bottom, bottomBarHeight + 8)
+                    .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
                     .zIndex(28)
                     .animation(.easeInOut(duration: 0.25), value: viewModel.showingUndoToast)
             }
             .overlay(alignment: .bottom) {
                 undoSendToastContent
-                    .padding(.bottom, bottomBarHeight + 8)
+                    .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
                     .zIndex(30)
                     .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
                     .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
@@ -548,7 +555,7 @@ struct InboxView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: viewModel.bucketRows)
         .listSectionSpacing(2)
         .contentMargins(.top, 0, for: .scrollContent)
-        .contentMargins(.bottom, bottomBarHeight + 8, for: .scrollContent)
+        .contentMargins(.bottom, bottomBarHeight + safeAreaBottom + 8, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
         .coordinateSpace(name: "inboxScroll")

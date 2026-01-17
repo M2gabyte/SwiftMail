@@ -449,14 +449,16 @@ struct ComposeView: View {
     @ToolbarContentBuilder
     private var composeToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel", role: .cancel) {
+            Button {
                 if viewModel.hasContent {
                     viewModel.showDiscardAlert = true
                 } else {
                     dismiss()
                 }
+            } label: {
+                Text("Cancel")
+                    .foregroundStyle(.primary)
             }
-            .tint(.primary)
             .accessibilityIdentifier("cancelCompose")
         }
 
@@ -468,7 +470,7 @@ struct ComposeView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            HStack(spacing: 4) {
+            HStack(spacing: 12) {
                 Menu {
                     Button(action: { showingTemplates = true }) {
                         Label("Templates", systemImage: "doc.text")
@@ -479,26 +481,34 @@ struct ComposeView: View {
                     }
                     .disabled(!viewModel.canSend)
                 } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 17))
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
                         .accessibilityLabel("More options")
                 }
 
                 Button(action: { showingAIDraft = true }) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 17))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
                 }
                 .accessibilityLabel("AI Draft")
 
                 Button(action: send) {
-                    Image(systemName: "paperplane.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(viewModel.canSend ? Color.accentColor : .gray)
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(viewModel.canSend ? Color.accentColor : .gray.opacity(0.5))
                 }
                 .disabled(!viewModel.canSend)
                 .accessibilityIdentifier("sendButton")
             }
-            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(Color(UIColor.secondarySystemBackground))
+            )
+            .glassStroke(Capsule())
         }
     }
 
