@@ -738,7 +738,10 @@ enum HTMLSanitizer {
         extract(bgPattern, html)
 
         // Deduplicate and keep only http(s) URLs (skip cid:, data:, blocked-src)
-        let candidates = Array(NSOrderedSet(array: urls.compactMap { u -> String? in
+        let candidates = Array(NSOrderedSet(array: urls.compactMap { raw -> String? in
+            // Normalize scheme-less URLs ("//cdn...") to https
+            var u = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if u.hasPrefix("//") { u = "https:" + u }
             guard u.lowercased().hasPrefix("http") else { return nil }
             if u.lowercased().hasPrefix("data:") { return nil }
             if u.contains("data-blocked-src") { return nil }
