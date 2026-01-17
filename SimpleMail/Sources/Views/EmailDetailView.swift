@@ -709,7 +709,7 @@ enum HTMLSanitizer {
 
     static func inlineCriticalImages(_ html: String) async -> String {
         let allowHosts = ["maps.googleapis.com", "photos.zillowstatic.com", "zillowstatic.com"]
-        let maxImages = 4
+        let maxImages = 10
 
         var urls: [String] = []
         let imgSrcPattern = try! NSRegularExpression(pattern: "<img[^>]*src\\s*=\\s*[\"']([^\"'>]+)[\"'][^>]*>", options: .caseInsensitive)
