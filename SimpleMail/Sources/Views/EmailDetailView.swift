@@ -999,7 +999,7 @@ private extension String {
     }
 }
 
-// MARK: - Email Summary View
+// MARK: - Email Summary View (MessageSummaryCard)
 
 struct EmailSummaryView: View {
     let emailId: String
@@ -1011,68 +1011,96 @@ struct EmailSummaryView: View {
     @State private var isGenerating = false
     @State private var summaryError: String?
 
+    private let cardShape = RoundedRectangle(cornerRadius: GlassTokens.radiusLarge, style: .continuous)
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header
-            Button(action: { withAnimation(.spring(response: 0.3)) { isExpanded.toggle() } }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "apple.intelligence")
-                        .font(.caption)
-                        .foregroundStyle(.purple)
+        Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isExpanded.toggle() } }) {
+            HStack(spacing: 0) {
+                // Left accent bar
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.purple.opacity(0.6))
+                    .frame(width: 3)
+                    .padding(.vertical, 6)
 
-                    Text("Summary")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.purple)
+                VStack(alignment: .leading, spacing: 6) {
+                    // Header row
+                    HStack(spacing: 6) {
+                        Image(systemName: "apple.intelligence")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.purple.opacity(0.8))
 
-                    Spacer()
+                        Text("Summary")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.purple.opacity(0.8))
 
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        Spacer()
+                    }
+
+                    // Summary content
+                    summaryContent
+                }
+                .padding(.leading, 10)
+                .padding(.trailing, 12)
+                .padding(.vertical, 10)
+            }
+            .background(
+                cardShape.fill(GlassTokens.secondaryGroupedBackground)
+            )
+            .overlay(
+                cardShape.stroke(
+                    GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity),
+                    lineWidth: GlassTokens.strokeWidth
+                )
+            )
+            .clipShape(cardShape)
+            .shadow(
+                color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity),
+                radius: GlassTokens.shadowRadius,
+                y: GlassTokens.shadowY
+            )
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            generateSummary()
+        }
+    }
+
+    @ViewBuilder
+    private var summaryContent: some View {
+        if isGenerating {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .scaleEffect(0.7)
+                Text("Summarizing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else if let error = summaryError {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .italic()
+        } else if !summary.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(isExpanded ? nil : 3)
+                    .multilineTextAlignment(.leading)
+
+                // "More" affordance when collapsed and text is long
+                if !isExpanded && summary.count > 150 {
+                    Text("Tap for more")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
-            .buttonStyle(.plain)
-
-            // Summary Content
-            if isExpanded {
-                if isGenerating {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Summarizing…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                } else if let error = summaryError {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .italic()
-                } else if !summary.isEmpty {
-                    Text(summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                } else {
-                    Text("Summary unavailable")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .italic()
-                }
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.purple.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.purple.opacity(0.2), lineWidth: 1)
-                )
-        )
-        .onAppear {
-            generateSummary()
+        } else {
+            Text("Summary unavailable")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .italic()
         }
     }
 
@@ -1396,7 +1424,7 @@ struct EmailSummaryView: View {
     }
 }
 
-// MARK: - Email Action Badges View (Unsubscribe, Block, Spam, Trackers)
+// MARK: - Email Action Badges View (Trackers, Unsubscribe, More menu)
 
 struct EmailActionBadgesView: View {
     let canUnsubscribe: Bool
@@ -1413,10 +1441,9 @@ struct EmailActionBadgesView: View {
     @State private var showTrackersInfo = false
 
     var body: some View {
-        // Always show the action buttons row
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                // Trackers Blocked badge (green, like React version)
+                // Tier 1: Trackers Blocked badge (informational, green)
                 if trackersBlocked > 0 {
                     Button {
                         showTrackersInfo = true
@@ -1424,22 +1451,22 @@ struct EmailActionBadgesView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "shield.checkered")
                                 .font(.caption2)
-                            Text("\(trackersBlocked) blocked")
+                            Text("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
                                 .font(.caption)
                                 .fontWeight(.medium)
                         }
-                        .foregroundStyle(.green)
+                        .foregroundStyle(.green.opacity(0.9))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.green.opacity(0.1))
+                                .fill(Color.green.opacity(0.08))
                         )
                     }
                     .buttonStyle(.plain)
                 }
 
-                // Unsubscribe button
+                // Tier 1: Unsubscribe button (for newsletters)
                 if canUnsubscribe {
                     Button(action: onUnsubscribe) {
                         Text("Unsubscribe")
@@ -1450,76 +1477,58 @@ struct EmailActionBadgesView: View {
                             .padding(.vertical, 6)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                    .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
                             )
                     }
                     .buttonStyle(.plain)
                 }
 
-                // Block Sender button
-                Button {
-                    showBlockConfirm = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "hand.raised")
-                            .font(.caption2)
-                        Text("Block")
-                            .font(.caption)
-                            .fontWeight(.medium)
+                // Tier 2: More menu with destructive actions
+                Menu {
+                    Button(role: .destructive) {
+                        showBlockConfirm = true
+                    } label: {
+                        Label("Block Sender", systemImage: "hand.raised")
                     }
-                    .foregroundStyle(.red.opacity(0.8))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
 
-                // Report Spam button (only for non-replies, like React version)
-                if !isReply {
-                    Button {
-                        showSpamConfirm = true
+                    if !isReply {
+                        Button(role: .destructive) {
+                            showSpamConfirm = true
                         } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.shield")
-                                    .font(.caption2)
-                                Text("Spam")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                            }
-                            .foregroundStyle(.orange.opacity(0.9))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                            )
+                            Label("Mark as Spam", systemImage: "exclamationmark.shield")
                         }
-                        .buttonStyle(.plain)
                     }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                        )
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
             }
-            .alert("Block \(senderName)?", isPresented: $showBlockConfirm) {
-                Button("Cancel", role: .cancel) { }
-                Button("Block", role: .destructive, action: onBlockSender)
-            } message: {
-                Text("Future emails from this sender will be moved to Trash.")
-            }
-            .alert("Report as Spam?", isPresented: $showSpamConfirm) {
-                Button("Cancel", role: .cancel) { }
-                Button("Report Spam", role: .destructive, action: onReportSpam)
-            } message: {
-                Text("This email will be moved to your spam folder.")
-            }
-            .alert("Trackers Blocked", isPresented: $showTrackersInfo) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text("SimpleMail blocked \(trackersBlocked) tracking pixel\(trackersBlocked > 1 ? "s" : "") that would have notified the sender when you opened this email.\n\nBlocked: \(trackerNames.joined(separator: ", "))")
-            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .alert("Block \(senderName)?", isPresented: $showBlockConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Block", role: .destructive, action: onBlockSender)
+        } message: {
+            Text("Future emails from this sender will be moved to Trash.")
+        }
+        .alert("Report as Spam?", isPresented: $showSpamConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Report Spam", role: .destructive, action: onReportSpam)
+        } message: {
+            Text("This email will be moved to your spam folder.")
+        }
+        .alert("Trackers Blocked", isPresented: $showTrackersInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("SimpleMail blocked \(trackersBlocked) tracking pixel\(trackersBlocked > 1 ? "s" : "") that would have notified the sender when you opened this email.\n\nBlocked: \(trackerNames.joined(separator: ", "))")
+        }
     }
 }
 
@@ -1532,7 +1541,7 @@ class EmailDetailViewModel: ObservableObject {
 
     @Published var messages: [EmailDetail] = []
     @Published var expandedMessageIds: Set<String> = []
-    @Published var summaryExpanded: Bool = true
+    @Published var summaryExpanded: Bool = false  // Collapsed by default, tap to expand
     @Published var isLoading = false
     @Published var error: Error?
     /// Full body of latest message (for AI summary check - not the placeholder snippet)

@@ -5,7 +5,15 @@ import SwiftUI
 /// Unified design tokens for glass surfaces across the app.
 /// All glass components share these values for visual consistency.
 enum GlassTokens {
-    // MARK: Materials
+    // MARK: Materials (contextual hierarchy)
+    /// Ultra-thin for top chrome: pills, segmented container backgrounds
+    static let chromeMaterial: Material = .ultraThinMaterial
+    /// Thin for interactive controls inside chrome: icon buttons
+    static let controlMaterial: Material = .thinMaterial
+    /// Regular for cards, sheets, and prominent surfaces
+    static let cardMaterial: Material = .regularMaterial
+
+    // Legacy aliases (prefer contextual names above)
     static let surfaceMaterial: Material = .regularMaterial
     static let thinMaterial: Material = .ultraThinMaterial
 
@@ -82,7 +90,7 @@ struct GlassIconButton: View {
                 .font(.system(size: size * 0.58, weight: .regular))
                 .foregroundStyle(isActive ? activeColor : inactiveColor)
                 .frame(width: size, height: size)
-                .background(Circle().fill(GlassTokens.surfaceMaterial))
+                .background(Circle().fill(GlassTokens.controlMaterial))
                 .modifier(GlassStroke(shape: AnyShape(Circle())))
                 .modifier(GlassShadow())
         }
@@ -118,7 +126,7 @@ struct GlassPill<Content: View>: View {
     @ViewBuilder
     private var pillBackground: some View {
         if useMaterial {
-            Capsule().fill(GlassTokens.surfaceMaterial)
+            Capsule().fill(GlassTokens.chromeMaterial)
         } else {
             Capsule().fill(backgroundColor)
         }
@@ -152,7 +160,7 @@ struct GlassSegmentContainer<Content: View>: View {
     @ViewBuilder
     private var containerBackground: some View {
         if useMaterial {
-            containerShape.fill(GlassTokens.surfaceMaterial)
+            containerShape.fill(GlassTokens.chromeMaterial)
         } else {
             containerShape.fill(GlassTokens.secondaryFill)
         }

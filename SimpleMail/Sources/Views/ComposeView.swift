@@ -59,6 +59,7 @@ struct ComposeView: View {
     @State private var showingPhotoPicker = false
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var showUndoToast = false
+    @State private var keyboardHeight: CGFloat = 0
 
     enum Field: Hashable {
         case to, cc, bcc, subject, body
@@ -95,10 +96,16 @@ struct ComposeView: View {
         view
             .overlay { composeOverlay }
             .overlay(alignment: .bottomTrailing) {
-                RichTextToolbar(
-                    context: richTextContext,
-                    onAttachment: { viewModel.showAttachmentPicker = true }
-                )
+                GeometryReader { geometry in
+                    RichTextToolbar(
+                        context: richTextContext,
+                        onAttachment: { viewModel.showAttachmentPicker = true },
+                        keyboardHeight: keyboardHeight,
+                        safeAreaBottom: geometry.safeAreaInsets.bottom
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+                .ignoresSafeArea(.keyboard)
             }
     }
 
@@ -280,6 +287,14 @@ struct ComposeView: View {
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+                if let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                    keyboardHeight = frame.height
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                keyboardHeight = 0
+            }
     }
 
     private var composeContent: some View {
@@ -424,13 +439,17 @@ struct ComposeView: View {
     @ToolbarContentBuilder
     private var composeToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel") {
+            Button {
                 if viewModel.hasContent {
                     viewModel.showDiscardAlert = true
                 } else {
                     dismiss()
                 }
+            } label: {
+                Text("Cancel")
+                    .foregroundStyle(.primary)
             }
+            .buttonStyle(.plain)
             .accessibilityIdentifier("cancelCompose")
         }
 
@@ -1088,7 +1107,20 @@ struct RecoveredDraftBanner: View {
 struct RichTextToolbar: View {
     @ObservedObject var context: RichTextContext
     let onAttachment: () -> Void
+    let keyboardHeight: CGFloat
+    let safeAreaBottom: CGFloat
+
     @State private var showingFormatSheet = false
+
+    private var bottomPadding: CGFloat {
+        // When keyboard is visible, position above keyboard with small margin
+        // When keyboard is hidden, use safe area + margin to clear home indicator
+        if keyboardHeight > 0 {
+            return keyboardHeight - safeAreaBottom + 8
+        } else {
+            return 16 + safeAreaBottom
+        }
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -1114,7 +1146,8 @@ struct RichTextToolbar: View {
         .background(.ultraThinMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
         .padding(.trailing, 16)
-        .padding(.bottom, 12)
+        .padding(.bottom, bottomPadding)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: keyboardHeight)
         .sheet(isPresented: $showingFormatSheet) {
             FormatSheet(context: context)
         }
