@@ -149,7 +149,6 @@ actor BodyRenderActor {
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
                 td, th { word-break: break-word; }
                 a { color: inherit; }
-                div:empty, span:empty, td:empty, p:empty { display: none !important; }
                 \(trackingCSS)
                 img[data-blocked-src] {
                     display: none !important;
@@ -663,13 +662,6 @@ enum HTMLSanitizer {
         )
         result = result.replacingOccurrences(
             of: "<base[^>]*>",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
-
-        // Remove external stylesheets (can contain tracking pixels)
-        result = result.replacingOccurrences(
-            of: "<link[^>]*rel\\s*=\\s*[\"']?stylesheet[\"']?[^>]*>",
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )
