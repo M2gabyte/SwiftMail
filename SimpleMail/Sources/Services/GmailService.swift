@@ -1166,6 +1166,10 @@ actor GmailService: GmailAPIProvider {
         try await modifyLabels(messageId: messageId, addLabels: ["INBOX"], removeLabels: ["SPAM"])
     }
 
+    func unmarkSpam(messageId: String, account: AuthService.Account) async throws {
+        try await modifyLabels(messageId: messageId, addLabels: ["INBOX"], removeLabels: ["SPAM"], account: account)
+    }
+
     func markImportant(messageId: String) async throws {
         try await modifyLabels(messageId: messageId, addLabels: ["IMPORTANT"])
     }

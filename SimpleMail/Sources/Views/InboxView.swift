@@ -383,70 +383,70 @@ struct InboxView: View {
         .autocorrectionDisabled(true)
         .overlay { overlayContent }
         .overlay(alignment: .top) { offlineBannerContent }
-            .overlay(alignment: .bottom) {
-                bulkToastContent
-                    .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
-                    .zIndex(25)
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !isSelectionMode && !showingFilterSheet {
-                    BottomCommandSurface(
-                        isFilterActive: viewModel.activeFilter != nil,
-                        activeFilterLabel: activeFilterLabel,
-                        activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
-                        searchMode: (isSearchMode || searchFieldFocused) ? .editing : .idle,
-                        showSearchField: true,
-                        searchText: $searchText,
-                        searchFocused: $searchFieldFocused,
-                        onSubmitSearch: {
-                            commitSearch()
-                            debouncedSearchText = searchText
-                            Task { await viewModel.performSearch(query: searchText) }
-                        },
-                        onTapSearch: {
-                            searchFieldFocused = true
-                            DispatchQueue.main.async {
-                                withAnimation(.easeOut(duration: 0.15)) {
-                                    isSearchMode = true
-                                }
-                            }
-                        },
-                        onCancelSearch: {
+        .overlay(alignment: .bottom) {
+            bulkToastContent
+                .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
+                .zIndex(25)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !isSelectionMode && !showingFilterSheet {
+                BottomCommandSurface(
+                    isFilterActive: viewModel.activeFilter != nil,
+                    activeFilterLabel: activeFilterLabel,
+                    activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
+                    searchMode: (isSearchMode || searchFieldFocused) ? .editing : .idle,
+                    showSearchField: true,
+                    searchText: $searchText,
+                    searchFocused: $searchFieldFocused,
+                    onSubmitSearch: {
+                        commitSearch()
+                        debouncedSearchText = searchText
+                        Task { await viewModel.performSearch(query: searchText) }
+                    },
+                    onTapSearch: {
+                        searchFieldFocused = true
+                        DispatchQueue.main.async {
                             withAnimation(.easeOut(duration: 0.15)) {
-                                isSearchMode = false
+                                isSearchMode = true
                             }
-                            searchFieldFocused = false
-                            searchText = ""
-                            debouncedSearchText = ""
-                            viewModel.clearSearch()
-                        },
-                        onTapFilter: { showingFilterSheet = true },
-                        onTapCompose: { showingCompose = true }
-                    )
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear
-                                .onAppear { bottomBarHeight = geo.size.height }
-                                .onChange(of: geo.size.height) { _, newHeight in
-                                    bottomBarHeight = newHeight
-                                }
                         }
-                    )
-                }
+                    },
+                    onCancelSearch: {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            isSearchMode = false
+                        }
+                        searchFieldFocused = false
+                        searchText = ""
+                        debouncedSearchText = ""
+                        viewModel.clearSearch()
+                    },
+                    onTapFilter: { showingFilterSheet = true },
+                    onTapCompose: { showingCompose = true }
+                )
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { bottomBarHeight = geo.size.height }
+                            .onChange(of: geo.size.height) { _, newHeight in
+                                bottomBarHeight = newHeight
+                            }
+                    }
+                )
             }
-            .overlay(alignment: .bottom) {
-                undoActionToastContent
-                    .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
-                    .zIndex(28)
-                    .animation(.easeInOut(duration: 0.25), value: viewModel.showingUndoToast)
-            }
-            .overlay(alignment: .bottom) {
-                undoSendToastContent
-                    .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
-                    .zIndex(30)
-                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
-                    .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
-            }
+        }
+        .overlay(alignment: .bottom) {
+            undoActionToastContent
+                .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
+                .zIndex(28)
+                .animation(.easeInOut(duration: 0.25), value: viewModel.showingUndoToast)
+        }
+        .overlay(alignment: .bottom) {
+            undoSendToastContent
+                .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
+                .zIndex(30)
+                .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
+                .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
+        }
     }
 
     // MARK: - Extracted View Components

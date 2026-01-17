@@ -1587,16 +1587,15 @@ struct EmailActionChipsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Chip row
-            HStack(spacing: 0) {
+            // Chip row - all chips grouped together, left-aligned
+            HStack(spacing: 12) {
                 // Left cluster: tracker + unsubscribe
                 leftCluster
-
-                Spacer(minLength: 16)
 
                 // Right cluster: block + spam
                 rightCluster
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12) // Match sender header padding
             .padding(.top, 2)  // Tight to summary above
             .padding(.bottom, 8)
@@ -1653,17 +1652,17 @@ struct EmailActionChipsView: View {
     @ViewBuilder
     private var rightCluster: some View {
         HStack(spacing: 8) {
-            // Block chip - uses secondaryLabel for proper contrast
+            // Block chip - same styling as other chips for consistency
             GlassChip(
                 style: .secondary,
-                foregroundColor: Color(UIColor.secondaryLabel),
+                foregroundColor: .primary,
                 strokeColor: GlassTokens.strokeColor.opacity(0.22)
             ) {
                 pendingAction = .block
             } label: {
                 Text("Block")
                     .font(.caption)
-                    .fontWeight(.medium)
+                    .fontWeight(.semibold)
             }
             .accessibilityLabel("Block \(senderName)")
 
@@ -1671,14 +1670,14 @@ struct EmailActionChipsView: View {
             if !isReply {
                 GlassChip(
                     style: .secondary,
-                    foregroundColor: Color(UIColor.secondaryLabel),
+                    foregroundColor: .primary,
                     strokeColor: GlassTokens.strokeColor.opacity(0.22)
                 ) {
                     pendingAction = .spam
                 } label: {
                     Text("Spam")
                         .font(.caption)
-                        .fontWeight(.medium)
+                        .fontWeight(.semibold)
                 }
                 .accessibilityLabel("Mark as spam")
             }

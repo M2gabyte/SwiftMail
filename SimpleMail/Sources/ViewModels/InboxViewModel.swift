@@ -33,6 +33,9 @@ extension Notification.Name {
     static let archiveThreadRequested = Notification.Name("archiveThreadRequested")
     static let trashThreadRequested = Notification.Name("trashThreadRequested")
     static let movedToPrimaryRequested = Notification.Name("movedToPrimaryRequested")
+    static let senderBlocked = Notification.Name("senderBlocked")
+    static let spamReported = Notification.Name("spamReported")
+    static let unsubscribed = Notification.Name("unsubscribed")
 }
 
 @MainActor
@@ -306,7 +309,20 @@ final class InboxViewModel: ObservableObject {
         let index: Int
     }
 
+    // Pending block/spam action for undo
+    private enum BlockSpamActionType { case block, spam }
+    private struct PendingBlockSpamAction {
+        let email: Email
+        let index: Int
+        let senderEmail: String
+        let senderName: String
+        let actionType: BlockSpamActionType
+    }
+    private var pendingBlockSpamAction: PendingBlockSpamAction?
+
     // MARK: - Notification Observer
+    @ObservationIgnored private var senderBlockedObserver: NSObjectProtocol?
+    @ObservationIgnored private var spamReportedObserver: NSObjectProtocol?
     @ObservationIgnored private var blockedSendersObserver: NSObjectProtocol?
     @ObservationIgnored private var accountChangeObserver: NSObjectProtocol?
     @ObservationIgnored private var archiveThreadObserver: NSObjectProtocol?
@@ -600,6 +616,29 @@ final class InboxViewModel: ObservableObject {
             }
         }
 
+        // Listen for block/spam actions from EmailDetailView (for undo toast)
+        senderBlockedObserver = NotificationCenter.default.addObserver(
+            forName: .senderBlocked,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.handleSenderBlockedNotification(notification)
+            }
+        }
+
+        spamReportedObserver = NotificationCenter.default.addObserver(
+            forName: .spamReported,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.handleSpamReportedNotification(notification)
+            }
+        }
+
         // Preload cached emails FIRST so we have data to show immediately
         preloadCachedEmails(mailbox: currentMailbox, accountEmail: currentAccountEmail)
 
@@ -622,6 +661,12 @@ final class InboxViewModel: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = inboxPreferencesObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = senderBlockedObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = spamReportedObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -1347,6 +1392,13 @@ final class InboxViewModel: ObservableObject {
         // Cancel the pending archive task
         clearUndoState()
 
+        // Check for block/spam undo first (different undo mechanism)
+        if pendingBlockSpamAction != nil {
+            undoBlockSpamAction()
+            HapticFeedback.light()
+            return
+        }
+
         if let pendingBulkAction {
             restoreBulkAction(pendingBulkAction)
         } else if let pendingArchive {
@@ -1992,6 +2044,189 @@ final class InboxViewModel: ObservableObject {
         animate(.easeOut(duration: 0.2)) {
             showingUndoToast = false
         }
+    }
+
+    // MARK: - Block/Spam Undo Support
+
+    private func handleSenderBlockedNotification(_ notification: Notification) {
+        guard let senderName = notification.userInfo?["senderName"] as? String,
+              let senderEmail = notification.userInfo?["senderEmail"] as? String,
+              let threadId = notification.userInfo?["threadId"] as? String else { return }
+
+        // Cancel any existing undo tasks (block notification supersedes trash notification)
+        undoTask?.cancel()
+        undoTask = nil
+        undoCountdownTask?.cancel()
+        undoCountdownTask = nil
+
+        // Check if the email was already removed by the trash notification
+        // If so, grab it from the pending bulk action (match by threadId)
+        var email: Email?
+        var idx: Int?
+
+        if let pendingBulk = pendingBulkAction,
+           let item = pendingBulk.items.first(where: { $0.email.threadId == threadId }) {
+            // Email was removed by trash handler - use its data
+            email = item.email
+            idx = item.index
+            // Clear the pending bulk action since we're taking over
+            pendingBulkAction = nil
+        } else if let foundIdx = emails.firstIndex(where: { $0.threadId == threadId }) {
+            // Email still in list
+            email = emails[foundIdx]
+            idx = foundIdx
+            // Remove from list
+            animate {
+                emails.remove(at: foundIdx)
+            }
+            updateFilterCounts()
+        }
+
+        guard let email, let idx else { return }
+
+        // Cancel any existing block/spam undo
+        if let pending = pendingBlockSpamAction {
+            finalizeBlockSpamAction(pending)
+        }
+
+        // Store pending action for undo
+        pendingBlockSpamAction = PendingBlockSpamAction(
+            email: email,
+            index: idx,
+            senderEmail: senderEmail,
+            senderName: senderName,
+            actionType: .block
+        )
+
+        // Show undo toast
+        undoToastMessage = "\(senderName) blocked"
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showingUndoToast = true
+        }
+
+        let delaySeconds = undoDelaySeconds()
+        startUndoCountdown(seconds: delaySeconds)
+
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delaySeconds))
+            guard !Task.isCancelled else { return }
+            guard let self, let pending = self.pendingBlockSpamAction else { return }
+            self.finalizeBlockSpamAction(pending)
+        }
+    }
+
+    private func handleSpamReportedNotification(_ notification: Notification) {
+        guard let senderName = notification.userInfo?["senderName"] as? String,
+              let threadId = notification.userInfo?["threadId"] as? String else { return }
+
+        // Cancel any existing undo tasks
+        undoTask?.cancel()
+        undoTask = nil
+        undoCountdownTask?.cancel()
+        undoCountdownTask = nil
+
+        // Find the email (may still be in list since spam doesn't call trash)
+        var email: Email?
+        var idx: Int?
+
+        if let foundIdx = emails.firstIndex(where: { $0.threadId == threadId }) {
+            email = emails[foundIdx]
+            idx = foundIdx
+            // Remove from list
+            animate {
+                emails.remove(at: foundIdx)
+            }
+            updateFilterCounts()
+        }
+
+        guard let email, let idx else { return }
+
+        // Cancel any existing block/spam undo
+        if let pending = pendingBlockSpamAction {
+            finalizeBlockSpamAction(pending)
+        }
+
+        // Store pending action for undo
+        pendingBlockSpamAction = PendingBlockSpamAction(
+            email: email,
+            index: idx,
+            senderEmail: "",
+            senderName: senderName,
+            actionType: .spam
+        )
+
+        // Show undo toast
+        undoToastMessage = "Reported as spam"
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showingUndoToast = true
+        }
+
+        let delaySeconds = undoDelaySeconds()
+        startUndoCountdown(seconds: delaySeconds)
+
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delaySeconds))
+            guard !Task.isCancelled else { return }
+            guard let self, let pending = self.pendingBlockSpamAction else { return }
+            self.finalizeBlockSpamAction(pending)
+        }
+    }
+
+    private func undoBlockSpamAction() {
+        guard let pending = pendingBlockSpamAction else { return }
+
+        Task {
+            do {
+                switch pending.actionType {
+                case .block:
+                    // Remove sender from blocked list
+                    let settingsAccountEmail = AuthService.shared.currentAccount?.email
+                    var blockedSenders = AccountDefaults.stringArray(for: "blockedSenders", accountEmail: settingsAccountEmail)
+                    blockedSenders.removeAll { $0.lowercased() == pending.senderEmail.lowercased() }
+                    AccountDefaults.setStringArray(blockedSenders, for: "blockedSenders", accountEmail: settingsAccountEmail)
+                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
+
+                    // Move email back from trash to inbox
+                    if let account = accountForEmail(pending.email) {
+                        try await GmailService.shared.untrash(messageId: pending.email.id, account: account)
+                    } else {
+                        try await GmailService.shared.untrash(messageId: pending.email.id)
+                    }
+
+                case .spam:
+                    // Move email back from spam to inbox
+                    if let account = accountForEmail(pending.email) {
+                        try await GmailService.shared.unmarkSpam(messageId: pending.email.id, account: account)
+                    } else {
+                        try await GmailService.shared.unmarkSpam(messageId: pending.email.id)
+                    }
+                }
+
+                // Restore email to list
+                await MainActor.run {
+                    let insertIndex = min(pending.index, emails.count)
+                    animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        emails.insert(pending.email, at: insertIndex)
+                        showingUndoToast = false
+                    }
+                    pendingBlockSpamAction = nil
+                    updateFilterCounts()
+                }
+            } catch {
+                logger.error("Failed to undo block/spam action: \(error.localizedDescription)")
+                await MainActor.run {
+                    clearUndoState()
+                    pendingBlockSpamAction = nil
+                }
+            }
+        }
+    }
+
+    private func finalizeBlockSpamAction(_ pending: PendingBlockSpamAction) {
+        // Action already happened on backend (block/spam was called from EmailDetailView)
+        // Just clean up state
+        clearUndoState()
+        pendingBlockSpamAction = nil
     }
 
 #if DEBUG
