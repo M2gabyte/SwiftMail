@@ -1498,15 +1498,15 @@ struct EmailActionBadgesView: View {
             }
             .alert("Block \(senderName)?", isPresented: $showBlockConfirm) {
                 Button("Cancel", role: .cancel) { }
-                Button("Block", role: .destructive, action: onBlockSender)
+                Button("Block Sender", role: .destructive, action: onBlockSender)
             } message: {
-                Text("Future emails from this sender will be moved to Trash.")
+                Text("You won't see emails from this sender.")
             }
-            .alert("Report as Spam?", isPresented: $showSpamConfirm) {
+            .alert("Mark as spam?", isPresented: $showSpamConfirm) {
                 Button("Cancel", role: .cancel) { }
-                Button("Report Spam", role: .destructive, action: onReportSpam)
+                Button("Mark as Spam", role: .destructive, action: onReportSpam)
             } message: {
-                Text("This email will be moved to your spam folder.")
+                Text("This email will be moved to Spam.")
             }
             .alert("Trackers Blocked", isPresented: $showTrackersInfo) {
                 Button("OK", role: .cancel) { }
