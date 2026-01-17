@@ -136,7 +136,10 @@ actor BodyRenderActor {
         <!DOCTYPE html>
         <html>
         <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <!-- Desktop-like viewport so 600px email templates render identically to desktop -->
+            <meta name="viewport" content="width=600, initial-scale=1.0">
+            <!-- Stop iOS from auto-linking phone numbers/dates and distorting layout -->
+            <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
             <meta http-equiv="Content-Security-Policy" content="\(csp)">
             <style>
                 /* Base layout constraints - don't override email styling */

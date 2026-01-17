@@ -20,6 +20,7 @@ Goal: render sender HTML as faithfully as Gmail/Mail while quietly blocking trac
 - CSP: `img-src data: https: http: cid:; style-src 'unsafe-inline'; font-src data: https: http:; media-src https: http: data:; connect-src https: http:` (allows CID/HTTP/HTTPS assets).
 - Upgrade `http://` asset URLs to `https://` where possible to satisfy ATS.
 - Inline http(s) images and `background=` URLs to data URIs with a local cache (up to 20 images, 4 MB each, 8 MB total). This makes layouts resilient when CDNs block referers or the network is spotty—similar to Gmail/Mail’s proxying.
+- Viewport set to 600 px desktop width to render fixed-width email templates identically to desktop; iOS auto-linking is disabled to avoid layout shifts.
 
 ## WebView behavior
 - Content pre-sanitized off-main; WebView only loads final HTML string.
