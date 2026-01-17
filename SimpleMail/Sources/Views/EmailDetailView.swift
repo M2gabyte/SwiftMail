@@ -716,10 +716,9 @@ enum HTMLSanitizer {
     /// eagerly fetching reasonable-size images, caching them, and replacing src/background
     /// URLs with data URIs. Tracking pixels (tiny images) are already stripped earlier.
     static func inlineCriticalImages(_ html: String) async -> String {
-        // Limit total work to keep memory reasonable.
-        let maxImages = 20
+        // Limit total work to keep memory reasonable while allowing many small assets.
         let maxBytesPerImage = 4_000_000
-        let maxTotalBytes = 8_000_000
+        let maxTotalBytes = 16_000_000
 
         // Extract candidate URLs from img src and background attributes.
         var urls: [String] = []
@@ -762,7 +761,7 @@ enum HTMLSanitizer {
             return u
         })) as? [String] ?? []
 
-        let targets = candidates.prefix(maxImages)
+        let targets = candidates
         guard !targets.isEmpty else { return html }
 
         var totalBytes = 0
@@ -789,10 +788,6 @@ enum HTMLSanitizer {
                 continue
             }
 
-            // Fallback: embed known safe assets (keeps logos/icons when CDN is blocked)
-            if let embedded = embeddedAsset(for: url) {
-                replacements.append((urlStr, embedded))
-            }
         }
 
         guard !replacements.isEmpty else { return html }
@@ -855,24 +850,8 @@ enum HTMLSanitizer {
         "data:\(mime);base64,\(data.base64EncodedString())"
     }
 
-    // MARK: - Embedded fallbacks (for blocked/filtered CDNs)
-    private static func embeddedAsset(for url: URL) -> String? {
-        let name = url.lastPathComponent.lowercased()
-        guard let asset = embeddedAssets[name] else { return nil }
-        return asset
-    }
-
-    private static let embeddedAssets: [String: String] = {
-        // These are small, lossless PNG/SVG fallbacks for common marketing CDN assets.
-        let zillowLogoLight = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUwAAABACAYAAAB5pTKlAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAB/UlEQVR4nO3QMQ7CQBBF0W9URhFcQY0pQbWAFZywAEvYNcIhKBW8pZzeSptR27mZN5/C/PmZl3ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGZnYf8B0zZitLGkWpYAAAAASUVORK5CYII="
-        let zillowLogoDark = zillowLogoLight // acceptable fallback if dark variant blocked
-        let upArrowBlue = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%230066ff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='18 15 12 9 6 15'/></svg>"
-        return [
-            "zillow_logo_300x64.png": zillowLogoLight,
-            "zillow_logo_300x64_dm.png": zillowLogoDark,
-            "uparrow-transparent.png": upArrowBlue
-        ]
-    }()
+    // No per-sender embedded assets; if fetch fails and cache miss, the browser will
+    // show its broken-image placeholder, matching desktop behavior.
 
     /// Remove zero-width characters that create empty space in marketing emails
     static func removeZeroWidthCharacters(_ html: String) -> String {
