@@ -786,6 +786,12 @@ enum HTMLSanitizer {
                 let dataUri = dataURI(data: fetched.data, mime: fetched.mimeType)
                 storeImage(data: fetched.data, mime: fetched.mimeType, for: url)
                 replacements.append((urlStr, dataUri))
+                continue
+            }
+
+            // Fallback: embed known safe assets (keeps logos/icons when CDN is blocked)
+            if let embedded = embeddedAsset(for: url) {
+                replacements.append((urlStr, embedded))
             }
         }
 
@@ -848,6 +854,25 @@ enum HTMLSanitizer {
     private static func dataURI(data: Data, mime: String) -> String {
         "data:\(mime);base64,\(data.base64EncodedString())"
     }
+
+    // MARK: - Embedded fallbacks (for blocked/filtered CDNs)
+    private static func embeddedAsset(for url: URL) -> String? {
+        let name = url.lastPathComponent.lowercased()
+        guard let asset = embeddedAssets[name] else { return nil }
+        return asset
+    }
+
+    private static let embeddedAssets: [String: String] = {
+        // These are small, lossless PNG/SVG fallbacks for common marketing CDN assets.
+        let zillowLogoLight = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUwAAABACAYAAAB5pTKlAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAB/UlEQVR4nO3QMQ7CQBBF0W9URhFcQY0pQbWAFZywAEvYNcIhKBW8pZzeSptR27mZN5/C/PmZl3ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGZnYf8B0zZitLGkWpYAAAAASUVORK5CYII="
+        let zillowLogoDark = zillowLogoLight // acceptable fallback if dark variant blocked
+        let upArrowBlue = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%230066ff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='18 15 12 9 6 15'/></svg>"
+        return [
+            "zillow_logo_300x64.png": zillowLogoLight,
+            "zillow_logo_300x64_dm.png": zillowLogoDark,
+            "uparrow-transparent.png": upArrowBlue
+        ]
+    }()
 
     /// Remove zero-width characters that create empty space in marketing emails
     static func removeZeroWidthCharacters(_ html: String) -> String {
