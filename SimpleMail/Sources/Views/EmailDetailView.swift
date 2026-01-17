@@ -209,6 +209,7 @@ struct EmailDetailView: View {
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
+    @State private var pendingSenderAction: PendingSenderAction?
 
     init(emailId: String, threadId: String, accountEmail: String? = nil) {
         self.emailId = emailId
@@ -257,20 +258,7 @@ struct EmailDetailView: View {
                         onUnsubscribe: {
                             Task { await viewModel.unsubscribe() }
                         },
-                        onBlockSender: {
-                            Task {
-                                await viewModel.blockSender()
-                                NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                                dismiss()
-                            }
-                        },
-                        onReportSpam: {
-                            Task {
-                                await viewModel.reportSpam()
-                                NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
-                                dismiss()
-                            }
-                        }
+                        pendingAction: $pendingSenderAction
                     )
 
                     ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
@@ -394,6 +382,60 @@ struct EmailDetailView: View {
                     dismiss()
                 }
             }
+        }
+        // Block sender confirmation
+        .confirmationDialog(
+            "Block \(viewModel.senderName ?? "Sender")?",
+            isPresented: Binding(
+                get: { pendingSenderAction == .block },
+                set: { if !$0 { pendingSenderAction = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) {
+                Task {
+                    await viewModel.blockSender()
+                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingSenderAction = nil
+            }
+        } message: {
+            Text("Emails from this sender will be moved to Trash.")
+        }
+        // Spam confirmation
+        .confirmationDialog(
+            "Report as Spam?",
+            isPresented: Binding(
+                get: { pendingSenderAction == .spam },
+                set: { if !$0 { pendingSenderAction = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Report Spam", role: .destructive) {
+                Task {
+                    await viewModel.reportSpam()
+                    NotificationCenter.default.post(name: .blockedSendersDidChange, object: nil)
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingSenderAction = nil
+            }
+        } message: {
+            Text("This message will be moved to Spam.")
+        }
+        // Tracker info sheet
+        .sheet(isPresented: Binding(
+            get: { pendingSenderAction == .trackerInfo },
+            set: { if !$0 { pendingSenderAction = nil } }
+        )) {
+            TrackerInfoSheet(
+                trackersBlocked: viewModel.trackersBlocked,
+                trackerNames: viewModel.trackerNames
+            )
         }
         .task {
             // WebKit warmup now happens on row tap (before navigation starts)
@@ -1460,7 +1502,12 @@ struct EmailSummaryView: View {
     }
 }
 
-// MARK: - Email Action Badges View (Trackers, Unsubscribe, More menu)
+// MARK: - Email Action Badges View (Trackers, Block, Spam)
+
+enum PendingSenderAction: Identifiable {
+    case block, spam, trackerInfo
+    var id: Self { self }
+}
 
 struct EmailActionBadgesView: View {
     let canUnsubscribe: Bool
@@ -1469,121 +1516,166 @@ struct EmailActionBadgesView: View {
     let trackersBlocked: Int
     let trackerNames: [String]
     let onUnsubscribe: () -> Void
-    let onBlockSender: () -> Void
-    let onReportSpam: () -> Void
 
-    @State private var showBlockConfirm = false
-    @State private var showSpamConfirm = false
-    @State private var showTrackersInfo = false
+    // Bindings for dialogs (controlled by parent)
+    @Binding var pendingAction: PendingSenderAction?
 
     private let pillHeight: CGFloat = 28
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                // Tier 1: Trackers Blocked badge (informational, green)
-                if trackersBlocked > 0 {
-                    Button {
-                        showTrackersInfo = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "shield.checkered")
-                                .font(.caption2)
-                            Text("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                        }
-                        .foregroundStyle(.green.opacity(0.9))
-                        .padding(.horizontal, 10)
-                        .frame(height: pillHeight)
-                        .background(
-                            Capsule()
-                                .fill(Color.green.opacity(0.08))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-
-                // Tier 1: Unsubscribe button (for newsletters)
-                if canUnsubscribe {
-                    Button(action: onUnsubscribe) {
-                        Text("Unsubscribe")
+        HStack(spacing: 8) {
+            // Status chip (tracker badge)
+            if trackersBlocked > 0 {
+                Button {
+                    pendingAction = .trackerInfo
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "shield.checkered")
+                            .font(.system(size: 12, weight: .medium))
+                            .symbolRenderingMode(.hierarchical)
+                        Text("\(trackersBlocked)")
                             .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .frame(height: pillHeight)
-                            .background(
-                                Capsule()
-                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
-                            )
+                            .fontWeight(.semibold)
                     }
-                    .buttonStyle(.plain)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(.green)
+                    .actionPill(height: pillHeight, strokeColor: Color.green.opacity(0.25))
                 }
+                .buttonStyle(ActionPillButtonStyle())
+                .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
+            }
 
-                // Tier 2: Sender actions menu (distinct from top-right message menu)
-                Menu {
-                    Section("Sender Actions") {
-                        Button(role: .destructive) {
-                            showBlockConfirm = true
-                        } label: {
-                            Label("Block Sender", systemImage: "hand.raised")
-                        }
+            // Separator gap (status | actions)
+            if trackersBlocked > 0 {
+                Spacer().frame(width: 4)
+            }
 
-                        if !isReply {
-                            Button(role: .destructive) {
-                                showSpamConfirm = true
-                            } label: {
-                                Label("Mark as Spam", systemImage: "exclamationmark.shield")
+            // Unsubscribe (for newsletters)
+            if canUnsubscribe {
+                Button(action: onUnsubscribe) {
+                    Text("Unsubscribe")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                        .actionPill(height: pillHeight)
+                }
+                .buttonStyle(ActionPillButtonStyle())
+            }
+
+            // Block sender
+            Button {
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+                pendingAction = .block
+            } label: {
+                Text("Block")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                    .actionPill(height: pillHeight)
+            }
+            .buttonStyle(ActionPillButtonStyle())
+            .accessibilityLabel("Block \(senderName)")
+
+            // Mark as spam (not for replies)
+            if !isReply {
+                Button {
+                    let generator = UIImpactFeedbackGenerator(style: .light)
+                    generator.impactOccurred()
+                    pendingAction = .spam
+                } label: {
+                    Text("Spam")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                        .actionPill(height: pillHeight)
+                }
+                .buttonStyle(ActionPillButtonStyle())
+                .accessibilityLabel("Mark as spam")
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+    }
+}
+
+// MARK: - Action Pill Button Style (with pressed state)
+
+struct ActionPillButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Action Pill Modifier
+
+extension View {
+    func actionPill(height: CGFloat, strokeColor: Color = GlassTokens.strokeColor.opacity(0.18)) -> some View {
+        self
+            .padding(.horizontal, 10)
+            .frame(height: height)
+            .background(Capsule().fill(GlassTokens.chromeMaterial))
+            .overlay(Capsule().stroke(strokeColor, lineWidth: GlassTokens.strokeWidth))
+            .shadow(color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity), radius: GlassTokens.shadowRadius, y: GlassTokens.shadowY)
+    }
+}
+
+// MARK: - Tracker Info Sheet
+
+struct TrackerInfoSheet: View {
+    let trackersBlocked: Int
+    let trackerNames: [String]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("SimpleMail prevented \(trackersBlocked) tracking pixel\(trackersBlocked > 1 ? "s" : "") from notifying the sender when you opened this email.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if !trackerNames.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Blocked:")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(trackerNames, id: \.self) { name in
+                            HStack(spacing: 8) {
+                                Image(systemName: "shield.checkered")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                                Text(name)
+                                    .font(.subheadline)
                             }
                         }
                     }
-                } label: {
-                    Image(systemName: "person.crop.circle.badge.minus")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: pillHeight, height: pillHeight)
-                        .background(
-                            Capsule()
-                                .fill(GlassTokens.controlMaterial)
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity), lineWidth: GlassTokens.strokeWidth)
-                        )
-                        .shadow(
-                            color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity),
-                            radius: GlassTokens.shadowRadius,
-                            y: GlassTokens.shadowY
-                        )
+                    .padding()
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemGroupedBackground)))
                 }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-                .accessibilityLabel("Sender actions")
+
+                Spacer()
             }
-            .padding(.horizontal)
+            .padding()
+            .navigationTitle("Tracking Prevented")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
-        .alert("Block \(senderName)?", isPresented: $showBlockConfirm) {
-            Button("Cancel", role: .cancel) { }
-            Button("Block", role: .destructive, action: onBlockSender)
-        } message: {
-            Text("Future emails from this sender will be moved to Trash.")
-        }
-        .alert("Report as Spam?", isPresented: $showSpamConfirm) {
-            Button("Cancel", role: .cancel) { }
-            Button("Report Spam", role: .destructive, action: onReportSpam)
-        } message: {
-            Text("This email will be moved to your spam folder.")
-        }
-        .alert("Trackers Blocked", isPresented: $showTrackersInfo) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("SimpleMail blocked \(trackersBlocked) tracking pixel\(trackersBlocked > 1 ? "s" : "") that would have notified the sender when you opened this email.\n\nBlocked: \(trackerNames.joined(separator: ", "))")
-        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }
 
