@@ -153,6 +153,8 @@ actor BodyRenderActor {
                     overflow-x: hidden;
                 }
                 body { word-wrap: break-word; overflow-wrap: break-word; background: transparent; color: inherit; }
+                /* Prevent iOS auto-enlarging text; honor sender sizing */
+                body { -webkit-text-size-adjust: 100%; }
                 /* Center common 600px templates with comfortable mobile gutter */
                 .email-container {
                     max-width: 640px;
@@ -729,8 +731,8 @@ enum HTMLSanitizer {
     /// URLs with data URIs. Tracking pixels (tiny images) are already stripped earlier.
     static func inlineCriticalImages(_ html: String) async -> String {
         // Limit total work to keep memory reasonable while allowing many small assets.
-        let maxBytesPerImage = 4_000_000
-        let maxTotalBytes = 16_000_000
+        let maxBytesPerImage = 2_000_000   // inline only reasonably sized assets
+        let maxTotalBytes = 6_000_000      // faster initial render on mobile
 
         // Extract candidate URLs from img src and background attributes.
         var urls: [String] = []
