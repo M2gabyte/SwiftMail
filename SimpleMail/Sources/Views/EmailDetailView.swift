@@ -2348,7 +2348,8 @@ class EmailDetailViewModel: ObservableObject {
     private var renderSettings: BodyRenderActor.RenderSettings {
         let settingsAccountEmail = accountEmail ?? AuthService.shared.currentAccount?.email
         guard let data = AccountDefaults.data(for: "appSettings", accountEmail: settingsAccountEmail) else {
-            return BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
+            // Default to allowing remote images (Gmail-like) unless user explicitly blocks.
+            return BodyRenderActor.RenderSettings(blockImages: false, blockTrackingPixels: true, stripTrackingParameters: true)
         }
         do {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
@@ -2358,7 +2359,7 @@ class EmailDetailViewModel: ObservableObject {
                 stripTrackingParameters: settings.stripTrackingParameters
             )
         } catch {
-            return BodyRenderActor.RenderSettings(blockImages: true, blockTrackingPixels: true, stripTrackingParameters: true)
+            return BodyRenderActor.RenderSettings(blockImages: false, blockTrackingPixels: true, stripTrackingParameters: true)
         }
     }
 
