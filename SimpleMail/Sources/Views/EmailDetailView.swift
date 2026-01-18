@@ -160,19 +160,19 @@ actor BodyRenderActor {
                     -webkit-text-size-adjust: 100%;
                     background: #ffffff;
                 }
-                /* Fixed 600px canvas, scaled on mobile with small gutter */
+                /* Fixed 600px canvas, scaled on mobile */
                 .email-container {
                     width: 600px;
                     max-width: 100%;
                     margin: 0 auto;
-                    padding: 0 10px;
+                    padding: 0;
                 }
                 /* Responsive media */
                 img { display: block; max-width: 100%; height: auto; }
                 table { border-collapse: collapse; }
                 table, td, th { max-width: 100%; }
-                .email-container table { margin-left: auto; margin-right: auto; width: auto; max-width: 100%; table-layout: auto; }
-                .email-container table[width] { width: auto !important; max-width: 100% !important; }
+                .email-container table { margin-left: auto; margin-right: auto; width: 100% !important; max-width: 100%; table-layout: auto; }
+                .email-container table[width] { width: 100% !important; max-width: 100% !important; }
                 td, th { word-break: break-word; }
                 a { color: inherit; }
                 /* Dark chrome only; keep email body white */
