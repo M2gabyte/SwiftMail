@@ -819,19 +819,22 @@ enum HTMLSanitizer {
         }
 
         // Deduplicate and keep only http(s) URLs (skip cid:, data:, blocked-src)
-        let candidates = Array(NSOrderedSet(array: urls.compactMap { raw -> String? in
-            // Normalize scheme-less URLs ("//cdn...") to https
-            var u = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if u.hasPrefix("//") { u = "https:" + u }
-            // Unwrap Gmail/Googleusercontent proxy URLs to the original target when present
-            if let unwrapped = unwrapGoogleProxy(u) {
-                u = unwrapped
+        // Build a list of (originalURLInHTML, fetchURL) so replacement uses the exact string in HTML,
+        // while fetch can target the unwrapped/original CDN URL.
+        let candidateTuples: [(original: String, fetch: String)] = urls.compactMap { raw in
+            var original = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if original.hasPrefix("//") { original = "https:" + original }
+            var fetch = original
+            if let unwrapped = unwrapGoogleProxy(original) {
+                fetch = unwrapped
             }
-            guard u.lowercased().hasPrefix("http") else { return nil }
-            if u.lowercased().hasPrefix("data:") { return nil }
-            if u.contains("data-blocked-src") { return nil }
-            return u
-        })) as? [String] ?? []
+            guard original.lowercased().hasPrefix("http") else { return nil }
+            if original.lowercased().hasPrefix("data:") { return nil }
+            if original.contains("data-blocked-src") { return nil }
+            return (original, fetch)
+        }
+        // Deduplicate by original (the string present in HTML)
+        let candidates = Array(NSOrderedSet(array: candidateTuples)) as? [(original: String, fetch: String)] ?? []
 
         let targets = candidates
         guard !targets.isEmpty else { return html }
@@ -839,8 +842,9 @@ enum HTMLSanitizer {
         var totalBytes = 0
         var replacements: [(String, String)] = []
 
-        for urlStr in targets {
-            guard let url = URL(string: urlStr) else { continue }
+        for tuple in targets {
+            let urlStr = tuple.original
+            guard let url = URL(string: tuple.fetch) else { continue }
 
             // Try cache first
             if let cached = cachedImage(for: url) {
