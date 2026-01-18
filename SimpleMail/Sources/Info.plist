@@ -55,6 +55,8 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
 			<key>googleapis.com</key>
@@ -80,6 +82,10 @@
 			</dict>
 			<key>zillowstatic.com</key>
 			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.0</string>
 				<key>NSIncludesSubdomains</key>
 				<true/>
 				<key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
