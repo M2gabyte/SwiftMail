@@ -180,6 +180,12 @@ actor BodyRenderActor {
                     max-width: 100% !important;
                     table-layout: auto !important;
                 }
+                /* Universal width clamp for any element with width attr or inline width */
+                .email-container [width],
+                .email-container [style*="width"] {
+                    max-width: 100% !important;
+                    width: auto !important;
+                }
                 td, th { word-break: break-word; }
                 a { color: inherit; }
                 /* Dark chrome only; keep email body white */
