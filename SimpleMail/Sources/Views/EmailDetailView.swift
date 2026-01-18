@@ -161,8 +161,15 @@ actor BodyRenderActor {
                     margin: 0 auto;
                     padding: 0 12px;
                 }
-                /* Keep tables centered without forcing width */
-                .email-container table { margin-left: auto; margin-right: auto; }
+                /* Keep tables centered and responsive */
+                .email-container table {
+                    margin-left: auto;
+                    margin-right: auto;
+                    width: auto !important;
+                    max-width: 100% !important;
+                }
+                .email-container table[width] { width: auto !important; }
+                .email-container img { display: block; }
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
                 td, th { word-break: break-word; }
