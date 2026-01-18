@@ -1323,7 +1323,7 @@ struct SectionHeaderRow: View {
         .background(Color(UIColor.systemGroupedBackground))
         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
         .listRowSeparator(.hidden)
-        .listRowBackground(Color(UIColor.systemGroupedBackground))
+        .listRowBackground(Color.clear)
     }
 }
 
