@@ -783,9 +783,13 @@ enum HTMLSanitizer {
 
         // Extract candidate URLs from img src and background attributes.
         var urls: [String] = []
+        // Support quoted and unquoted attribute values (some senders omit quotes)
         let imgSrcPattern = try! NSRegularExpression(pattern: "<img[^>]*src\\s*=\\s*[\"']([^\"'>]+)[\"'][^>]*>", options: .caseInsensitive)
+        let imgSrcPatternUnquoted = try! NSRegularExpression(pattern: "<img[^>]*src\\s*=\\s*([^\\s\"'>]+)", options: .caseInsensitive)
         let imgSrcSetPattern = try! NSRegularExpression(pattern: "<img[^>]*srcset\\s*=\\s*[\"']([^\"'>]+)[\"'][^>]*>", options: .caseInsensitive)
+        let imgSrcSetPatternUnquoted = try! NSRegularExpression(pattern: "<img[^>]*srcset\\s*=\\s*([^\\s\"'>]+)", options: .caseInsensitive)
         let bgPattern = try! NSRegularExpression(pattern: "background\\s*=\\s*[\"']([^\"'>]+)[\"']", options: .caseInsensitive)
+        let bgPatternUnquoted = try! NSRegularExpression(pattern: "background\\s*=\\s*([^\\s\"'>]+)", options: .caseInsensitive)
         let cssURLPattern = try! NSRegularExpression(pattern: "url\\(\\s*[\"']?([^\"')\\s]+)[\"']?\\s*\\)", options: .caseInsensitive)
 
         func extract(_ regex: NSRegularExpression, _ text: String) {
@@ -797,8 +801,11 @@ enum HTMLSanitizer {
             }
         }
         extract(imgSrcPattern, html)
+        extract(imgSrcPatternUnquoted, html)
         extract(imgSrcSetPattern, html)
+        extract(imgSrcSetPatternUnquoted, html)
         extract(bgPattern, html)
+        extract(bgPatternUnquoted, html)
         extract(cssURLPattern, html)
 
         // srcset can contain multiple URLs separated by commas; split them.
