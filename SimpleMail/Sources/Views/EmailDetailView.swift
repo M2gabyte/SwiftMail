@@ -839,6 +839,12 @@ enum HTMLSanitizer {
                 let dataUri = dataURI(data: proxied.data, mime: proxied.mimeType)
                 storeImage(data: proxied.data, mime: proxied.mimeType, for: url)
                 replacements.append((urlStr, dataUri))
+                continue
+            }
+
+            // Last resort: rewrite the URL to hit the proxy directly (no inline). Browser will fetch it.
+            if let proxy = proxyURL(for: url) {
+                replacements.append((urlStr, proxy.absoluteString))
             }
 
         }
@@ -921,6 +927,11 @@ enum HTMLSanitizer {
         }
         guard data.count <= maxBytes else { throw URLError(.dataLengthExceedsMaximum) }
         return (data, mime)
+    }
+
+    private static func proxyURL(for url: URL) -> URL? {
+        let encoded = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url.absoluteString
+        return URL(string: "https://images.weserv.nl/?url=\(encoded)")
     }
 
     // No per-sender embedded assets; if fetch fails and cache miss, the browser will
