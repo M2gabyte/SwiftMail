@@ -92,18 +92,31 @@ private final class ImageProbeHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-private extension WKUserScript {
+    private extension WKUserScript {
     /// Reports images that failed to load (naturalWidth == 0) back to Swift.
     static var imageProbeScript: WKUserScript {
         let source = """
         (function() {
+          function proxify(u) {
+            if (!u) return null;
+            if (u.includes('images.weserv.nl/?url=')) return null;
+            const stripped = u.replace(/^https?:\\/\\//i, '');
+            return 'https://images.weserv.nl/?url=' + encodeURIComponent(stripped);
+          }
           function report() {
             try {
-              const missing = Array.from(document.images || []).filter(img =>
-                img.complete && img.naturalWidth === 0
-              ).map(img => ({
-                src: img.currentSrc || img.src || ""
-              }));
+              const imgs = Array.from(document.images || []);
+              const missing = [];
+              for (const img of imgs) {
+                if (img.complete && img.naturalWidth === 0) {
+                  const original = img.currentSrc || img.src || "";
+                  const proxy = proxify(original);
+                  if (proxy) {
+                    img.src = proxy;
+                  }
+                  missing.push({ src: original, proxied: proxy || "" });
+                }
+              }
               if (missing.length) {
                 window.webkit?.messageHandlers?.imageProbe?.postMessage({missing});
               }
