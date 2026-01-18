@@ -11,6 +11,7 @@
 		2E979ED05361A363494B8C8F /* EmailSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99DE39A09AF391CBAFDC05DA /* EmailSnapshot.swift */; };
 		6B84FE21D7C346B2 /* PendingSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3582BDA6D42420A /* PendingSendManager.swift */; };
 		74C8DAB2308F55DC0585915B /* InboxTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D39820256340CE972A760FE2 /* InboxTabBar.swift */; };
+		9FB64EEEB36C45EBD07877F4 /* InboxTopBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A4E0FE1092DEA1D1E22049 /* InboxTopBar.swift */; };
 		A1000001 /* SimpleMailApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001 /* SimpleMailApp.swift */; };
 		A1000002 /* Email.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* Email.swift */; };
 		A1000003 /* Briefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Briefing.swift */; };
@@ -177,6 +178,7 @@
 		B9000101 /* BucketRowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketRowModel.swift; sourceTree = "<group>"; };
 		B9000102 /* BucketSeenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketSeenStore.swift; sourceTree = "<group>"; };
 		D39820256340CE972A760FE2 /* InboxTabBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InboxTabBar.swift; path = SimpleMail/Sources/Views/InboxTabBar.swift; sourceTree = "<group>"; };
+		20A4E0FE1092DEA1D1E22049 /* InboxTopBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InboxTopBar.swift; path = SimpleMail/Sources/Views/InboxTopBar.swift; sourceTree = "<group>"; };
 		D7F9E59BDEE31EB40CDDA6A6 /* GlassDesignSystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GlassDesignSystem.swift; path = SimpleMail/Sources/Views/GlassDesignSystem.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -225,6 +227,7 @@
 			isa = PBXGroup;
 			children = (
 				D39820256340CE972A760FE2 /* InboxTabBar.swift */,
+				20A4E0FE1092DEA1D1E22049 /* InboxTopBar.swift */,
 				0059D67787CE426DFD714C41 /* CustomLanePickerSheet.swift */,
 				D7F9E59BDEE31EB40CDDA6A6 /* GlassDesignSystem.swift */,
 			);
@@ -594,6 +597,7 @@
 				A9000101 /* BucketRowModel.swift in Sources */,
 				A9000102 /* BucketSeenStore.swift in Sources */,
 				74C8DAB2308F55DC0585915B /* InboxTabBar.swift in Sources */,
+				9FB64EEEB36C45EBD07877F4 /* InboxTopBar.swift in Sources */,
 				2D131647C9A0C5DF1ED2EF06 /* CustomLanePickerSheet.swift in Sources */,
 				BBFBC3F0BBE8AA4034E5608F /* GlassDesignSystem.swift in Sources */,
 			);

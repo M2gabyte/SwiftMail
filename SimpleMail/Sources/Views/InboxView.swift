@@ -447,6 +447,28 @@ struct InboxView: View {
                 .animation(.easeInOut(duration: 0.25), value: pendingSendManager.isPending)
                 .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            // Custom top bar (only in normal inbox mode)
+            if !isSelectionMode && !isSearchMode {
+                InboxTopBar(
+                    selectedTab: viewModel.currentTab,
+                    customLaneTitle: viewModel.pinnedTabOption.title,
+                    isPickerOpen: showingLanePickerSheet,
+                    onTapAll: { viewModel.currentTab = .all },
+                    onTapPrimary: { viewModel.currentTab = .primary },
+                    onTapCustom: {
+                        if viewModel.currentTab == .custom {
+                            showingLanePickerSheet = true
+                        } else {
+                            viewModel.currentTab = .custom
+                        }
+                    },
+                    onTapMailbox: { showingLocationSheet = true },
+                    onTapSettings: { showingSettings = true }
+                )
+                .background(Color(.systemBackground).opacity(0.95))
+            }
+        }
     }
 
     // MARK: - Extracted View Components
@@ -700,25 +722,11 @@ struct InboxView: View {
                 }
             }
         } else {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    showingLocationSheet = true
-                } label: {
-                    GlassNavPill(title: viewModel.currentMailbox.rawValue, systemImage: "tray")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Location")
+            // Normal mode: toolbar items handled by InboxTopBar via safeAreaInset
+            // Empty spacer to maintain navigation structure
+            ToolbarItem(placement: .principal) {
+                EmptyView()
             }
-
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showingSettings = true } label: {
-                    GlassIconButton(systemName: "gearshape")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Settings")
-                .accessibilityHint("Double tap to open settings")
-            }
-            // Bottom command surface is overlaid on the list
         }
     }
 
@@ -1278,26 +1286,12 @@ struct InboxHeaderBlock: View {
     let onTapCustomWhileSelected: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            InboxTabBar(
-                selectedTab: currentTab,
-                customLaneTitle: customLaneTitle,
-                isPickerOpen: isPickerOpen,
-                onTapAll: { currentTab = .all },
-                onTapPrimary: { currentTab = .primary },
-                onTapCustom: {
-                    if currentTab == .custom {
-                        onTapCustomWhileSelected()
-                    } else {
-                        currentTab = .custom
-                    }
-                }
-            )
-            .padding(.horizontal, 16)
-        }
-        .padding(.top, 0)
-        .padding(.bottom, 0)
-        .animation(.easeInOut(duration: 0.25), value: isCollapsed)
+        // InboxTabBar moved to InboxTopBar via safeAreaInset
+        // This block now serves as list anchor
+        Color.clear
+            .frame(height: 1)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
     }
 }
 
