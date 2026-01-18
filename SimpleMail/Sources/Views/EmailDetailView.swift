@@ -242,6 +242,9 @@ struct EmailDetailView: View {
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
+
+    // Expose sanitized HTML cache for quoting
+    static var sharedLastRenderedBodies: [String: BodyRenderActor.RenderedBody] = [:]
     @State private var pendingChipAction: PendingChipAction?
 
     init(emailId: String, threadId: String, accountEmail: String? = nil) {
@@ -2335,6 +2338,11 @@ class EmailDetailViewModel: ObservableObject {
         renderedBodies[message.id]?.styledHTML
     }
 
+    /// Sanitized source HTML (no styles/scripts) for quoting/reply.
+    func sanitizedHTML(for message: EmailDetail) -> String {
+        renderedBodies[message.id]?.html ?? message.body
+    }
+
     func bodyHTML(for message: EmailDetail) -> String {
         renderedBodies[message.id]?.html ?? message.body
     }
@@ -2462,6 +2470,7 @@ class EmailDetailViewModel: ObservableObject {
                     await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.renderedBodies[latestSnapshot.id] = rendered
+                        EmailDetailView.sharedLastRenderedBodies[latestSnapshot.id] = rendered
                         StallLogger.mark("EmailDetail.bodySwap")
                         self.didLogBodySwap = true
 #if DEBUG
@@ -2477,6 +2486,7 @@ class EmailDetailViewModel: ObservableObject {
                     await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.renderedBodies[snapshot.id] = rendered
+                        EmailDetailView.sharedLastRenderedBodies[snapshot.id] = rendered
                     }
                 }
 

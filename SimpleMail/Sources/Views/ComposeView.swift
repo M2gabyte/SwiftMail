@@ -2380,34 +2380,34 @@ class ComposeViewModel: ObservableObject {
         guard htmlToProcess != nil || emailToQuote != nil else { return nil }
 
         // Extract email data needed for quote building (don't capture EmailDetail across threads)
-        let quoteInputs: (from: String, date: Date, body: String, subject: String)?
+        let quoteInputs: (from: String, date: Date, bodyHTML: String, subject: String)?
         if let email = emailToQuote {
-            quoteInputs = (from: email.from, date: email.date, body: email.body, subject: email.subject)
+            // Prefer sanitized HTML from EmailDetailView cache if available
+            let sanitized = EmailDetailView.sharedLastRenderedBodies[email.id]?.html ?? email.body
+            quoteInputs = (from: email.from, date: email.date, bodyHTML: sanitized, subject: email.subject)
         } else {
             quoteInputs = nil
         }
 
         // Heavy work on background thread
         let result = await Task.detached(priority: .userInitiated) { [htmlToProcess, quoteInputs] () -> AttributedResult in
-            // Process pending HTML body
-            if let html = htmlToProcess {
-                if let rich = Self.parseHTMLToAttributed(html) {
-                    return AttributedResult(value: rich)
-                }
-            }
+        // Process pending HTML body (if user already typed)
+        if let html = htmlToProcess, let rich = Self.parseHTMLToAttributed(html) {
+            return AttributedResult(value: rich)
+        }
 
-            // Build quoted reply
-            if let inputs = quoteInputs {
-                return AttributedResult(value: Self.buildQuotedReplyBackground(
-                    from: inputs.from,
-                    date: inputs.date,
-                    body: inputs.body,
-                    subject: inputs.subject
-                ))
-            }
+        // Build quoted reply
+        if let inputs = quoteInputs {
+            return AttributedResult(value: Self.buildQuotedReplyBackground(
+                from: inputs.from,
+                date: inputs.date,
+                bodyHTML: inputs.bodyHTML,
+                subject: inputs.subject
+            ))
+        }
 
-            return AttributedResult(value: nil)
-        }.value
+        return AttributedResult(value: nil)
+    }.value
 
         return result.value
     }
@@ -2434,7 +2434,7 @@ class ComposeViewModel: ObservableObject {
     }
 
     /// Thread-safe quoted reply builder (can be called from background)
-    nonisolated private static func buildQuotedReplyBackground(from: String, date: Date, body: String, subject: String) -> NSAttributedString {
+    nonisolated private static func buildQuotedReplyBackground(from: String, date: Date, bodyHTML: String, subject: String) -> NSAttributedString {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
         let dateStr = dateFormatter.string(from: date)
@@ -2442,12 +2442,7 @@ class ComposeViewModel: ObservableObject {
         let senderName = EmailParser.extractSenderName(from: from)
         let header = "On \(dateStr), \(senderName) wrote:"
 
-        let bodyHTML: String
-        if isLikelyHTMLStatic(body) {
-            bodyHTML = sanitizeHTMLForQuoteStatic(body)
-        } else {
-            bodyHTML = escapeHTMLStatic(body).replacingOccurrences(of: "\n", with: "<br>")
-        }
+        let sanitized = sanitizeHTMLForQuoteStatic(bodyHTML)
 
         let html = """
         <html>
@@ -2471,7 +2466,7 @@ class ComposeViewModel: ObservableObject {
         <body>
           <div><br><br></div>
           <div>\(escapeHTMLStatic(header))</div>
-          <blockquote><div class="quoted">\(bodyHTML)</div></blockquote>
+          <blockquote><div class="quoted">\(sanitized)</div></blockquote>
         </body>
         </html>
         """
@@ -2500,12 +2495,12 @@ class ComposeViewModel: ObservableObject {
 
     nonisolated private static func sanitizeHTMLForQuoteStatic(_ html: String) -> String {
         var result = html
-        if result.count > 250_000 {
-            result = String(result.prefix(250_000))
+        if result.count > 500_000 {
+            result = String(result.prefix(500_000))
         }
+        // Strip scripts/styles but keep body/head tags harmlessly
         result = result.replacingOccurrences(of: "<script[\\s\\S]*?</script>", with: "", options: .regularExpression)
         result = result.replacingOccurrences(of: "<style[\\s\\S]*?</style>", with: "", options: .regularExpression)
-        result = result.replacingOccurrences(of: "</?(html|head|body)[^>]*>", with: "", options: .regularExpression)
         return result
     }
 
