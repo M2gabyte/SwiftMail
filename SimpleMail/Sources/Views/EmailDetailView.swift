@@ -85,7 +85,6 @@ actor BodyRenderActor {
         let html: String          // Sanitized HTML (for fallback/caching)
         let plain: String         // Plain text version
         let styledHTML: String    // Complete styled HTML ready for WebView
-        let debugPreview: String  // Optional preview (may be truncated) for diagnostics
     }
 
     func render(html: String, settings: RenderSettings) async -> RenderedBody {
@@ -124,7 +123,7 @@ actor BodyRenderActor {
             trackingCSS: trackingCSS,
             allowRemoteImages: !settings.blockImages
         )
-        return RenderedBody(html: safeHTML, plain: plain, styledHTML: styledHTML, debugPreview: "")
+        return RenderedBody(html: safeHTML, plain: plain, styledHTML: styledHTML)
     }
 
     /// Build the complete styled HTML document. All string work done off-main.
@@ -467,7 +466,6 @@ struct EmailMessageCard: View {
 
                 EmailBodyView(
                     styledHTML: styledHTML,
-                    debugPreview: debugPreview,
                     bottomInset: bottomInset
                 )
                     .frame(minHeight: 100)
@@ -2292,10 +2290,6 @@ class EmailDetailViewModel: ObservableObject {
     /// Returns nil if HTML is not ready yet - caller should show skeleton placeholder
     func styledHTML(for message: EmailDetail) -> String? {
         renderedBodies[message.id]?.styledHTML
-    }
-
-    func debugPreview(for message: EmailDetail) -> String? {
-        renderedBodies[message.id]?.debugPreview
     }
 
     func bodyHTML(for message: EmailDetail) -> String {
