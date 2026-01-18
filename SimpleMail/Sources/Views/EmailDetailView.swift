@@ -823,6 +823,10 @@ enum HTMLSanitizer {
             // Normalize scheme-less URLs ("//cdn...") to https
             var u = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if u.hasPrefix("//") { u = "https:" + u }
+            // Unwrap Gmail/Googleusercontent proxy URLs to the original target when present
+            if let unwrapped = unwrapGoogleProxy(u) {
+                u = unwrapped
+            }
             guard u.lowercased().hasPrefix("http") else { return nil }
             if u.lowercased().hasPrefix("data:") { return nil }
             if u.contains("data-blocked-src") { return nil }
@@ -930,6 +934,27 @@ enum HTMLSanitizer {
 
     private static func dataURI(data: Data, mime: String) -> String {
         "data:\(mime);base64,\(data.base64EncodedString())"
+    }
+
+    /// Unwrap Gmail/Googleusercontent image proxy URLs to the original target when possible.
+    private static func unwrapGoogleProxy(_ urlString: String) -> String? {
+        guard let url = URL(string: urlString), let host = url.host?.lowercased() else { return nil }
+        let isGProxy = host.contains("googleusercontent.com")
+        guard isGProxy else { return nil }
+
+        // Case 1: gadgets/proxy?url=...
+        if let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+           let target = queryItems.first(where: { $0.name == "url" })?.value,
+           target.lowercased().hasPrefix("http") {
+            return target
+        }
+
+        // Case 2: ci*.googleusercontent.com/...#https://original
+        if let fragment = url.fragment, fragment.lowercased().hasPrefix("http") {
+            return fragment
+        }
+
+        return nil
     }
 
     /// Generic public image proxies (read-only) used only when direct fetch fails.
