@@ -75,6 +75,21 @@ final class WKWebViewPool {
     }
 }
 
+// MARK: - Debug HTML Logger (safe truncation)
+private final class DebugHTMLLogger {
+    static let shared = DebugHTMLLogger()
+    private let logger = Logger(subsystem: "com.simplemail.app", category: "EmailHTML")
+    private var lastHash: UInt64?
+
+    func logPreview(_ htmlPreview: String) {
+        guard !htmlPreview.isEmpty else { return }
+        let hash = UInt64(bitPattern: Int64(htmlPreview.hashValue))
+        guard hash != lastHash else { return } // avoid spamming same body
+        lastHash = hash
+        logger.info("HTML_PREVIEW \(htmlPreview, privacy: .public)")
+    }
+}
+
 // MARK: - Lightweight image probe to log missing assets (helps debug CDN/ATS issues)
 private final class ImageProbeHandler: NSObject, WKScriptMessageHandler {
     static let shared = ImageProbeHandler()
@@ -145,6 +160,7 @@ actor BodyRenderActor {
         let html: String          // Sanitized HTML (for fallback/caching)
         let plain: String         // Plain text version
         let styledHTML: String    // Complete styled HTML ready for WebView
+        let debugPreview: String  // Optional preview (may be truncated) for diagnostics
     }
 
     func render(html: String, settings: RenderSettings) async -> RenderedBody {
@@ -183,7 +199,9 @@ actor BodyRenderActor {
             trackingCSS: trackingCSS,
             allowRemoteImages: !settings.blockImages
         )
-        return RenderedBody(html: safeHTML, plain: plain, styledHTML: styledHTML)
+        // DEBUG: small preview for inspection (first 32 KB)
+        let preview = String(styledHTML.prefix(32_768))
+        return RenderedBody(html: safeHTML, plain: plain, styledHTML: styledHTML, debugPreview: preview)
     }
 
     /// Build the complete styled HTML document. All string work done off-main.
@@ -1191,6 +1209,7 @@ enum HTMLSanitizer {
 /// Height is measured natively via scrollView.contentSize KVO (no JavaScript).
 struct EmailBodyWebView: UIViewRepresentable {
     let styledHTML: String      // Pre-rendered complete HTML document
+    let debugPreview: String    // For logging/inspection
     @Binding var contentHeight: CGFloat
     var onContentReady: (() -> Void)?  // Called when WebView commits navigation (content visible)
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar
@@ -1223,6 +1242,7 @@ struct EmailBodyWebView: UIViewRepresentable {
 
         // HTML is already fully processed - just load it
         webView.loadHTMLString(styledHTML, baseURL: nil)
+        DebugHTMLLogger.shared.logPreview(debugPreview)
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
