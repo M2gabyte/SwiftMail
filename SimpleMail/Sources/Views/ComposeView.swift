@@ -2476,7 +2476,7 @@ class ComposeViewModel: ObservableObject {
         }
 
         // Fallback to plain text quote
-        let plainBody = plainTextFromHTMLStatic(body)
+        let plainBody = plainTextFromHTMLStatic(sanitized)
         let quotePreview = summarizeForQuoteStatic(plainBody)
         let fallback = "\n\n\(header)\n> \(quotePreview.replacingOccurrences(of: "\n", with: "\n> "))"
         return attributedBody(from: fallback)
