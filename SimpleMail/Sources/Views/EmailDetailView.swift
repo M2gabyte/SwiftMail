@@ -2335,7 +2335,12 @@ class EmailDetailViewModel: ObservableObject {
     /// Get pre-rendered styled HTML ready for WebView (all processing done off-main)
     /// Returns nil if HTML is not ready yet - caller should show skeleton placeholder
     func styledHTML(for message: EmailDetail) -> String? {
-        renderedBodies[message.id]?.styledHTML
+        if let html = renderedBodies[message.id]?.styledHTML {
+            return html
+        }
+        // If missing (e.g., reopened), trigger a re-render synchronously
+        Task { await renderMessageIfNeeded(message) }
+        return nil
     }
 
     /// Sanitized source HTML (no styles/scripts) for quoting/reply.
@@ -2345,6 +2350,15 @@ class EmailDetailViewModel: ObservableObject {
 
     func bodyHTML(for message: EmailDetail) -> String {
         renderedBodies[message.id]?.html ?? message.body
+    }
+
+    @MainActor
+    private func renderMessageIfNeeded(_ message: EmailDetail) async {
+        guard renderedBodies[message.id] == nil else { return }
+        let settings = renderSettings
+        let rendered = await renderActor.render(html: message.body, settings: settings)
+        renderedBodies[message.id] = rendered
+        EmailDetailView.sharedLastRenderedBodies[message.id] = rendered
     }
 
     func plainText(for message: EmailDetail) -> String {
