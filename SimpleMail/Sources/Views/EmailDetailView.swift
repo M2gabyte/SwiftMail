@@ -49,12 +49,9 @@ final class WKWebViewPool {
         let config = WKWebViewConfiguration()
         config.dataDetectorTypes = [.link, .phoneNumber, .address]
         let preferences = WKWebpagePreferences()
-        // Allow JS so we can run lightweight diagnostics; HTML is sanitized earlier.
-        preferences.allowsContentJavaScript = true
+        preferences.allowsContentJavaScript = false
         config.defaultWebpagePreferences = preferences
         let controller = WKUserContentController()
-        controller.add(ImageProbeHandler.shared, name: "imageProbe")
-        controller.addUserScript(.imageProbeScript)
         config.userContentController = controller
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
@@ -75,78 +72,6 @@ final class WKWebViewPool {
     }
 }
 
-// MARK: - Debug HTML Logger (safe truncation)
-private final class DebugHTMLLogger {
-    static let shared = DebugHTMLLogger()
-    private let logger = Logger(subsystem: "com.simplemail.app", category: "EmailHTML")
-    private var lastHash: UInt64?
-
-    func logPreview(_ htmlPreview: String) {
-        guard !htmlPreview.isEmpty else { return }
-        let hash = UInt64(bitPattern: Int64(htmlPreview.hashValue))
-        guard hash != lastHash else { return } // avoid spamming same body
-        lastHash = hash
-        logger.info("HTML_PREVIEW \(htmlPreview, privacy: .public)")
-    }
-}
-
-// MARK: - Lightweight image probe to log missing assets (helps debug CDN/ATS issues)
-private final class ImageProbeHandler: NSObject, WKScriptMessageHandler {
-    static let shared = ImageProbeHandler()
-    private let logger = Logger(subsystem: "com.simplemail.app", category: "ImageProbe")
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "imageProbe" else { return }
-        if let body = message.body as? [String: Any],
-           let missing = body["missing"] as? [[String: Any]] {
-            for item in missing {
-                let src = item["src"] as? String ?? "unknown"
-                logger.info("IMG_MISS src=\(src, privacy: .public)")
-            }
-        }
-    }
-}
-
-    private extension WKUserScript {
-    /// Reports images that failed to load (naturalWidth == 0) back to Swift.
-    static var imageProbeScript: WKUserScript {
-        let source = """
-        (function() {
-          function proxify(u) {
-            if (!u) return null;
-            if (u.includes('images.weserv.nl/?url=') || u.includes('googleusercontent.com/gadgets/proxy')) return null;
-            const stripped = u.replace(/^https?:\\/\\//i, '');
-            const weserv = 'https://images.weserv.nl/?url=' + encodeURIComponent(stripped);
-            const gproxy = 'https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?url=' + encodeURIComponent(u) + '&container=focus&rewriteMime=image/*&refresh=86400';
-            return weserv + '||' + gproxy;
-          }
-          function report() {
-            try {
-              const imgs = Array.from(document.images || []);
-              const missing = [];
-              for (const img of imgs) {
-                if (img.complete && img.naturalWidth === 0) {
-                  const original = img.currentSrc || img.src || "";
-                  const proxyList = (proxify(original) || '').split('||').filter(Boolean);
-                  if (proxyList.length) {
-                    img.src = proxyList[0];
-                    if (proxyList.length > 1) img.dataset.fallbackProxy = proxyList[1];
-                  }
-                  missing.push({ src: original, proxied: proxyList.join(',') });
-                }
-              }
-              if (missing.length) {
-                window.webkit?.messageHandlers?.imageProbe?.postMessage({missing});
-              }
-            } catch(e) {}
-          }
-          window.addEventListener('load', () => setTimeout(report, 300));
-          setTimeout(report, 1200);
-        })();
-        """
-        return WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-    }
-}
 
 // Background renderer for HTML/plaintext - runs sanitization off main thread
 actor BodyRenderActor {
@@ -199,9 +124,7 @@ actor BodyRenderActor {
             trackingCSS: trackingCSS,
             allowRemoteImages: !settings.blockImages
         )
-        // DEBUG: small preview for inspection (first 32 KB)
-        let preview = String(styledHTML.prefix(32_768))
-        return RenderedBody(html: safeHTML, plain: plain, styledHTML: styledHTML, debugPreview: preview)
+        return RenderedBody(html: safeHTML, plain: plain, styledHTML: styledHTML, debugPreview: "")
     }
 
     /// Build the complete styled HTML document. All string work done off-main.
@@ -332,17 +255,16 @@ struct EmailDetailView: View {
                         pendingAction: $pendingChipAction
                     )
 
-                    ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
-                        let isLastMessage = index == viewModel.messages.count - 1
-                        EmailMessageCard(
-                            message: message,
-                            styledHTML: viewModel.styledHTML(for: message),
-                            debugPreview: viewModel.debugPreview(for: message),
-                            renderedPlain: viewModel.plainText(for: message),
-                            isExpanded: viewModel.expandedMessageIds.contains(message.id),
-                            bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 28 : 0,
-                            onToggleExpand: { viewModel.toggleExpanded(message.id) }
-                        )
+        ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
+            let isLastMessage = index == viewModel.messages.count - 1
+            EmailMessageCard(
+                message: message,
+                styledHTML: viewModel.styledHTML(for: message),
+                renderedPlain: viewModel.plainText(for: message),
+                isExpanded: viewModel.expandedMessageIds.contains(message.id),
+                bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 28 : 0,
+                onToggleExpand: { viewModel.toggleExpanded(message.id) }
+            )
                     }
                 }
             }
@@ -482,7 +404,6 @@ struct EmailDetailView: View {
 struct EmailMessageCard: View {
     let message: EmailDetail
     let styledHTML: String?     // nil = not ready yet, show skeleton
-    let debugPreview: String?
     let renderedPlain: String
     let isExpanded: Bool
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
@@ -617,7 +538,6 @@ struct EmailBodySkeleton: View {
 
 struct EmailBodyView: View {
     let styledHTML: String?  // nil = not ready yet, show skeleton
-    let debugPreview: String?
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     @State private var contentHeight: CGFloat = 200
     @State private var showSkeleton = false
@@ -636,7 +556,6 @@ struct EmailBodyView: View {
             if let html = styledHTML {
                 EmailBodyWebView(
                     styledHTML: html,
-                    debugPreview: debugPreview ?? "",
                     contentHeight: $contentHeight,
                     onContentReady: {
                         webViewReady = true
@@ -1217,7 +1136,6 @@ enum HTMLSanitizer {
 /// Height is measured natively via scrollView.contentSize KVO (no JavaScript).
 struct EmailBodyWebView: UIViewRepresentable {
     let styledHTML: String      // Pre-rendered complete HTML document
-    let debugPreview: String    // For logging/inspection
     @Binding var contentHeight: CGFloat
     var onContentReady: (() -> Void)?  // Called when WebView commits navigation (content visible)
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar
@@ -1250,7 +1168,6 @@ struct EmailBodyWebView: UIViewRepresentable {
 
         // HTML is already fully processed - just load it
         webView.loadHTMLString(styledHTML, baseURL: nil)
-        DebugHTMLLogger.shared.logPreview(debugPreview)
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
