@@ -59,6 +59,7 @@ final class WKWebViewPool {
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.setValue(NSNumber(value: Double(UIScreen.main.bounds.width / 600.0)), forKey: "pageZoom")
         return webView
     }
 
