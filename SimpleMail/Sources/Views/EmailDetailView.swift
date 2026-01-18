@@ -244,6 +244,8 @@ struct EmailDetailView: View {
     @State private var safeAreaBottom: CGFloat = 0
 
     // Expose sanitized HTML cache for quoting
+    private static let renderCacheVersion = 2
+    static func cacheKey(for messageId: String) -> String { "\(renderCacheVersion)::\(messageId)" }
     static var sharedLastRenderedBodies: [String: BodyRenderActor.RenderedBody] = [:]
     @State private var pendingChipAction: PendingChipAction?
 
@@ -2354,7 +2356,7 @@ class EmailDetailViewModel: ObservableObject {
         let settings = renderSettings
         let rendered = await renderActor.render(html: message.body, settings: settings)
         renderedBodies[message.id] = rendered
-        EmailDetailView.sharedLastRenderedBodies[message.id] = rendered
+        EmailDetailView.sharedLastRenderedBodies[EmailDetailView.cacheKey(for: message.id)] = rendered
     }
 
     func plainText(for message: EmailDetail) -> String {
@@ -2480,7 +2482,7 @@ class EmailDetailViewModel: ObservableObject {
                     await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.renderedBodies[latestSnapshot.id] = rendered
-                        EmailDetailView.sharedLastRenderedBodies[latestSnapshot.id] = rendered
+                        EmailDetailView.sharedLastRenderedBodies[EmailDetailView.cacheKey(for: latestSnapshot.id)] = rendered
                         StallLogger.mark("EmailDetail.bodySwap")
                         self.didLogBodySwap = true
 #if DEBUG
@@ -2496,7 +2498,7 @@ class EmailDetailViewModel: ObservableObject {
                     await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.renderedBodies[snapshot.id] = rendered
-                        EmailDetailView.sharedLastRenderedBodies[snapshot.id] = rendered
+                        EmailDetailView.sharedLastRenderedBodies[EmailDetailView.cacheKey(for: snapshot.id)] = rendered
                     }
                 }
 

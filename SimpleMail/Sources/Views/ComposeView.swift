@@ -2383,7 +2383,7 @@ class ComposeViewModel: ObservableObject {
         let quoteInputs: (from: String, date: Date, bodyHTML: String, subject: String)?
         if let email = emailToQuote {
             // Prefer sanitized HTML from EmailDetailView cache if available
-            let sanitized = EmailDetailView.sharedLastRenderedBodies[email.id]?.html ?? email.body
+            let sanitized = EmailDetailView.sharedLastRenderedBodies[EmailDetailView.cacheKey(for: email.id)]?.html ?? email.body
             quoteInputs = (from: email.from, date: email.date, bodyHTML: sanitized, subject: email.subject)
         } else {
             quoteInputs = nil
