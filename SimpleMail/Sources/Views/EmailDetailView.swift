@@ -730,10 +730,10 @@ enum HTMLSanitizer {
     /// eagerly fetching reasonable-size images, caching them, and replacing src/background
     /// URLs with data URIs. Tracking pixels (tiny images) are already stripped earlier.
     static func inlineCriticalImages(_ html: String) async -> String {
-        // Trim initial inline work for faster first paint.
-        let maxInlineImages = 2            // inline only first-screen images
-        let maxBytesPerImage = 1_000_000   // inline only reasonably sized assets
-        let maxTotalBytes = 1_000_000      // ~1MB budget for initial inline
+        // Do not inline images (privacy-first, avoids HTML bloat). Keep logic for possible future use.
+        let maxInlineImages = 0
+        let maxBytesPerImage = 0
+        let maxTotalBytes = 0
 
         // Extract candidate URLs from img src and background attributes.
         var urls: [String] = []
