@@ -1204,15 +1204,11 @@ struct EmailBodyWebView: UIViewRepresentable {
         context.coordinator.contentHeight = $contentHeight
         context.coordinator.onContentReady = onContentReady
 
+        // Reset any sticky zoom from previous loads (WKWebView instances are reused)
+        webView.pageZoom = 1.0
+
         // HTML is already fully processed - just load it
         webView.loadHTMLString(styledHTML, baseURL: nil)
-        // After load, scale to fit: evaluate content width and apply pageZoom
-        webView.evaluateJavaScript("Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)") { value, _ in
-            guard let contentWidth = value as? CGFloat, contentWidth > 0 else { return }
-            let viewWidth = webView.bounds.width
-            let zoom = min(1.0, viewWidth / contentWidth)
-            webView.setValue(NSNumber(value: Double(zoom)), forKey: "pageZoom")
-        }
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
