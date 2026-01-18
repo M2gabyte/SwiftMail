@@ -84,25 +84,22 @@ struct LocationSheetView: View {
                             }
                         )
                     } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "tray.full")
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.crop.circle")
                                 .foregroundStyle(.secondary)
-                            Text("Account")
+                                .frame(width: 22)
+                            Text(scopeName)
                                 .foregroundStyle(.primary)
                             Spacer()
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text(scopeName)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Text(scopeEmail)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
+                            Text(scopeEmail)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
                     }
+                } header: {
+                    Text("Account")
                 }
 
                 Section("Mailboxes") {
@@ -255,22 +252,18 @@ struct MailboxRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 1)
-                .fill(isSelected ? Color.accentColor : Color.clear)
-                .frame(width: 2, height: 16)
             Image(systemName: kind.icon)
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
             Text(kind.rawValue)
-                .fontWeight(isSelected ? .semibold : .regular)
                 .foregroundStyle(.primary)
             Spacer()
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.clear)
-        )
     }
 }
 

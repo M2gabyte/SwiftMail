@@ -37,7 +37,7 @@ struct CustomLanePickerSheet: View {
                 } header: {
                     Text("Custom Tab")
                 } footer: {
-                    Text("This changes the right-hand tab label and filters the inbox accordingly.")
+                    Text("This changes the 3rd tab in the top bar.")
                 }
             }
             .navigationTitle("Choose Lane")

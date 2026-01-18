@@ -12,16 +12,16 @@ struct InboxTopBar: View {
     let onTapSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             // LEFT: Hamburger (mailbox picker)
             Button(action: onTapMailbox) {
                 GlassIconButton(systemName: "line.3.horizontal")
             }
             .buttonStyle(.plain)
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .accessibilityLabel("Mailboxes")
 
-            // CENTER: Tabs expand to fill
+            // CENTER: Tabs expand to fill (must be flexible)
             InboxTabBar(
                 selectedTab: selectedTab,
                 customLaneTitle: customLaneTitle,
@@ -30,20 +30,19 @@ struct InboxTopBar: View {
                 onTapPrimary: onTapPrimary,
                 onTapCustom: onTapCustom
             )
-            .frame(height: 40)
             .frame(maxWidth: .infinity)
-            .layoutPriority(1)
 
             // RIGHT: Settings gear
             Button(action: onTapSettings) {
                 GlassIconButton(systemName: "gearshape")
             }
             .buttonStyle(.plain)
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .accessibilityLabel("Settings")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
     }
 }
 

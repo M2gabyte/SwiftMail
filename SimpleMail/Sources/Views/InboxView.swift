@@ -376,6 +376,7 @@ struct InboxView: View {
         .animation(.easeInOut(duration: 0.3), value: isSearchMode)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(isSelectionMode || isSearchMode ? .visible : .hidden, for: .navigationBar)
         .toolbarBackground(isSearchMode ? .hidden : .visible, for: .navigationBar)
         .toolbarBackground(.bar, for: .navigationBar)
         .toolbar { toolbarContent }
@@ -388,50 +389,56 @@ struct InboxView: View {
                 .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
                 .zIndex(25)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .overlay {
+            // Bottom bar as overlay - content scrolls behind it (Apple Mail style)
             if !isSelectionMode && !showingFilterSheet {
-                BottomCommandSurface(
-                    isFilterActive: viewModel.activeFilter != nil,
-                    activeFilterLabel: activeFilterLabel,
-                    activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
-                    searchMode: (isSearchMode || searchFieldFocused) ? .editing : .idle,
-                    showSearchField: true,
-                    searchText: $searchText,
-                    searchFocused: $searchFieldFocused,
-                    onSubmitSearch: {
-                        commitSearch()
-                        debouncedSearchText = searchText
-                        Task { await viewModel.performSearch(query: searchText) }
-                    },
-                    onTapSearch: {
-                        searchFieldFocused = true
-                        DispatchQueue.main.async {
+                VStack {
+                    Spacer()
+                    BottomCommandSurface(
+                        isFilterActive: viewModel.activeFilter != nil,
+                        activeFilterLabel: activeFilterLabel,
+                        activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
+                        searchMode: (isSearchMode || searchFieldFocused) ? .editing : .idle,
+                        showSearchField: true,
+                        searchText: $searchText,
+                        searchFocused: $searchFieldFocused,
+                        onSubmitSearch: {
+                            commitSearch()
+                            debouncedSearchText = searchText
+                            Task { await viewModel.performSearch(query: searchText) }
+                        },
+                        onTapSearch: {
+                            searchFieldFocused = true
+                            DispatchQueue.main.async {
+                                withAnimation(.easeOut(duration: 0.15)) {
+                                    isSearchMode = true
+                                }
+                            }
+                        },
+                        onCancelSearch: {
                             withAnimation(.easeOut(duration: 0.15)) {
-                                isSearchMode = true
+                                isSearchMode = false
                             }
+                            searchFieldFocused = false
+                            searchText = ""
+                            debouncedSearchText = ""
+                            viewModel.clearSearch()
+                        },
+                        onTapFilter: { showingFilterSheet = true },
+                        onTapCompose: { showingCompose = true }
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .onAppear { bottomBarHeight = geo.size.height }
+                                .onChange(of: geo.size.height) { _, newHeight in
+                                    bottomBarHeight = newHeight
+                                }
                         }
-                    },
-                    onCancelSearch: {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            isSearchMode = false
-                        }
-                        searchFieldFocused = false
-                        searchText = ""
-                        debouncedSearchText = ""
-                        viewModel.clearSearch()
-                    },
-                    onTapFilter: { showingFilterSheet = true },
-                    onTapCompose: { showingCompose = true }
-                )
-                .background(
-                    GeometryReader { geo in
-                        Color.clear
-                            .onAppear { bottomBarHeight = geo.size.height }
-                            .onChange(of: geo.size.height) { _, newHeight in
-                                bottomBarHeight = newHeight
-                            }
-                    }
-                )
+                    )
+                }
             }
         }
         .overlay(alignment: .bottom) {
@@ -480,28 +487,21 @@ struct InboxView: View {
     private var mailList: some View {
         List {
             if !isSearchMode {
-                InboxHeaderBlock(
-                    currentTab: currentTabBinding,
-                    customLaneTitle: viewModel.pinnedTabOption.title,
-                    activeFilter: $viewModel.activeFilter,
-                    filterCounts: viewModel.filterCounts,
-                    isCollapsed: isHeaderCollapsed,
-                    isPickerOpen: showingLanePickerSheet,
-                    onOpenFilters: { showingFilterSheet = true },
-                    onTapCustomWhileSelected: { showingLanePickerSheet = true }
-                )
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear
-                            .preference(
-                                key: ScrollOffsetKey.self,
-                                value: proxy.frame(in: .named("inboxScroll")).minY
-                            )
-                    }
-                )
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                // Scroll tracking anchor (invisible)
+                Color.clear
+                    .frame(height: 0)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear
+                                .preference(
+                                    key: ScrollOffsetKey.self,
+                                    value: proxy.frame(in: .named("inboxScroll")).minY
+                                )
+                        }
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
 
                 if let activeFilter = viewModel.activeFilter {
                     FilterActiveBanner(
@@ -574,9 +574,10 @@ struct InboxView: View {
             }
         }
         .listStyle(.plain)
+        .environment(\.defaultMinListRowHeight, 0)
         .animation(.spring(response: 0.35, dampingFraction: 0.9), value: viewModel.bucketRows)
-        .listSectionSpacing(2)
-        .contentMargins(.top, 0, for: .scrollContent)
+        .listSectionSpacing(0)
+        .contentMargins(.top, -8, for: .scrollContent)
         .contentMargins(.bottom, bottomBarHeight + safeAreaBottom + 8, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
@@ -1308,7 +1309,7 @@ struct SectionHeaderRow: View {
                 .textCase(nil)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
-                .padding(.top, isFirst ? 2 : 8)
+                .padding(.top, isFirst ? 4 : 8)
                 .padding(.bottom, 4)
                 .accessibilityAddTraits(.isHeader)
 
@@ -1318,9 +1319,11 @@ struct SectionHeaderRow: View {
                 .frame(height: 1.0 / displayScale)
                 .padding(.leading, 16)
         }
-        .background(Color(.systemGroupedBackground))
+        .frame(maxWidth: .infinity)
+        .background(Color(UIColor.systemGroupedBackground))
         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
         .listRowSeparator(.hidden)
+        .listRowBackground(Color(UIColor.systemGroupedBackground))
     }
 }
 
@@ -1662,8 +1665,8 @@ struct EmailRow: View {
 
                     Spacer()
 
-                    // Trailing metadata cluster (aligned)
-                    HStack(spacing: 4) {
+                    // Trailing metadata cluster (aligned to text baseline)
+                    HStack(alignment: .center, spacing: 4) {
                         if email.hasAttachments {
                             Image(systemName: "paperclip")
                                 .font(.caption2)
@@ -1678,15 +1681,16 @@ struct EmailRow: View {
 
                         Text(DateFormatters.formatEmailDate(email.date))
                             .font(MailTypography.meta)
+                            .monospacedDigit()
                             .foregroundStyle(metaColor)
 
-                        // Unread dot - always reserve space for alignment
+                        // Unread dot - smaller, aligned with time
                         Circle()
                             .fill(.blue)
-                            .frame(width: 8, height: 8)
+                            .frame(width: 6, height: 6)
                             .opacity(email.isUnread ? 1 : 0)
                     }
-                    .frame(minWidth: 78, alignment: .trailing)
+                    .frame(minWidth: 72, alignment: .trailing)
                 }
 
                 // Subject line (pre-normalized in EmailDTO to avoid per-row regex)

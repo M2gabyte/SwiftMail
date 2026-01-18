@@ -13,8 +13,13 @@ struct InboxTabBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            segment(title: "All", isSelected: selectedTab == .all, action: onTapAll)
-            segment(title: "Primary", isSelected: selectedTab == .primary, action: onTapPrimary)
+            // "All" - short, no special handling needed
+            segmentAll(isSelected: selectedTab == .all, action: onTapAll)
+
+            // "Primary" - medium priority
+            segmentPrimary(isSelected: selectedTab == .primary, action: onTapPrimary)
+
+            // Custom lane (e.g., "Newsletters") - highest priority, never truncate
             segmentCustom(title: customLaneTitle, isSelected: selectedTab == .custom, action: {
                 if selectedTab == .custom {
                     // Spring animation on re-tap
@@ -39,13 +44,16 @@ struct InboxTabBar: View {
                 .fill(GlassTokens.secondaryFill)
         )
         .glassStroke(RoundedRectangle(cornerRadius: GlassTokens.radiusMedium, style: .continuous))
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
     }
 
-    private func segment(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    // MARK: - "All" segment (short, default handling)
+    private func segmentAll(isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
+            Text("All")
                 .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .frame(maxWidth: .infinity, minHeight: 28)
                 .contentShape(Rectangle())
@@ -53,18 +61,45 @@ struct InboxTabBar: View {
         .buttonStyle(.plain)
         .background(selectionBackground(isSelected: isSelected))
         .clipShape(RoundedRectangle(cornerRadius: GlassTokens.radiusSmall - 1, style: .continuous))
-        .accessibilityLabel(title)
+        .accessibilityLabel("All")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
-    private func segmentCustom(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    // MARK: - "Primary" segment (medium priority)
+    private func segmentPrimary(isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 3) {
+            Text("Primary")
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+                .allowsTightening(true)
+                .minimumScaleFactor(0.9)
+                .layoutPriority(1)
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .frame(maxWidth: .infinity, minHeight: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(selectionBackground(isSelected: isSelected))
+        .clipShape(RoundedRectangle(cornerRadius: GlassTokens.radiusSmall - 1, style: .continuous))
+        .accessibilityLabel("Primary")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    // MARK: - Custom segment (picker-style, highest priority, NEVER truncate)
+    private func segmentCustom(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        let segmentShape = RoundedRectangle(cornerRadius: GlassTokens.radiusSmall - 1, style: .continuous)
+
+        return Button(action: action) {
+            HStack(spacing: 4) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .allowsTightening(true)
+                    .minimumScaleFactor(0.85)
+                    .layoutPriority(2)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(isPickerOpen ? -180 : 0))
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPickerOpen)
             }
@@ -75,7 +110,7 @@ struct InboxTabBar: View {
         }
         .buttonStyle(.plain)
         .background(selectionBackground(isSelected: isSelected))
-        .clipShape(RoundedRectangle(cornerRadius: GlassTokens.radiusSmall - 1, style: .continuous))
+        .clipShape(segmentShape)
         .accessibilityLabel("\(title), configurable tab")
         .accessibilityHint("Double tap to switch. Double tap again while selected to choose a different lane.")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])

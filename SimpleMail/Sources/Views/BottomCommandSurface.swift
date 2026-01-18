@@ -54,7 +54,7 @@ struct BottomCommandSurface: View {
         }
         .padding(.horizontal, isEditing ? 8 : 12)
         .padding(.vertical, 2)
-        .padding(.bottom, -2) // sink closer to bottom edge
+        .padding(.bottom, isEditing ? 10 : -2) // add space above keyboard QuickType bar when editing
         .animation(.snappy(duration: 0.22), value: isSearchActive)
     }
 
