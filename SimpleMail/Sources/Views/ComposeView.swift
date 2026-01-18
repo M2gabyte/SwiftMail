@@ -2448,7 +2448,9 @@ class ComposeViewModel: ObservableObject {
         <html>
         <head>
           <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
+            html, body { margin: 0; padding: 0; width: 100%; }
             body { font-family: -apple-system; font-size: 16px; color: #111; }
             blockquote {
               margin: 8px 0 0 0;
@@ -2460,7 +2462,24 @@ class ComposeViewModel: ObservableObject {
               text-align: left !important;
               margin-left: 0 !important;
             }
-            img { max-width: 100%; height: auto; }
+            img { max-width: 100% !important; height: auto !important; display: block; }
+            .quoted {
+              width: 100% !important;
+              max-width: 100% !important;
+            }
+            .quoted table {
+              width: 100% !important;
+              max-width: 100% !important;
+              table-layout: auto !important;
+              margin-left: auto;
+              margin-right: auto;
+            }
+            .quoted table[width],
+            .quoted [width],
+            .quoted [style*="width"] {
+              width: 100% !important;
+              max-width: 100% !important;
+            }
           </style>
         </head>
         <body>
