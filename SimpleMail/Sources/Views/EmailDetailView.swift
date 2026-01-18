@@ -56,7 +56,7 @@ final class WKWebViewPool {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = true
         webView.backgroundColor = .white
-        webView.scrollView.isScrollEnabled = true
+        webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         return webView
