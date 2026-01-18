@@ -2107,67 +2107,74 @@ extension View {
     }
 }
 
-// MARK: - Detail Bottom Bar (Glass styled)
+// MARK: - Detail Bottom Bar (Neutral Glass - no color pickup)
 
 struct DetailBottomBar: View {
     let onReply: () -> Void
     let onArchive: () -> Void
     let onTrash: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        HStack(spacing: 16) {
-            // Reply button with context menu (primary action)
-            Menu {
-                Button(action: onReply) {
-                    Label("Reply", systemImage: "arrowshape.turn.up.left")
-                }
-                Button(action: onReply) {
-                    Label("Reply All", systemImage: "arrowshape.turn.up.left.2")
-                }
-                Button(action: {}) {
-                    Label("Forward", systemImage: "arrowshape.turn.up.right")
-                }
-            } label: {
-                Image(systemName: "arrowshape.turn.up.left")
-                    .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            } primaryAction: {
-                onReply()
-            }
-            .accessibilityLabel("Reply")
-
-            // Archive button (secondary)
-            Button(action: onArchive) {
-                Image(systemName: "archivebox")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Archive")
-
-            // Trash button (destructive)
-            Button(action: onTrash) {
-                Image(systemName: "trash")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(.red.opacity(0.7))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Delete")
+        HStack(spacing: 28) {
+            replyButton
+            archiveButton
+            trashButton
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(GlassTokens.chromeMaterial)
-        )
-        .glassStroke(Capsule())
-        .glassShadow()
+        .frame(height: GlassToolbarTokens.height)
+        .padding(.horizontal, GlassToolbarTokens.horizontalPadding)
+        .glassToolbarSurface(scheme: colorScheme)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    private var replyButton: some View {
+        Menu {
+            Button(action: onReply) {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+            Button(action: onReply) {
+                Label("Reply All", systemImage: "arrowshape.turn.up.left.2")
+            }
+            Button(action: {}) {
+                Label("Forward", systemImage: "arrowshape.turn.up.right")
+            }
+        } label: {
+            Image(systemName: "arrowshape.turn.up.left")
+                .font(.system(size: GlassToolbarTokens.iconSize, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Color.accentColor)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        } primaryAction: {
+            onReply()
+        }
+        .accessibilityLabel("Reply")
+    }
+
+    private var archiveButton: some View {
+        Button(action: onArchive) {
+            Image(systemName: "archivebox")
+                .font(.system(size: GlassToolbarTokens.iconSize, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Archive")
+    }
+
+    private var trashButton: some View {
+        Button(action: onTrash) {
+            Image(systemName: "trash")
+                .font(.system(size: GlassToolbarTokens.iconSize, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.red)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Delete")
     }
 }
 

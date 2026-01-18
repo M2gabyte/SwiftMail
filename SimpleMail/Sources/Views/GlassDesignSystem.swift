@@ -1,5 +1,46 @@
 import SwiftUI
 
+// MARK: - Glass Toolbar Tokens (Floating Action Bars)
+
+/// Tokens for floating toolbar surfaces that must NOT pick up color from content behind them.
+/// Used for reply/archive/trash bar in email detail.
+enum GlassToolbarTokens {
+    static let cornerRadius: CGFloat = 22
+    static let height: CGFloat = 54
+    static let horizontalPadding: CGFloat = 18
+    static let iconSize: CGFloat = 19
+
+    static let strokeOpacity: Double = 0.22
+    static let strokeWidth: CGFloat = 0.5
+
+    /// Neutralizes underlying email colors so the bar NEVER turns pink/maroon.
+    static func neutralOverlay(_ scheme: ColorScheme) -> Color {
+        switch scheme {
+        case .dark:
+            return Color.black.opacity(0.42)
+        default:
+            return Color.white.opacity(0.58)
+        }
+    }
+
+    static func shadowColor(_ scheme: ColorScheme) -> Color {
+        switch scheme {
+        case .dark:
+            return Color.black.opacity(0.55)
+        default:
+            return Color.black.opacity(0.12)
+        }
+    }
+
+    static func shadowRadius(_ scheme: ColorScheme) -> CGFloat {
+        scheme == .dark ? 18 : 14
+    }
+
+    static func shadowYOffset(_ scheme: ColorScheme) -> CGFloat {
+        scheme == .dark ? 10 : 8
+    }
+}
+
 // MARK: - Glass Design Tokens
 
 /// Unified design tokens for glass surfaces across the app.
@@ -238,6 +279,32 @@ extension View {
     /// Apply glass shadow
     func glassShadow() -> some View {
         self.modifier(GlassShadow())
+    }
+
+    /// Use for floating toolbars (reply/archive/trash bar) that must stay neutral over email content.
+    /// Neutralizes underlying HTML colors so the bar never picks up pink/maroon from brand imagery.
+    func glassToolbarSurface(cornerRadius: CGFloat = GlassToolbarTokens.cornerRadius,
+                             scheme: ColorScheme) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        return self
+            .background {
+                shape
+                    .fill(GlassTokens.controlMaterial)
+                    // Neutralize underlying HTML colors (prevents pink/maroon pickup)
+                    .overlay(shape.fill(GlassToolbarTokens.neutralOverlay(scheme)))
+                    // Crisp edge
+                    .overlay(
+                        shape.strokeBorder(GlassTokens.strokeColor.opacity(GlassToolbarTokens.strokeOpacity),
+                                           lineWidth: GlassToolbarTokens.strokeWidth)
+                    )
+                    // Depth
+                    .shadow(color: GlassToolbarTokens.shadowColor(scheme),
+                            radius: GlassToolbarTokens.shadowRadius(scheme),
+                            x: 0,
+                            y: GlassToolbarTokens.shadowYOffset(scheme))
+                    .compositingGroup()
+            }
     }
 }
 

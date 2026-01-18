@@ -860,8 +860,14 @@ actor GmailService: GmailAPIProvider {
         token: String,
         accountEmail: String?
     ) async throws -> [EmailDetailDTO] {
+        // Filter out drafts - they shouldn't appear in thread view
+        let sentMessages = messages.filter { message in
+            guard let labelIds = message.labelIds else { return true }
+            return !labelIds.contains("DRAFT")
+        }
+
         // Use TaskGroup to fetch body attachments in parallel
-        let indexedMessages = messages.enumerated().map { ($0.offset, $0.element) }
+        let indexedMessages = sentMessages.enumerated().map { ($0.offset, $0.element) }
 
         return try await withThrowingTaskGroup(of: (Int, EmailDetailDTO).self) { group in
             for (index, message) in indexedMessages {
