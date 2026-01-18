@@ -143,37 +143,44 @@ actor BodyRenderActor {
             <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
             <meta http-equiv="Content-Security-Policy" content="\(csp)">
             <style>
-                /* Base layout constraints - don't override email styling */
+                :root { color-scheme: light; }
+                /* Base layout constraints */
                 * { box-sizing: border-box; }
                 html, body {
                     margin: 0;
                     padding: 0;
-                    width: 100%;
-                    max-width: 100%;
+                    width: 100vw;
+                    max-width: 100vw;
                     overflow-x: hidden;
                     background: transparent;
                 }
-                body { word-wrap: break-word; overflow-wrap: break-word; background: #ffffff; color: inherit; }
-                /* Prevent iOS auto-enlarging text; honor sender sizing */
-                body { -webkit-text-size-adjust: 100%; }
-                /* Center common 600px templates; 100% on narrow screens */
+                body {
+                    word-wrap: break-word;
+                    overflow-wrap: break-word;
+                    color: inherit;
+                    -webkit-text-size-adjust: 100%;
+                }
+                /* Center common 600px templates; clamp to viewport */
                 .email-container {
-                    width: 100%;
-                    max-width: 600px;
+                    width: min(600px, 100vw);
                     margin: 0 auto;
                     padding: 0;
                 }
-                /* Keep tables centered and responsive */
+                /* Keep tables responsive and centered without forcing 100% height */
                 .email-container table {
                     margin-left: auto;
                     margin-right: auto;
-                    width: 100% !important;
-                    max-width: 100% !important;
+                    max-width: 100%;
+                    table-layout: auto;
                     border-collapse: collapse;
                 }
-                .email-container table[width] { width: 100% !important; max-width: 100% !important; }
+                .email-container table[width] { width: auto !important; max-width: 100% !important; }
                 .email-container td, .email-container th { max-width: 100% !important; }
-                .email-container img { display: block; max-width: 100% !important; height: auto !important; }
+                .email-container img { display: block; max-width: 100%; height: auto; }
+                /* Respect sender backgrounds; provide dark fallback */
+                @media (prefers-color-scheme: dark) {
+                    html, body { background: #0f1115; }
+                }
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
                 td, th { word-break: break-word; }
