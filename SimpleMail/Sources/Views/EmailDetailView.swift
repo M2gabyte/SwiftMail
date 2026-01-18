@@ -59,7 +59,6 @@ final class WKWebViewPool {
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
-        webView.setValue(NSNumber(value: Double(UIScreen.main.bounds.width / 600.0)), forKey: "pageZoom")
         return webView
     }
 
@@ -138,8 +137,8 @@ actor BodyRenderActor {
         <!DOCTYPE html>
         <html>
         <head>
-            <!-- Desktop 600px canvas scaled down on mobile (Gmail-style) -->
-            <meta name="viewport" content="width=600, initial-scale=1.0">
+            <!-- Device-width viewport; clamp content via container -->
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <!-- Stop iOS from auto-linking phone numbers/dates and distorting layout -->
             <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
             <meta http-equiv="Content-Security-Policy" content="\(csp)">
@@ -161,19 +160,19 @@ actor BodyRenderActor {
                     -webkit-text-size-adjust: 100%;
                     background: #ffffff;
                 }
-                /* Fixed 600px canvas, scaled on mobile */
+                /* Clamp content to 600px, full-width on narrow screens */
                 .email-container {
-                    width: 600px;
-                    max-width: 100%;
+                    width: 100%;
+                    max-width: 600px;
                     margin: 0 auto;
-                    padding: 0;
+                    padding: 0 10px;
                 }
                 /* Responsive media */
                 img { display: block; max-width: 100%; height: auto; }
                 table { border-collapse: collapse; }
                 table, td, th { max-width: 100%; }
-                .email-container table { margin-left: auto; margin-right: auto; width: 100% !important; max-width: 100%; table-layout: auto; }
-                .email-container table[width] { width: 100% !important; max-width: 100% !important; }
+                .email-container table { margin-left: auto; margin-right: auto; width: auto; max-width: 100%; table-layout: auto; }
+                .email-container table[width] { width: auto !important; max-width: 100% !important; }
                 td, th { word-break: break-word; }
                 a { color: inherit; }
                 /* Dark chrome only; keep email body white */
