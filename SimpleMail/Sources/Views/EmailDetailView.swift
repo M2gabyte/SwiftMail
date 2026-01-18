@@ -337,6 +337,7 @@ struct EmailDetailView: View {
                         EmailMessageCard(
                             message: message,
                             styledHTML: viewModel.styledHTML(for: message),
+                            debugPreview: viewModel.debugPreview(for: message),
                             renderedPlain: viewModel.plainText(for: message),
                             isExpanded: viewModel.expandedMessageIds.contains(message.id),
                             bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 28 : 0,
@@ -481,6 +482,7 @@ struct EmailDetailView: View {
 struct EmailMessageCard: View {
     let message: EmailDetail
     let styledHTML: String?     // nil = not ready yet, show skeleton
+    let debugPreview: String?
     let renderedPlain: String
     let isExpanded: Bool
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
@@ -536,7 +538,7 @@ struct EmailMessageCard: View {
 
                 EmailBodyView(
                     styledHTML: styledHTML,
-                    debugPreview: viewModel.debugPreview(for: message),
+                    debugPreview: debugPreview,
                     bottomInset: bottomInset
                 )
                     .frame(minHeight: 100)
