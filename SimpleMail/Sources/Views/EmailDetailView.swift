@@ -149,8 +149,8 @@ actor BodyRenderActor {
                 html, body {
                     margin: 0;
                     padding: 0;
-                    width: 100vw;
-                    max-width: 100vw;
+                    width: 100%;
+                    max-width: 100%;
                     overflow-x: hidden;
                     background: transparent;
                 }
@@ -160,26 +160,27 @@ actor BodyRenderActor {
                     color: inherit;
                     -webkit-text-size-adjust: 100%;
                 }
-                /* Center common 600px templates; clamp to viewport */
+                /* Flex wrapper to center classic 600px emails */
+                .email-wrapper {
+                    display: flex;
+                    justify-content: center;
+                    width: 100%;
+                }
                 .email-container {
-                    width: min(600px, 100vw);
+                    width: 100%;
+                    max-width: 600px;
                     margin: 0 auto;
                     padding: 0;
                 }
-                /* Keep tables responsive and centered without forcing 100% height */
-                .email-container table {
-                    margin-left: auto;
-                    margin-right: auto;
-                    max-width: 100%;
-                    table-layout: auto;
-                    border-collapse: collapse;
-                }
+                /* Responsive media */
+                img { display: block; max-width: 100%; height: auto; }
+                table { border-collapse: collapse; }
+                table, td, th { max-width: 100%; }
+                .email-container table { margin-left: auto; margin-right: auto; }
                 .email-container table[width] { width: auto !important; max-width: 100% !important; }
-                .email-container td, .email-container th { max-width: 100% !important; }
-                .email-container img { display: block; max-width: 100%; height: auto; }
-                /* Respect sender backgrounds; provide dark fallback */
+                /* Respect sender backgrounds; provide dark fallback only for page chrome */
                 @media (prefers-color-scheme: dark) {
-                    html, body { background: #0f1115; }
+                    html, body { background: transparent; }
                 }
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
