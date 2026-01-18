@@ -700,25 +700,44 @@ struct InboxView: View {
                 }
             }
         } else {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    showingLocationSheet = true
-                } label: {
-                    GlassNavPill(title: viewModel.currentMailbox.rawValue, systemImage: "tray")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Location")
-            }
+            // Single-line header: Mailbox pill | Segmented control | Gear
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 10) {
+                    // LEFT: Compact mailbox pill (text + chevron only)
+                    Button {
+                        showingLocationSheet = true
+                    } label: {
+                        MailboxMenuPill(title: viewModel.currentMailbox.rawValue)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Location")
 
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showingSettings = true } label: {
-                    GlassIconButton(systemName: "gearshape")
+                    // CENTER: Segmented control expands to fill
+                    InboxTabBar(
+                        selectedTab: viewModel.currentTab,
+                        customLaneTitle: viewModel.pinnedTabOption.title,
+                        isPickerOpen: showingLanePickerSheet,
+                        onTapAll: { viewModel.currentTab = .all },
+                        onTapPrimary: { viewModel.currentTab = .primary },
+                        onTapCustom: {
+                            if viewModel.currentTab == .custom {
+                                showingLanePickerSheet = true
+                            } else {
+                                viewModel.currentTab = .custom
+                            }
+                        }
+                    )
+                    .frame(maxWidth: .infinity)
+                    .layoutPriority(1)
+
+                    // RIGHT: Settings gear
+                    Button { showingSettings = true } label: {
+                        GlassIconButton(systemName: "gearshape")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Settings")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Settings")
-                .accessibilityHint("Double tap to open settings")
             }
-            // Bottom command surface is overlaid on the list
         }
     }
 
@@ -1265,6 +1284,33 @@ struct InboxView: View {
     }
 }
 
+// MARK: - Compact Mailbox Menu Pill (text + chevron only)
+
+private struct MailboxMenuPill: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Image(systemName: "chevron.down")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 36)
+        .frame(maxWidth: 100, alignment: .leading)
+        .background(GlassTokens.chromeMaterial, in: Capsule())
+        .glassStroke(Capsule())
+        .glassShadow()
+        .contentShape(Capsule())
+    }
+}
+
 // MARK: - Inbox Header Block (Tight Filter Chips)
 
 struct InboxHeaderBlock: View {
@@ -1278,26 +1324,12 @@ struct InboxHeaderBlock: View {
     let onTapCustomWhileSelected: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            InboxTabBar(
-                selectedTab: currentTab,
-                customLaneTitle: customLaneTitle,
-                isPickerOpen: isPickerOpen,
-                onTapAll: { currentTab = .all },
-                onTapPrimary: { currentTab = .primary },
-                onTapCustom: {
-                    if currentTab == .custom {
-                        onTapCustomWhileSelected()
-                    } else {
-                        currentTab = .custom
-                    }
-                }
-            )
-            .padding(.horizontal, 16)
-        }
-        .padding(.top, 0)
-        .padding(.bottom, 0)
-        .animation(.easeInOut(duration: 0.25), value: isCollapsed)
+        // InboxTabBar moved to toolbar for single-line header
+        // This block now serves as a spacer/anchor for the list
+        Color.clear
+            .frame(height: 1)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
     }
 }
 

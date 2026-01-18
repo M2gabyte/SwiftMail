@@ -47,6 +47,7 @@ struct InboxTabBar: View {
             Text(title)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(isSelected ? .primary : .secondary)
+                .lineLimit(1)
                 .frame(maxWidth: .infinity, minHeight: 28)
                 .contentShape(Rectangle())
         }
@@ -62,6 +63,8 @@ struct InboxTabBar: View {
             HStack(spacing: 3) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.secondary)
