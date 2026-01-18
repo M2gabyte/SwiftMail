@@ -151,15 +151,16 @@ actor BodyRenderActor {
                     width: 100%;
                     max-width: 100%;
                     overflow-x: hidden;
+                    background: #ffffff;
                 }
-                body { word-wrap: break-word; overflow-wrap: break-word; background: transparent; color: inherit; }
+                body { word-wrap: break-word; overflow-wrap: break-word; background: #ffffff; color: inherit; }
                 /* Prevent iOS auto-enlarging text; honor sender sizing */
                 body { -webkit-text-size-adjust: 100%; }
                 /* Center common 600px templates with comfortable mobile gutter */
                 .email-container {
                     max-width: 640px;
                     margin: 0 auto;
-                    padding: 0 12px;
+                    padding: 0;
                 }
                 /* Keep tables centered and responsive */
                 .email-container table {
