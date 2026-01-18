@@ -172,7 +172,14 @@ actor BodyRenderActor {
                 table { border-collapse: collapse; }
                 table, td, th { max-width: 100%; }
                 .email-container table { margin-left: auto; margin-right: auto; width: auto; max-width: 100%; table-layout: auto; }
-                .email-container table[width] { width: auto !important; max-width: 100% !important; }
+                /* Clamp hard-coded table widths (common marketing templates) */
+                .email-container table[width],
+                .email-container table[style*="width"],
+                .email-container table.w100p {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    table-layout: auto !important;
+                }
                 td, th { word-break: break-word; }
                 a { color: inherit; }
                 /* Dark chrome only; keep email body white */
