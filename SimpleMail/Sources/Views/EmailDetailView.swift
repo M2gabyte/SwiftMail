@@ -54,8 +54,8 @@ final class WKWebViewPool {
         let controller = WKUserContentController()
         config.userContentController = controller
         let webView = WKWebView(frame: .zero, configuration: config)
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
+        webView.isOpaque = true
+        webView.backgroundColor = .white
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
@@ -151,7 +151,7 @@ actor BodyRenderActor {
                     width: 100%;
                     max-width: 100%;
                     overflow-x: hidden;
-                    background: transparent;
+                    background: #ffffff;
                 }
                 body {
                     word-wrap: break-word;
