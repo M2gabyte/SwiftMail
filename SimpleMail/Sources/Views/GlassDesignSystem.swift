@@ -115,27 +115,67 @@ struct GlassShadow: ViewModifier {
 
 // MARK: - Glass Icon Button
 
-/// Circular glass button for icons (filter, compose, etc.)
+/// Circular glass button for icons (settings, filter, etc.)
+/// Uses hierarchical rendering and secondary foreground for premium look.
 struct GlassIconButton: View {
     let systemName: String
-    let isActive: Bool
-    let action: () -> Void
+    var isActive: Bool = false
+    var action: (() -> Void)? = nil
 
     var activeColor: Color = .accentColor
     var inactiveColor: Color = .secondary
     var size: CGFloat = 36
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: size * 0.58, weight: .regular))
-                .foregroundStyle(isActive ? activeColor : inactiveColor)
-                .frame(width: size, height: size)
-                .background(Circle().fill(GlassTokens.controlMaterial))
-                .modifier(GlassStroke(shape: AnyShape(Circle())))
-                .modifier(GlassShadow())
+        let content = Image(systemName: systemName)
+            .font(.system(size: 16, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(isActive ? activeColor : inactiveColor)
+            .frame(width: size, height: size)
+            .background(Circle().fill(GlassTokens.chromeMaterial))
+            .modifier(GlassStroke(shape: AnyShape(Circle())))
+            .modifier(GlassShadow())
+
+        if let action = action {
+            Button(action: action) { content }
+                .buttonStyle(.plain)
+        } else {
+            content
         }
-        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Glass Nav Pill
+
+/// Navigation pill for mailbox picker with icon, title, and chevron.
+/// Premium glass styling with hierarchical icons.
+struct GlassNavPill: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            Image(systemName: "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 2)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .background(GlassTokens.chromeMaterial, in: Capsule())
+        .glassStroke(Capsule())
+        .glassShadow()
+        .contentShape(Capsule())
+        .padding(.vertical, 4) // yields ~44pt hit area
     }
 }
 

@@ -704,23 +704,17 @@ struct InboxView: View {
                 Button {
                     showingLocationSheet = true
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: viewModel.currentMailbox.icon)
-                            .font(.body)
-                        Text(viewModel.currentMailbox.rawValue)
-                            .font(.subheadline.weight(.medium))
-                        Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
+                    GlassNavPill(title: viewModel.currentMailbox.rawValue, systemImage: "tray")
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Location")
             }
 
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingSettings = true } label: {
-                    Image(systemName: "gearshape")
+                    GlassIconButton(systemName: "gearshape")
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Settings")
                 .accessibilityHint("Double tap to open settings")
             }

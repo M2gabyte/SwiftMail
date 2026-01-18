@@ -77,9 +77,11 @@ struct ComposeView: View {
     private var composeRoot: some View {
         let content = applyToolbar(to: applyNavigation(to: composeContent))
         let base = NavigationStack { content }
+            .background(Color(.systemBackground))
         let overlays = applyOverlays(to: base)
         let sheets = applySheets(to: overlays)
         return applyObservers(to: sheets)
+            .presentationBackground(Color(.systemBackground))
     }
 
     private func applyNavigation<V: View>(to view: V) -> some View {
