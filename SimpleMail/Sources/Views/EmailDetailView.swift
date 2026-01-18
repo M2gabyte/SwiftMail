@@ -534,7 +534,11 @@ struct EmailMessageCard: View {
                 Divider()
                     .padding(.leading)
 
-                EmailBodyView(styledHTML: styledHTML, bottomInset: bottomInset)
+                EmailBodyView(
+                    styledHTML: styledHTML,
+                    debugPreview: viewModel.debugPreview(for: message),
+                    bottomInset: bottomInset
+                )
                     .frame(minHeight: 100)
             }
         }
@@ -611,6 +615,7 @@ struct EmailBodySkeleton: View {
 
 struct EmailBodyView: View {
     let styledHTML: String?  // nil = not ready yet, show skeleton
+    let debugPreview: String?
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     @State private var contentHeight: CGFloat = 200
     @State private var showSkeleton = false
@@ -629,6 +634,7 @@ struct EmailBodyView: View {
             if let html = styledHTML {
                 EmailBodyWebView(
                     styledHTML: html,
+                    debugPreview: debugPreview ?? "",
                     contentHeight: $contentHeight,
                     onContentReady: {
                         webViewReady = true
@@ -2358,6 +2364,10 @@ class EmailDetailViewModel: ObservableObject {
     /// Returns nil if HTML is not ready yet - caller should show skeleton placeholder
     func styledHTML(for message: EmailDetail) -> String? {
         renderedBodies[message.id]?.styledHTML
+    }
+
+    func debugPreview(for message: EmailDetail) -> String? {
+        renderedBodies[message.id]?.debugPreview
     }
 
     func bodyHTML(for message: EmailDetail) -> String {
