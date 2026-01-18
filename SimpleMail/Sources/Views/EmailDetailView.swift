@@ -138,8 +138,8 @@ actor BodyRenderActor {
         <!DOCTYPE html>
         <html>
         <head>
-            <!-- Desktop-like viewport so 600px email templates render identically to desktop -->
-            <meta name="viewport" content="width=600, initial-scale=1.0">
+            <!-- Mobile-friendly viewport; center content via container -->
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
             <!-- Stop iOS from auto-linking phone numbers/dates and distorting layout -->
             <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
             <meta http-equiv="Content-Security-Policy" content="\(csp)">
@@ -154,6 +154,14 @@ actor BodyRenderActor {
                     overflow-x: hidden;
                 }
                 body { word-wrap: break-word; overflow-wrap: break-word; background: transparent; color: inherit; }
+                /* Center common 600px templates with comfortable mobile gutter */
+                .email-container {
+                    max-width: 640px;
+                    margin: 0 auto;
+                    padding: 0 12px;
+                }
+                /* Keep tables centered without forcing width */
+                .email-container table { margin-left: auto; margin-right: auto; }
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
                 td, th { word-break: break-word; }
@@ -185,7 +193,7 @@ actor BodyRenderActor {
                 .blocked-form { border: 1px dashed #ccc; padding: 8px; margin: 8px 0; }
             </style>
         </head>
-        <body>\(body)</body>
+        <body><div class="email-container">\(body)</div></body>
         </html>
         """
     }
