@@ -99,9 +99,11 @@ private final class ImageProbeHandler: NSObject, WKScriptMessageHandler {
         (function() {
           function proxify(u) {
             if (!u) return null;
-            if (u.includes('images.weserv.nl/?url=')) return null;
+            if (u.includes('images.weserv.nl/?url=') || u.includes('googleusercontent.com/gadgets/proxy')) return null;
             const stripped = u.replace(/^https?:\\/\\//i, '');
-            return 'https://images.weserv.nl/?url=' + encodeURIComponent(stripped);
+            const weserv = 'https://images.weserv.nl/?url=' + encodeURIComponent(stripped);
+            const gproxy = 'https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?url=' + encodeURIComponent(u) + '&container=focus&rewriteMime=image/*&refresh=86400';
+            return weserv + '||' + gproxy;
           }
           function report() {
             try {
@@ -110,11 +112,12 @@ private final class ImageProbeHandler: NSObject, WKScriptMessageHandler {
               for (const img of imgs) {
                 if (img.complete && img.naturalWidth === 0) {
                   const original = img.currentSrc || img.src || "";
-                  const proxy = proxify(original);
-                  if (proxy) {
-                    img.src = proxy;
+                  const proxyList = (proxify(original) || '').split('||').filter(Boolean);
+                  if (proxyList.length) {
+                    img.src = proxyList[0];
+                    if (proxyList.length > 1) img.dataset.fallbackProxy = proxyList[1];
                   }
-                  missing.push({ src: original, proxied: proxy || "" });
+                  missing.push({ src: original, proxied: proxyList.join(',') });
                 }
               }
               if (missing.length) {
@@ -922,30 +925,46 @@ enum HTMLSanitizer {
         "data:\(mime);base64,\(data.base64EncodedString())"
     }
 
-    /// Generic public image proxy (read-only) used only when direct fetch fails.
+    /// Generic public image proxies (read-only) used only when direct fetch fails.
     /// Mirrors Gmail-style resilience when sender CDNs/DNS/ATS block direct loads.
     private static func fetchImageViaProxy(url: URL, maxBytes: Int) async throws -> (data: Data, mimeType: String) {
-        // Using images.weserv.nl (stateless image relay).
-        var hostless = url.absoluteString
-        if hostless.hasPrefix("https://") { hostless.removeFirst("https://".count) }
-        else if hostless.hasPrefix("http://") { hostless.removeFirst("http://".count) }
-        let encoded = hostless.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? hostless
-        guard let proxyURL = URL(string: "https://images.weserv.nl/?url=\(encoded)") else {
-            throw URLError(.badURL)
+        for builder in proxyBuilders {
+            guard let proxyURL = builder(url) else { continue }
+            do {
+                var request = URLRequest(url: proxyURL, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
+                let (data, resp) = try await URLSession.shared.data(for: request)
+                guard let mime = resp.mimeType, mime.lowercased().hasPrefix("image/") else { continue }
+                guard data.count <= maxBytes else { continue }
+                return (data, mime)
+            } catch {
+                continue
+            }
         }
-        var request = URLRequest(url: proxyURL, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
-        let (data, resp) = try await URLSession.shared.data(for: request)
-        guard let mime = resp.mimeType, mime.lowercased().hasPrefix("image/") else {
-            throw URLError(.cannotDecodeContentData)
-        }
-        guard data.count <= maxBytes else { throw URLError(.dataLengthExceedsMaximum) }
-        return (data, mime)
+        throw URLError(.cannotLoadFromNetwork)
     }
 
     private static func proxyURL(for url: URL) -> URL? {
-        let encoded = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url.absoluteString
-        return URL(string: "https://images.weserv.nl/?url=\(encoded)")
+        for builder in proxyBuilders {
+            if let prox = builder(url) { return prox }
+        }
+        return nil
     }
+
+    private static let proxyBuilders: [(URL) -> URL?] = [
+        { url in
+            // images.weserv.nl
+            var hostless = url.absoluteString
+            if hostless.hasPrefix("https://") { hostless.removeFirst("https://".count) }
+            else if hostless.hasPrefix("http://") { hostless.removeFirst("http://".count) }
+            let encoded = hostless.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? hostless
+            return URL(string: "https://images.weserv.nl/?url=\(encoded)")
+        },
+        { url in
+            // Google proxy used by Gmail
+            let encoded = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url.absoluteString
+            return URL(string: "https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?url=\(encoded)&container=focus&rewriteMime=image/*&refresh=86400")
+        }
+    ]
 
     // No per-sender embedded assets; if fetch fails and cache miss, the browser will
     // show its broken-image placeholder, matching desktop behavior.
