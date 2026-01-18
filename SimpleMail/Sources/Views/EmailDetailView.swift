@@ -160,17 +160,18 @@ actor BodyRenderActor {
                 .email-container {
                     max-width: 640px;
                     margin: 0 auto;
-                    padding: 0;
+                    padding: 0 12px;
                 }
                 /* Keep tables centered and responsive */
                 .email-container table {
                     margin-left: auto;
                     margin-right: auto;
-                    width: auto !important;
+                    width: 100% !important;
                     max-width: 100% !important;
                 }
-                .email-container table[width] { width: auto !important; }
-                .email-container img { display: block; }
+                .email-container table[width] { width: 100% !important; max-width: 100% !important; }
+                .email-container td, .email-container th { max-width: 100% !important; }
+                .email-container img { display: block; max-width: 100% !important; height: auto !important; }
                 img { max-width: 100% !important; height: auto !important; }
                 video, iframe, canvas { max-width: 100% !important; height: auto !important; }
                 td, th { word-break: break-word; }
