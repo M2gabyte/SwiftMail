@@ -151,16 +151,17 @@ actor BodyRenderActor {
                     width: 100%;
                     max-width: 100%;
                     overflow-x: hidden;
-                    background: #ffffff;
+                    background: transparent;
                 }
                 body { word-wrap: break-word; overflow-wrap: break-word; background: #ffffff; color: inherit; }
                 /* Prevent iOS auto-enlarging text; honor sender sizing */
                 body { -webkit-text-size-adjust: 100%; }
-                /* Center common 600px templates with comfortable mobile gutter */
+                /* Center common 600px templates; 100% on narrow screens */
                 .email-container {
-                    max-width: 640px;
+                    width: 100%;
+                    max-width: 600px;
                     margin: 0 auto;
-                    padding: 0 12px;
+                    padding: 0;
                 }
                 /* Keep tables centered and responsive */
                 .email-container table {
@@ -168,6 +169,7 @@ actor BodyRenderActor {
                     margin-right: auto;
                     width: 100% !important;
                     max-width: 100% !important;
+                    border-collapse: collapse;
                 }
                 .email-container table[width] { width: 100% !important; max-width: 100% !important; }
                 .email-container td, .email-container th { max-width: 100% !important; }
