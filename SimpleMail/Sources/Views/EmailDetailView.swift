@@ -2432,14 +2432,8 @@ class EmailDetailViewModel: ObservableObject {
             }
 
             // FAST PATH: Show minimal placeholders immediately WITHOUT HTML processing on main
-            // Use snippet (already available) as placeholder text to avoid HTMLSanitizer.plainText() on main
-            let placeholders = messageDTOs.map { dto -> EmailDetail in
-                let detail = EmailDetail(dto: dto)
-                // Use snippet as quick placeholder - real HTML will be swapped in from background
-                detail.body = HTMLSanitizer.inlinePlainHTML(dto.snippet)
-                return detail
-            }
-            messages = placeholders
+            // Use full message bodies immediately; heavy sanitization is handled off-main
+            messages = messageDTOs.map { EmailDetail(dto: $0) }
             // Store full body for AI summary check (not the snippet placeholder)
             latestMessageFullBody = messageDTOs.last?.body
             StallLogger.mark("EmailDetail.threadLoaded")
