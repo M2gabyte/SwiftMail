@@ -449,6 +449,8 @@ struct EmailDetailView: View {
 
             DetailBottomDock(
                 showReplyPopover: $showReplyPopover,
+                hasReplyAnchor: $hasReplyAnchor,
+                showReplyFallbackDialog: $showReplyFallbackDialog,
                 onArchive: {
                     Task { await viewModel.archive(); dismiss() }
                 },
@@ -2284,12 +2286,14 @@ struct DetailBottomBar: View {
 
 // MARK: - New Detail Bottom Dock (Archive + Reply with long-press menu)
 
-struct DetailBottomDock: View {
-    @Binding var showReplyPopover: Bool
-    let onArchive: () -> Void
-    let onReply: () -> Void
-    let onReplyAll: () -> Void
-    let onForward: () -> Void
+    struct DetailBottomDock: View {
+        @Binding var showReplyPopover: Bool
+        @Binding var hasReplyAnchor: Bool
+        @Binding var showReplyFallbackDialog: Bool
+        let onArchive: () -> Void
+        let onReply: () -> Void
+        let onReplyAll: () -> Void
+        let onForward: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
