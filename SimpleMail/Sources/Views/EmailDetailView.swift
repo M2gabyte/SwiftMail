@@ -241,6 +241,8 @@ struct EmailDetailView: View {
     @State private var replyModeOverride: ComposeMode?
     @State private var showingActionSheet = false
     @State private var showReplyPopover = false
+    @State private var showReplyFallbackDialog = false
+    @State private var hasReplyAnchor = false
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
@@ -308,6 +310,22 @@ struct EmailDetailView: View {
                     await viewModel.snooze(until: date)
                 }
             })
+        }
+        .confirmationDialog("Reply", isPresented: $showReplyFallbackDialog, titleVisibility: .hidden) {
+            Button("Reply") { showingReplySheet = true }
+            Button("Reply All") {
+                if let latestMessage = viewModel.messages.last {
+                    showingReplySheet = true
+                    replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
+                }
+            }
+            Button("Forward") {
+                if let latestMessage = viewModel.messages.last {
+                    showingReplySheet = true
+                    replyModeOverride = .forward(original: latestMessage)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
         }
         .confirmationDialog("More Actions", isPresented: $showingActionSheet) {
             Button("Archive") {
@@ -468,6 +486,10 @@ struct EmailDetailView: View {
             overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
                 GeometryReader { proxy in
                     popoverContent(anchor: anchor, proxy: proxy)
+                }
+                .onAppear { hasReplyAnchor = anchor != nil }
+                .onChange(of: anchor != nil) { _, newValue in
+                    hasReplyAnchor = newValue
                 }
             }
         }
@@ -2277,8 +2299,12 @@ struct DetailBottomDock: View {
             ReplySplitButton(
                 onReply: onReply,
                 onShowActions: {
-                    showReplyPopover = true
-                    HapticFeedback.light()
+                    if hasReplyAnchor {
+                        showReplyPopover = true
+                        HapticFeedback.light()
+                    } else {
+                        showReplyFallbackDialog = true
+                    }
                 }
             )
             .frame(maxWidth: .infinity)
