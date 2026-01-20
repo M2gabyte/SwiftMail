@@ -463,9 +463,11 @@ struct EmailDetailView: View {
     // Popover overlay anchored to reply split button
     @ViewBuilder
     private var replyPopoverOverlay: some View {
-        overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
-            GeometryReader { proxy in
-                popoverContent(anchor: anchor, proxy: proxy)
+        if showReplyPopover {
+            overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
+                GeometryReader { proxy in
+                    popoverContent(anchor: anchor, proxy: proxy)
+                }
             }
         }
     }
