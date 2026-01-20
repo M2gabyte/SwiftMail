@@ -919,10 +919,10 @@ actor GmailService: GmailAPIProvider {
             attachmentId: bodyAttachmentInfo.attachmentId
         )
 
-        // Decode the body content
+        // Decode the body content and clean it
         let body: String
         if let text = String(data: bodyData, encoding: .utf8) {
-            body = text
+            body = cleanBodyContent(text, mimeType: bodyAttachmentInfo.mimeType)
         } else {
             body = ""
         }
@@ -1956,6 +1956,18 @@ actor GmailService: GmailAPIProvider {
         if looksLikeBase64(trimmed) {
             if let decoded = tryDecodeBase64(trimmed) {
                 return decoded
+            }
+        }
+
+        // Also check for Base64 content wrapped in HTML tags
+        // e.g., <div>Q2dwUGJpQkth...</div>
+        if mimeType == "text/html" {
+            let textContent = stripHTMLTags(from: trimmed)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if looksLikeBase64(textContent) {
+                if let decoded = tryDecodeBase64(textContent) {
+                    return decoded
+                }
             }
         }
 

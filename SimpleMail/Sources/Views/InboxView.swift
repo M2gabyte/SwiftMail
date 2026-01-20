@@ -50,8 +50,7 @@ struct InboxView: View {
     @State private var restoredComposeMode: ComposeMode?
     @State private var scope: InboxScope = .primary
     @State private var showAvatars = true
-    @State private var showCategoryBundles = true
-    @State private var showCategoryBundlesInline = false
+    @State private var bundlesPlacement: InboxBundlesPlacement = .pinned
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
@@ -510,8 +509,8 @@ struct InboxView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                     }
-                    // Category bundles (top block) when not inline - only in Primary scope
-                    else if showCategoryBundles && !showCategoryBundlesInline && scope == .primary && !viewModel.bucketRows.isEmpty {
+                    // Category bundles (top block) when pinned - only in Primary scope
+                    else if bundlesPlacement == .pinned && scope == .primary && !viewModel.bucketRows.isEmpty {
                         CategoryBundlesSection(bundles: viewModel.bucketRows) { bucket in
                             handleBucketTap(bucket)
                         }
@@ -526,61 +525,13 @@ struct InboxView: View {
                     }
                 }
 
-                let inlineBlocks = inlineCategoryBlocks(
-                    sections: displaySections,
-                    bundles: (showCategoryBundles && showCategoryBundlesInline && scope == .primary) ? viewModel.bucketRows : []
-                )
-
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    ForEach(Array(inlineBlocks.enumerated()), id: \.offset) { _, block in
-                        switch block {
-                        case .section(let index, let section):
-                            Section {
-                                let sectionEmails = section.emails
-                                ForEach(Array(sectionEmails.enumerated()), id: \.element.id) { emailIndex, email in
-                                    let previousEmail = emailIndex > 0 ? sectionEmails[emailIndex - 1] : nil
-                                    let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
-                                    let isFirst = !isContinuation
-
-                                    emailRowView(
-                                        for: email,
-                                        isSelectionMode: isSelectionMode,
-                                        isContinuationInSenderRun: isContinuation,
-                                        isFirstInSenderRun: isFirst
-                                    )
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, isFirst ? 9 : 5)
-                                    .padding(.bottom, 5)
-
-                                    Divider()
-                                        .background(Color(.separator).opacity(0.35))
-                                        .padding(.leading, isSelectionMode ? 0 : 16)
-                                }
-                            } header: {
-                                SectionHeaderRow(title: section.title, isFirst: index == 0)
-                                    .background(Color(.systemBackground))
-                            }
-                        case .bucket(let bundle):
-                            CategoryBundleRow(model: bundle) {
-                                handleBucketTap(bundle.bucket)
-                            }
-                            .padding(.horizontal, 16)
-                            Divider()
-                                .background(Color(.separator).opacity(0.35))
-                                .padding(.leading, 16)
-                        }
-                    }
-
-                    if !isSearchMode {
-                        Color.clear
-                            .frame(height: 1)
-                            .onAppear { Task { await viewModel.loadMoreFromFooter() } }
-                    }
-
-                    if viewModel.isLoadingMore {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding()
+                // Inline mode: flat list with bundles intermixed by date
+                Group {
+                    if bundlesPlacement == .inline && scope == .primary {
+                        inlineEmailList(sections: displaySections)
+                    } else {
+                        // Section-based mode (pinned or off)
+                        sectionBasedEmailList(sections: displaySections)
                     }
                 }
                 .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
@@ -1147,13 +1098,52 @@ struct InboxView: View {
     }
 
     // MARK: - Inline category blocks (Gmail-style)
+
+    /// Represents either an email or a bundle in the unified inline list
+    private enum InlineItem: Identifiable {
+        case email(EmailDTO)
+        case bucket(BucketRowModel)
+
+        var id: String {
+            switch self {
+            case .email(let email): return email.id
+            case .bucket(let bundle): return "bucket-\(bundle.id)"
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .email(let email): return email.date
+            case .bucket(let bundle): return bundle.latestDate ?? .distantPast
+            }
+        }
+    }
+
+    /// For non-inline mode, we still need sections
     private enum InlineBlock {
         case section(index: Int, section: EmailSection)
         case bucket(BucketRowModel)
     }
 
+    /// Returns a flat list of items (emails + bundles) sorted by date for inline mode
+    private func inlineItems(emails: [EmailDTO], bundles: [BucketRowModel]) -> [InlineItem] {
+        var items: [InlineItem] = emails.map { .email($0) }
+        items.append(contentsOf: bundles.map { .bucket($0) })
+
+        // Sort by date descending (newest first)
+        items.sort { $0.date > $1.date }
+
+        return items
+    }
+
+    /// For pinned mode or when bundles are off - returns sections without bundles intermixed
     private func inlineCategoryBlocks(sections: [EmailSection], bundles: [BucketRowModel]) -> [InlineBlock] {
-        // Derive a sort key (latest date) for each section and bundle
+        // When bundles array is empty, just return sections
+        if bundles.isEmpty {
+            return sections.enumerated().map { .section(index: $0.offset, section: $0.element) }
+        }
+
+        // Otherwise sort bundles with sections (this path is for pinned mode edge cases)
         var blocks: [(Date, InlineBlock)] = []
 
         for (idx, section) in sections.enumerated() {
@@ -1169,10 +1159,164 @@ struct InboxView: View {
             blocks.append((date, .bucket(bundle)))
         }
 
-        // Sort by date descending (newest first)
         blocks.sort { $0.0 > $1.0 }
-
         return blocks.map { $0.1 }
+    }
+
+    // MARK: - Email List Views
+
+    /// Builds sections with bundles inserted inline at appropriate positions by date
+    private func sectionsWithInlineBundles(sections: [EmailSection], bundles: [BucketRowModel]) -> [(section: EmailSection, items: [InlineItem])] {
+        var result: [(section: EmailSection, items: [InlineItem])] = []
+
+        for section in sections {
+            // Find bundles that belong in this section (same date range as the section's emails)
+            let sectionStart = section.emails.first?.date ?? .distantPast
+            let sectionEnd = section.emails.last?.date ?? .distantFuture
+
+            // Get bundles whose latestDate falls within this section's date range
+            let sectionBundles = bundles.filter { bundle in
+                guard let bundleDate = bundle.latestDate else { return false }
+                return bundleDate <= sectionStart && bundleDate >= sectionEnd
+            }
+
+            // Create items list: emails + bundles for this section, sorted by date
+            var items: [InlineItem] = section.emails.map { .email($0) }
+            items.append(contentsOf: sectionBundles.map { .bucket($0) })
+            items.sort { $0.date > $1.date }
+
+            result.append((section: section, items: items))
+        }
+
+        // Handle any bundles that didn't fit into existing sections (e.g., newer than all emails)
+        let usedBundleIds = Set(result.flatMap { pair in
+            pair.items.compactMap { item -> String? in
+                if case .bucket(let b) = item { return b.id }
+                return nil
+            }
+        })
+        let unusedBundles = bundles.filter { !usedBundleIds.contains($0.id) }
+
+        // If there are unused bundles and we have sections, add them to the first section
+        if !unusedBundles.isEmpty, var firstPair = result.first {
+            var items = firstPair.items
+            items.append(contentsOf: unusedBundles.map { .bucket($0) })
+            items.sort { $0.date > $1.date }
+            result[0] = (section: firstPair.section, items: items)
+        }
+
+        return result
+    }
+
+    /// Inline mode: sections with bundles intermixed by date within each section
+    @ViewBuilder
+    private func inlineEmailList(sections: [EmailSection]) -> some View {
+        let sectionsWithBundles = sectionsWithInlineBundles(sections: sections, bundles: viewModel.bucketRows)
+
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            ForEach(Array(sectionsWithBundles.enumerated()), id: \.offset) { sectionIndex, pair in
+                Section {
+                    ForEach(Array(pair.items.enumerated()), id: \.element.id) { itemIndex, item in
+                        inlineItemView(item: item, index: itemIndex, items: pair.items)
+                    }
+                } header: {
+                    SectionHeaderRow(title: pair.section.title, isFirst: sectionIndex == 0)
+                        .background(Color(.systemBackground))
+                }
+            }
+
+            loadMoreTrigger
+        }
+    }
+
+    @ViewBuilder
+    private func inlineItemView(item: InlineItem, index: Int, items: [InlineItem]) -> some View {
+        switch item {
+        case .email(let email):
+            let previousItem = index > 0 ? items[index - 1] : nil
+            let previousEmail: EmailDTO? = {
+                if case .email(let prev) = previousItem { return prev }
+                return nil
+            }()
+            let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
+            let isFirst = !isContinuation
+
+            emailRowView(
+                for: email,
+                isSelectionMode: isSelectionMode,
+                isContinuationInSenderRun: isContinuation,
+                isFirstInSenderRun: isFirst
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, isFirst ? 9 : 5)
+            .padding(.bottom, 5)
+
+            Divider()
+                .background(Color(.separator).opacity(0.35))
+                .padding(.leading, isSelectionMode ? 0 : 16)
+
+        case .bucket(let bundle):
+            CategoryBundleRow(model: bundle) {
+                handleBucketTap(bundle.bucket)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 9)
+            .padding(.bottom, 5)
+
+            Divider()
+                .background(Color(.separator).opacity(0.35))
+                .padding(.leading, isSelectionMode ? 0 : 16)
+        }
+    }
+
+    /// Section-based mode: emails grouped by day with headers (pinned or off)
+    @ViewBuilder
+    private func sectionBasedEmailList(sections: [EmailSection]) -> some View {
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+                Section {
+                    ForEach(Array(section.emails.enumerated()), id: \.element.id) { emailIndex, email in
+                        let previousEmail = emailIndex > 0 ? section.emails[emailIndex - 1] : nil
+                        let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
+                        let isFirst = !isContinuation
+
+                        emailRowView(
+                            for: email,
+                            isSelectionMode: isSelectionMode,
+                            isContinuationInSenderRun: isContinuation,
+                            isFirstInSenderRun: isFirst
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.top, isFirst ? 9 : 5)
+                        .padding(.bottom, 5)
+
+                        Divider()
+                            .background(Color(.separator).opacity(0.35))
+                            .padding(.leading, isSelectionMode ? 0 : 16)
+                    }
+                } header: {
+                    SectionHeaderRow(title: section.title, isFirst: index == 0)
+                        .background(Color(.systemBackground))
+                }
+            }
+
+            loadMoreTrigger
+        }
+    }
+
+    @ViewBuilder
+    private var loadMoreTrigger: some View {
+        if !isSearchMode {
+            Color.clear
+                .frame(height: 1)
+                .onAppear { Task { await viewModel.loadMoreFromFooter() } }
+        }
+
+        if viewModel.isLoadingMore {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding()
+        }
     }
 
     private func handleAppear() {
@@ -1208,8 +1352,7 @@ struct InboxView: View {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             listDensity = settings.listDensity
             showAvatars = settings.showAvatars
-            showCategoryBundles = settings.showCategoryBundles
-            showCategoryBundlesInline = settings.showCategoryBundlesInline
+            bundlesPlacement = settings.bundlesPlacement
 
             // Update threading setting on viewModel
             let threadingChanged = viewModel.conversationThreading != settings.conversationThreading
