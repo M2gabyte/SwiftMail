@@ -240,6 +240,7 @@ struct EmailDetailView: View {
     @State private var showingReplySheet = false
     @State private var replyModeOverride: ComposeMode?
     @State private var showingActionSheet = false
+    @State private var showReplyPopover = false
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
@@ -259,58 +260,7 @@ struct EmailDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                if viewModel.isLoading {
-                    ProgressView()
-                        .padding(40)
-                } else if let error = viewModel.error {
-                    ContentUnavailableView {
-                        Label("Failed to Load", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(error.localizedDescription)
-                    }
-                    .padding(40)
-                } else {
-                    // AI Summary at thread level (for long emails)
-                    // Check plain text length using full body, not the snippet placeholder
-                    if viewModel.autoSummarizeEnabled,
-                       let latestMessage = viewModel.messages.last,
-                       let fullBody = viewModel.latestMessageFullBody,
-                       EmailTextHelper.plainTextLength(fullBody) > 300 {
-                        EmailSummaryView(
-                            emailId: latestMessage.id,
-                            accountEmail: latestMessage.accountEmail,
-                            emailBody: fullBody,
-                            isExpanded: $viewModel.summaryExpanded
-                        )
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                    }
-
-                    // Action Chips Row (Trackers, Unsubscribe, Block, Spam)
-                    EmailActionChipsView(
-                        canUnsubscribe: viewModel.canUnsubscribe,
-                        senderName: viewModel.senderName ?? "sender",
-                        isReply: viewModel.subject.lowercased().hasPrefix("re:"),
-                        trackersBlocked: viewModel.trackersBlocked,
-                        pendingAction: $pendingChipAction
-                    )
-
-        ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
-            let isLastMessage = index == viewModel.messages.count - 1
-            EmailMessageCard(
-                message: message,
-                styledHTML: viewModel.styledHTML(for: message),
-                renderedPlain: viewModel.plainText(for: message),
-                isExpanded: viewModel.expandedMessageIds.contains(message.id),
-                bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 28 : 0,
-                onToggleExpand: { viewModel.toggleExpanded(message.id) }
-            )
-                    }
-                }
-            }
-        }
+        content
         .background(
             GeometryReader { geometry in
                 Color(.systemGroupedBackground)
@@ -343,45 +293,8 @@ struct EmailDetailView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            ZStack(alignment: .top) {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .overlay(alignment: .top) {
-                        Divider().opacity(0.25)
-                    }
-
-                DetailBottomDock(
-                    showReplyActions: $showReplyActions,
-                    onArchive: {
-                        Task { await viewModel.archive(); dismiss() }
-                    },
-                    onReply: { showingReplySheet = true },
-                    onReplyAll: {
-                        if let latestMessage = viewModel.messages.last {
-                            showingReplySheet = false
-                            DispatchQueue.main.async {
-                                showingReplySheet = true
-                                replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
-                            }
-                        }
-                    },
-                    onForward: {
-                        if let latestMessage = viewModel.messages.last {
-                            showingReplySheet = false
-                            DispatchQueue.main.async {
-                                showingReplySheet = true
-                                replyModeOverride = .forward(original: latestMessage)
-                            }
-                        }
-                    }
-                )
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-                .padding(.bottom, 10)
-            }
-            .frame(height: 92)
-        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { bottomDock }
+        .overlay(replyPopoverOverlay)
         .sheet(isPresented: $showingReplySheet) {
             if let mode = replyModeOverride {
                 ComposeView(mode: mode)
@@ -451,6 +364,149 @@ struct EmailDetailView: View {
         }
         .toolbar(.hidden, for: .tabBar)
         .onAppear { StallLogger.mark("EmailDetail.appear") }
+    }
+
+    // Split out main scroll content so the compiler has fewer nested clauses to solve.
+    @ViewBuilder
+    private var content: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                if viewModel.isLoading {
+                    ProgressView()
+                        .padding(40)
+                } else if let error = viewModel.error {
+                    ContentUnavailableView {
+                        Label("Failed to Load", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error.localizedDescription)
+                    }
+                    .padding(40)
+                } else {
+                    if viewModel.autoSummarizeEnabled,
+                       let latestMessage = viewModel.messages.last,
+                       let fullBody = viewModel.latestMessageFullBody,
+                       EmailTextHelper.plainTextLength(fullBody) > 300 {
+                        EmailSummaryView(
+                            emailId: latestMessage.id,
+                            accountEmail: latestMessage.accountEmail,
+                            emailBody: fullBody,
+                            isExpanded: $viewModel.summaryExpanded
+                        )
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                    }
+
+                    EmailActionChipsView(
+                        canUnsubscribe: viewModel.canUnsubscribe,
+                        senderName: viewModel.senderName ?? "sender",
+                        isReply: viewModel.subject.lowercased().hasPrefix("re:"),
+                        trackersBlocked: viewModel.trackersBlocked,
+                        pendingAction: $pendingChipAction
+                    )
+
+                    ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
+                        let isLastMessage = index == viewModel.messages.count - 1
+                        EmailMessageCard(
+                            message: message,
+                            styledHTML: viewModel.styledHTML(for: message),
+                            renderedPlain: viewModel.plainText(for: message),
+                            isExpanded: viewModel.expandedMessageIds.contains(message.id),
+                            bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 28 : 0,
+                            onToggleExpand: { viewModel.toggleExpanded(message.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Bottom dock + scrim
+    @ViewBuilder
+    private var bottomDock: some View {
+        ZStack(alignment: .top) {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(alignment: .top) { Divider().opacity(0.25) }
+
+            DetailBottomDock(
+                showReplyPopover: $showReplyPopover,
+                onArchive: {
+                    Task { await viewModel.archive(); dismiss() }
+                },
+                onReply: { showingReplySheet = true },
+                onReplyAll: {
+                    if let latestMessage = viewModel.messages.last {
+                        showingReplySheet = false
+                        DispatchQueue.main.async {
+                            showingReplySheet = true
+                            replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
+                        }
+                    }
+                },
+                onForward: {
+                    if let latestMessage = viewModel.messages.last {
+                        showingReplySheet = false
+                        DispatchQueue.main.async {
+                            showingReplySheet = true
+                            replyModeOverride = .forward(original: latestMessage)
+                        }
+                    }
+                }
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+        }
+        .frame(height: 92)
+    }
+
+    // Popover overlay anchored to reply split button
+    @ViewBuilder
+    private var replyPopoverOverlay: some View {
+        overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
+            GeometryReader { proxy in
+                popoverContent(anchor: anchor, proxy: proxy)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func popoverContent(anchor: Anchor<CGRect>?, proxy: GeometryProxy) -> some View {
+        if showReplyPopover, let anchor {
+            let frame = proxy[anchor]
+            let popoverWidth: CGFloat = 260
+            let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
+
+            ZStack {
+                Color.black.opacity(0.10)
+                    .ignoresSafeArea()
+                    .onTapGesture { showReplyPopover = false }
+
+                ReplyActionsPopover(
+                    onReply: {
+                        showReplyPopover = false
+                        showingReplySheet = true
+                    },
+                    onReplyAll: {
+                        if let latestMessage = viewModel.messages.last {
+                            showReplyPopover = false
+                            showingReplySheet = true
+                            replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
+                        }
+                    },
+                    onForward: {
+                        if let latestMessage = viewModel.messages.last {
+                            showReplyPopover = false
+                            showingReplySheet = true
+                            replyModeOverride = .forward(original: latestMessage)
+                        }
+                    },
+                    onDismiss: { showReplyPopover = false }
+                )
+                .position(x: clampedX, y: frame.minY - 18)
+                .transition(.scale(scale: 0.98).combined(with: .opacity))
+            }
+        }
     }
 }
 
@@ -2196,55 +2252,8 @@ struct DetailBottomBar: View {
 
 // MARK: - New Detail Bottom Dock (Archive + Reply with long-press menu)
 
-private enum DockButtonStyle {
-    case primary
-    case secondary
-}
-
-private struct DockPillButton: View {
-    let title: String
-    let systemImage: String
-    let style: DockButtonStyle
-    let action: () -> Void
-    var onLongPress: (() -> Void)? = nil
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14)
-                .frame(minHeight: 52)
-                .frame(maxWidth: .infinity)
-                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(foreground)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(style == .primary ? Color.accentColor.opacity(0.92) : Color(.systemBackground).opacity(0.8))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(GlassTokens.strokeColor.opacity(style == .primary ? 0.18 : 0.25), lineWidth: GlassTokens.strokeWidth)
-        )
-        .shadow(color: GlassTokens.shadowColor.opacity(0.02), radius: 2, y: 1)
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                onLongPress?()
-            }
-        )
-    }
-
-    private var foreground: Color {
-        switch style {
-        case .primary: return .white
-        case .secondary: return .primary
-        }
-    }
-}
-
 struct DetailBottomDock: View {
-    @Binding var showReplyActions: Bool
+    @Binding var showReplyPopover: Bool
     let onArchive: () -> Void
     let onReply: () -> Void
     let onReplyAll: () -> Void
@@ -2252,15 +2261,15 @@ struct DetailBottomDock: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            DockPillButton(title: "Archive", systemImage: "archivebox", style: .secondary, action: onArchive)
+            archiveButton
                 .frame(width: 140)
 
-            DockPillButton(
-                title: "Reply",
-                systemImage: "arrowshape.turn.up.left",
-                style: .primary,
-                action: onReply,
-                onLongPress: { showReplyActions = true }
+            ReplySplitButton(
+                onReply: onReply,
+                onShowActions: {
+                    showReplyPopover = true
+                    HapticFeedback.light()
+                }
             )
             .frame(maxWidth: .infinity)
             .layoutPriority(1)
@@ -2276,12 +2285,131 @@ struct DetailBottomDock: View {
                 )
                 .shadow(color: GlassTokens.shadowColor.opacity(0.04), radius: 6, y: 3)
         )
-        .confirmationDialog("Reply", isPresented: $showReplyActions, titleVisibility: .hidden) {
-            Button("Reply") { onReply() }
-            Button("Reply All") { onReplyAll() }
-            Button("Forward") { onForward() }
-            Button("Cancel", role: .cancel) { }
+    }
+
+    private var archiveButton: some View {
+        Button(action: onArchive) {
+            Label("Archive", systemImage: "archivebox")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .padding(.horizontal, 12)
+                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.primary)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(.systemBackground).opacity(0.85))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(GlassTokens.strokeColor.opacity(0.2), lineWidth: GlassTokens.strokeWidth)
+        )
+    }
+}
+
+// MARK: - Reply Split + Popover Helpers
+
+private struct ReplyButtonAnchorKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = nextValue() ?? value
+    }
+}
+
+private struct ReplySplitButton: View {
+    let onReply: () -> Void
+    let onShowActions: () -> Void
+    var enableLongPress: Bool = true
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: onReply) {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: 1, height: 24)
+
+            Button(action: onShowActions) {
+                Image(systemName: "chevron.up")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(width: 48, height: 52)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 4)
+        .background(
+            Capsule()
+                .fill(Color.accentColor.opacity(0.92))
+        )
+        .overlay(
+            Capsule()
+                .stroke(GlassTokens.strokeColor.opacity(0.18), lineWidth: GlassTokens.strokeWidth)
+        )
+        .shadow(color: GlassTokens.shadowColor.opacity(0.04), radius: 4, y: 2)
+        .anchorPreference(key: ReplyButtonAnchorKey.self, value: .bounds) { $0 }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                if enableLongPress { onShowActions() }
+            }
+        )
+    }
+}
+
+private struct ReplyActionsPopover: View {
+    let onReply: () -> Void
+    let onReplyAll: () -> Void
+    let onForward: () -> Void
+    let onDismiss: () -> Void
+
+    private let width: CGFloat = 260
+
+    var body: some View {
+        VStack(spacing: 12) {
+            actionRow(title: "Reply", systemImage: "arrowshape.turn.up.left", action: onReply)
+            actionRow(title: "Reply All", systemImage: "arrowshape.turn.up.left.2", action: onReplyAll)
+            actionRow(title: "Forward", systemImage: "arrowshape.turn.up.right", action: onForward)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .frame(width: width)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(GlassTokens.controlMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity), lineWidth: GlassTokens.strokeWidth)
+                )
+                .shadow(color: GlassTokens.shadowColor.opacity(0.08), radius: 10, y: 6)
+        )
+    }
+
+    private func actionRow(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: {
+            action()
+            onDismiss()
+        }) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
     }
 }
 
