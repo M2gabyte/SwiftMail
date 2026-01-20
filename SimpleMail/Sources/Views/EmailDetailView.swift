@@ -472,40 +472,47 @@ struct EmailDetailView: View {
 
     @ViewBuilder
     private func popoverContent(anchor: Anchor<CGRect>?, proxy: GeometryProxy) -> some View {
-        if showReplyPopover, let anchor {
-            let frame = proxy[anchor]
-            let popoverWidth: CGFloat = 260
-            let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
+        guard showReplyPopover, let anchor else { EmptyView() }
 
-            ZStack {
-                Color.black.opacity(0.10)
-                    .ignoresSafeArea()
-                    .onTapGesture { showReplyPopover = false }
+        let frame = proxy[anchor]
+        let popoverWidth: CGFloat = 260
+        let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
 
-                ReplyActionsPopover(
-                    onReply: {
+        ZStack {
+            Color.black.opacity(0.10)
+                .ignoresSafeArea()
+                .onTapGesture { showReplyPopover = false }
+
+            ReplyActionsPopover(
+                onReply: {
+                    showReplyPopover = false
+                    showingReplySheet = true
+                },
+                onReplyAll: {
+                    if let latestMessage = viewModel.messages.last {
                         showReplyPopover = false
                         showingReplySheet = true
-                    },
-                    onReplyAll: {
-                        if let latestMessage = viewModel.messages.last {
-                            showReplyPopover = false
-                            showingReplySheet = true
-                            replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
-                        }
-                    },
-                    onForward: {
-                        if let latestMessage = viewModel.messages.last {
-                            showReplyPopover = false
-                            showingReplySheet = true
-                            replyModeOverride = .forward(original: latestMessage)
-                        }
-                    },
-                    onDismiss: { showReplyPopover = false }
-                )
-                .position(x: clampedX, y: frame.minY - 18)
+                        replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
+                    }
+                },
+                onForward: {
+                    if let latestMessage = viewModel.messages.last {
+                        showReplyPopover = false
+                        showingReplySheet = true
+                        replyModeOverride = .forward(original: latestMessage)
+                    }
+                },
+                onDismiss: { showReplyPopover = false }
+            )
+            .position(x: clampedX, y: frame.minY - 18)
                 .transition(.scale(scale: 0.98).combined(with: .opacity))
-            }
+        }
+    }
+
+    // Ensure we clear popover state if the detail view disappears mid-gesture
+    private func resetReplyPopoverIfNeeded() {
+        if showReplyPopover {
+            showReplyPopover = false
         }
     }
 }
