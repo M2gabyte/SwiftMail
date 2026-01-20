@@ -463,11 +463,9 @@ struct EmailDetailView: View {
     // Popover overlay anchored to reply split button
     @ViewBuilder
     private var replyPopoverOverlay: some View {
-        if showReplyPopover {
-            overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
-                GeometryReader { proxy in
-                    popoverContent(anchor: anchor, proxy: proxy)
-                }
+        overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
+            GeometryReader { proxy in
+                popoverContent(anchor: anchor, proxy: proxy)
             }
         }
     }
@@ -509,7 +507,13 @@ struct EmailDetailView: View {
                 .transition(.scale(scale: 0.98).combined(with: .opacity))
             }
         } else {
-            EmptyView()
+            Color.clear
+                .onAppear {
+                    // If the anchor disappears while the popover flag is still set, close it to avoid stale state / crashes.
+                    if showReplyPopover {
+                        showReplyPopover = false
+                    }
+                }
         }
     }
 
