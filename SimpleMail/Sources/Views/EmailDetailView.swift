@@ -238,6 +238,7 @@ struct EmailDetailView: View {
     @StateObject private var viewModel: EmailDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingReplySheet = false
+    @State private var replyModeOverride: ComposeMode?
     @State private var showingActionSheet = false
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
@@ -342,18 +343,27 @@ struct EmailDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            DetailBottomBar(
-                onReply: { showingReplySheet = true },
+            DetailBottomDock(
                 onArchive: {
-                    Task {
-                        await viewModel.archive()
-                        dismiss()
+                    Task { await viewModel.archive(); dismiss() }
+                },
+                onReply: { showingReplySheet = true },
+                onReplyAll: {
+                    if let latestMessage = viewModel.messages.last {
+                        showingReplySheet = false
+                        DispatchQueue.main.async {
+                            showingReplySheet = true
+                            replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
+                        }
                     }
                 },
-                onTrash: {
-                    Task {
-                        await viewModel.trash()
-                        dismiss()
+                onForward: {
+                    if let latestMessage = viewModel.messages.last {
+                        showingReplySheet = false
+                        DispatchQueue.main.async {
+                            showingReplySheet = true
+                            replyModeOverride = .forward(original: latestMessage)
+                        }
                     }
                 }
             )
@@ -368,10 +378,10 @@ struct EmailDetailView: View {
             )
         }
         .sheet(isPresented: $showingReplySheet) {
-            if let latestMessage = viewModel.messages.last {
-                ComposeView(
-                    mode: .reply(to: latestMessage, threadId: threadId)
-                )
+            if let mode = replyModeOverride {
+                ComposeView(mode: mode)
+            } else if let latestMessage = viewModel.messages.last {
+                ComposeView(mode: .reply(to: latestMessage, threadId: threadId))
             }
         }
         .sheet(isPresented: $showingSnoozeSheet) {
@@ -2176,6 +2186,92 @@ struct DetailBottomBar: View {
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("Delete")
+    }
+}
+
+// MARK: - New Detail Bottom Dock (Archive + Reply with long-press menu)
+
+private enum DockButtonStyle {
+    case primary
+    case secondary
+}
+
+private struct DockPillButton: View {
+    let title: String
+    let systemImage: String
+    let style: DockButtonStyle
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .frame(minHeight: 52)
+                .frame(maxWidth: .infinity)
+                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(foreground)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(style == .primary ? Color.accentColor.opacity(0.92) : Color(UIColor.secondarySystemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(GlassTokens.strokeColor.opacity(style == .primary ? 0.18 : 0.25), lineWidth: GlassTokens.strokeWidth)
+        )
+        .shadow(color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity), radius: GlassTokens.shadowRadius, y: GlassTokens.shadowY)
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .primary: return .white
+        case .secondary: return .primary
+        }
+    }
+}
+
+struct DetailBottomDock: View {
+    let onArchive: () -> Void
+    let onReply: () -> Void
+    let onReplyAll: () -> Void
+    let onForward: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            DockPillButton(title: "Archive", systemImage: "archivebox", style: .secondary, action: onArchive)
+                .frame(width: 140)
+
+            DockPillButton(title: "Reply", systemImage: "arrowshape.turn.up.left", style: .primary, action: onReply)
+                .frame(maxWidth: .infinity)
+                .layoutPriority(1)
+                .contextMenu {
+                    Button(action: onReply) {
+                        Label("Reply", systemImage: "arrowshape.turn.up.left")
+                    }
+                    Button(action: onReplyAll) {
+                        Label("Reply All", systemImage: "arrowshape.turn.up.left.2")
+                    }
+                    Button(action: onForward) {
+                        Label("Forward", systemImage: "arrowshape.turn.up.right")
+                    }
+                }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .background(dockBackground)
+    }
+
+    private var dockBackground: some View {
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(GlassTokens.controlMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity), lineWidth: GlassTokens.strokeWidth)
+            )
+            .shadow(color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity), radius: GlassTokens.shadowRadius, y: GlassTokens.shadowY)
     }
 }
 

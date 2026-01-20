@@ -161,17 +161,14 @@ struct SettingsView: View {
 
             HStack(spacing: 12) {
                 SettingsIcon(systemName: "tray.2.fill", color: .green)
-                Toggle("Show category banners", isOn: $viewModel.settings.showCategoryBundles)
+                Picker("Category Bundles", selection: $viewModel.settings.bundlesPlacement) {
+                    ForEach(InboxBundlesPlacement.allCases, id: \.self) { placement in
+                        Text(placement.displayName).tag(placement)
+                    }
+                }
             }
             .font(.callout)
-            .onChange(of: viewModel.settings.showCategoryBundles) { _, _ in viewModel.saveSettings() }
-
-            HStack(spacing: 12) {
-                SettingsIcon(systemName: "line.3.horizontal.decrease", color: .green)
-                Toggle("Place banners inline (Gmail-style)", isOn: $viewModel.settings.showCategoryBundlesInline)
-            }
-            .font(.callout)
-            .onChange(of: viewModel.settings.showCategoryBundlesInline) { _, _ in viewModel.saveSettings() }
+            .onChange(of: viewModel.settings.bundlesPlacement) { _, _ in viewModel.saveSettings() }
 
             HStack(spacing: 12) {
                 SettingsIcon(systemName: "text.alignleft", color: .indigo)
@@ -679,12 +676,26 @@ enum AppTheme: String, Codable {
     case dark
 }
 
+/// Controls where category bundles (Promotions, Updates, Social) appear in the inbox
+enum InboxBundlesPlacement: String, Codable, CaseIterable {
+    case off = "off"
+    case pinned = "pinned"
+    case inline = "inline"
+
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .pinned: return "Pinned to Top"
+        case .inline: return "Inline (Gmail-style)"
+        }
+    }
+}
+
 struct AppSettings: Codable {
     var leftSwipeAction: SwipeAction = .archive
     var rightSwipeAction: SwipeAction = .markRead
     var showAvatars: Bool = true
-    var showCategoryBundles: Bool = true
-    var showCategoryBundlesInline: Bool = false
+    var bundlesPlacement: InboxBundlesPlacement = .pinned
     var listDensity: ListDensity = .comfortable
     var theme: AppTheme = .system
     var notificationsEnabled: Bool = true
@@ -705,10 +716,128 @@ struct AppSettings: Codable {
     var hapticsEnabled: Bool = true
     var followUpNudgesEnabled: Bool = false
     var followUpNudgeDelayDays: Int = 3
-
-    // Advanced settings
     var conversationThreading: Bool = true
-    // Note: listDensity (already above) is also surfaced in Advanced as "Preview density"
+
+    // MARK: - Legacy computed properties for backward compatibility
+
+    /// Legacy property - now computed from bundlesPlacement
+    var showCategoryBundles: Bool {
+        get { bundlesPlacement != .off }
+        set {
+            if !newValue {
+                bundlesPlacement = .off
+            } else if bundlesPlacement == .off {
+                bundlesPlacement = .pinned
+            }
+        }
+    }
+
+    /// Legacy property - now computed from bundlesPlacement
+    var showCategoryBundlesInline: Bool {
+        get { bundlesPlacement == .inline }
+        set {
+            if newValue {
+                bundlesPlacement = .inline
+            } else if bundlesPlacement == .inline {
+                bundlesPlacement = .pinned
+            }
+        }
+    }
+
+    init() {}
+
+    // MARK: - Custom Codable for migration from legacy format
+
+    private enum CodingKeys: String, CodingKey {
+        case leftSwipeAction, rightSwipeAction, showAvatars, bundlesPlacement, listDensity
+        case theme, notificationsEnabled, notifyNewEmails, notifyNeedsReply, notifyVIPSenders
+        case biometricLock, blockRemoteImages, blockTrackingPixels, stripTrackingParameters
+        case autoSummarize, precomputeSummaries, backgroundSummaryProcessing, smartReplies
+        case signature, showUndoToasts, undoSendDelaySeconds, hapticsEnabled
+        case followUpNudgesEnabled, followUpNudgeDelayDays, conversationThreading
+    }
+
+    // Legacy keys for migration only (used in decoding)
+    private enum LegacyCodingKeys: String, CodingKey {
+        case showCategoryBundles
+        case showCategoryBundlesInline
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        leftSwipeAction = try container.decodeIfPresent(SwipeAction.self, forKey: .leftSwipeAction) ?? .archive
+        rightSwipeAction = try container.decodeIfPresent(SwipeAction.self, forKey: .rightSwipeAction) ?? .markRead
+        showAvatars = try container.decodeIfPresent(Bool.self, forKey: .showAvatars) ?? true
+        listDensity = try container.decodeIfPresent(ListDensity.self, forKey: .listDensity) ?? .comfortable
+        theme = try container.decodeIfPresent(AppTheme.self, forKey: .theme) ?? .system
+        notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
+        notifyNewEmails = try container.decodeIfPresent(Bool.self, forKey: .notifyNewEmails) ?? true
+        notifyNeedsReply = try container.decodeIfPresent(Bool.self, forKey: .notifyNeedsReply) ?? true
+        notifyVIPSenders = try container.decodeIfPresent(Bool.self, forKey: .notifyVIPSenders) ?? true
+        biometricLock = try container.decodeIfPresent(Bool.self, forKey: .biometricLock) ?? false
+        blockRemoteImages = try container.decodeIfPresent(Bool.self, forKey: .blockRemoteImages) ?? false
+        blockTrackingPixels = try container.decodeIfPresent(Bool.self, forKey: .blockTrackingPixels) ?? true
+        stripTrackingParameters = try container.decodeIfPresent(Bool.self, forKey: .stripTrackingParameters) ?? true
+        autoSummarize = try container.decodeIfPresent(Bool.self, forKey: .autoSummarize) ?? true
+        precomputeSummaries = try container.decodeIfPresent(Bool.self, forKey: .precomputeSummaries) ?? true
+        backgroundSummaryProcessing = try container.decodeIfPresent(Bool.self, forKey: .backgroundSummaryProcessing) ?? false
+        smartReplies = try container.decodeIfPresent(Bool.self, forKey: .smartReplies) ?? true
+        signature = try container.decodeIfPresent(String.self, forKey: .signature) ?? ""
+        showUndoToasts = try container.decodeIfPresent(Bool.self, forKey: .showUndoToasts) ?? true
+        undoSendDelaySeconds = try container.decodeIfPresent(Int.self, forKey: .undoSendDelaySeconds) ?? 5
+        hapticsEnabled = try container.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
+        followUpNudgesEnabled = try container.decodeIfPresent(Bool.self, forKey: .followUpNudgesEnabled) ?? false
+        followUpNudgeDelayDays = try container.decodeIfPresent(Int.self, forKey: .followUpNudgeDelayDays) ?? 3
+        conversationThreading = try container.decodeIfPresent(Bool.self, forKey: .conversationThreading) ?? true
+
+        // Handle migration from old boolean properties to new enum
+        if let placement = try? container.decode(InboxBundlesPlacement.self, forKey: .bundlesPlacement) {
+            bundlesPlacement = placement
+        } else {
+            // Try to migrate from legacy format
+            let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            let oldShowBundles = try legacyContainer.decodeIfPresent(Bool.self, forKey: .showCategoryBundles) ?? true
+            let oldInline = try legacyContainer.decodeIfPresent(Bool.self, forKey: .showCategoryBundlesInline) ?? false
+            if !oldShowBundles {
+                bundlesPlacement = .off
+            } else if oldInline {
+                bundlesPlacement = .inline
+            } else {
+                bundlesPlacement = .pinned
+            }
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        try container.encode(leftSwipeAction, forKey: .leftSwipeAction)
+        try container.encode(rightSwipeAction, forKey: .rightSwipeAction)
+        try container.encode(showAvatars, forKey: .showAvatars)
+        try container.encode(bundlesPlacement, forKey: .bundlesPlacement)
+        try container.encode(listDensity, forKey: .listDensity)
+        try container.encode(theme, forKey: .theme)
+        try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
+        try container.encode(notifyNewEmails, forKey: .notifyNewEmails)
+        try container.encode(notifyNeedsReply, forKey: .notifyNeedsReply)
+        try container.encode(notifyVIPSenders, forKey: .notifyVIPSenders)
+        try container.encode(biometricLock, forKey: .biometricLock)
+        try container.encode(blockRemoteImages, forKey: .blockRemoteImages)
+        try container.encode(blockTrackingPixels, forKey: .blockTrackingPixels)
+        try container.encode(stripTrackingParameters, forKey: .stripTrackingParameters)
+        try container.encode(autoSummarize, forKey: .autoSummarize)
+        try container.encode(precomputeSummaries, forKey: .precomputeSummaries)
+        try container.encode(backgroundSummaryProcessing, forKey: .backgroundSummaryProcessing)
+        try container.encode(smartReplies, forKey: .smartReplies)
+        try container.encode(signature, forKey: .signature)
+        try container.encode(showUndoToasts, forKey: .showUndoToasts)
+        try container.encode(undoSendDelaySeconds, forKey: .undoSendDelaySeconds)
+        try container.encode(hapticsEnabled, forKey: .hapticsEnabled)
+        try container.encode(followUpNudgesEnabled, forKey: .followUpNudgesEnabled)
+        try container.encode(followUpNudgeDelayDays, forKey: .followUpNudgeDelayDays)
+        try container.encode(conversationThreading, forKey: .conversationThreading)
+    }
 }
 
 // MARK: - Settings ViewModel
