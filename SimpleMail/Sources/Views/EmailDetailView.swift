@@ -383,6 +383,7 @@ struct EmailDetailView: View {
         .toolbar(.hidden, for: .tabBar)
         .onAppear { StallLogger.mark("EmailDetail.appear") }
         .onDisappear { showReplyPopover = false }
+        .coordinateSpace(name: "ReplyOverlay")
     }
 
     // Split out main scroll content so the compiler has fewer nested clauses to solve.
@@ -501,7 +502,7 @@ struct EmailDetailView: View {
     @ViewBuilder
     private func popoverContent(anchor: Anchor<CGRect>?, proxy: GeometryProxy) -> some View {
         if showReplyPopover, let anchor {
-            let frame = proxy[anchor]
+            let frame = proxy[anchor, in: .named("ReplyOverlay")]
             let popoverWidth: CGFloat = 260
             let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
             let popoverHeight: CGFloat = 150
