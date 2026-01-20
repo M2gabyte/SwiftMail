@@ -331,8 +331,10 @@ struct InboxFilterEngine {
         let primary = alwaysPrimarySenders(for: accountEmail)
         if primary.contains(sender) { return .primary }
 
+        // "Always other" senders are not forced to primary, so return nil
+        // to let normal classification run
         let other = alwaysOtherSenders(for: accountEmail)
-        if other.contains(sender) { return .custom }
+        if other.contains(sender) { return nil }
 
         return nil
     }
@@ -497,31 +499,6 @@ struct InboxFilterEngine {
         return !hasNonPrimaryCategory
     }
 
-    private static func matchesPinned(
-        _ email: EmailSnapshot,
-        pinnedTabOption: PinnedTabOption,
-        currentAccountEmail: String?,
-        classifications: [String: Classification]
-    ) -> Bool {
-        guard let classification = classifications[email.id] else { return false }
-        switch pinnedTabOption {
-        case .other:
-            return !isPrimary(email, classification: classification, currentAccountEmail: currentAccountEmail)
-        case .money:
-            return classification.isMoney
-        case .deadlines:
-            return classification.isDeadline
-        case .needsReply:
-            return classification.isNeedsReply
-        case .unread:
-            return email.isUnread
-        case .newsletters:
-            return classification.isNewsletter
-        case .people:
-            return classification.isPeople
-        }
-    }
-
     private static func applyTabContext(
         _ emails: [EmailSnapshot],
         currentTab: InboxTab,
@@ -537,15 +514,6 @@ struct InboxFilterEngine {
             filtered = filtered.filter { email in
                 guard let classification = classifications[email.id] else { return false }
                 return isPrimary(email, classification: classification, currentAccountEmail: currentAccountEmail)
-            }
-        case .custom:
-            filtered = filtered.filter { email in
-                matchesPinned(
-                    email,
-                    pinnedTabOption: pinnedTabOption,
-                    currentAccountEmail: currentAccountEmail,
-                    classifications: classifications
-                )
             }
         }
 

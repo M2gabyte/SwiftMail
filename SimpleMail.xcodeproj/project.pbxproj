@@ -7,11 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		2D131647C9A0C5DF1ED2EF06 /* CustomLanePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0059D67787CE426DFD714C41 /* CustomLanePickerSheet.swift */; };
 		2E979ED05361A363494B8C8F /* EmailSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99DE39A09AF391CBAFDC05DA /* EmailSnapshot.swift */; };
 		6B84FE21D7C346B2 /* PendingSendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3582BDA6D42420A /* PendingSendManager.swift */; };
-		74C8DAB2308F55DC0585915B /* InboxTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D39820256340CE972A760FE2 /* InboxTabBar.swift */; };
-		9FB64EEEB36C45EBD07877F4 /* InboxTopBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A4E0FE1092DEA1D1E22049 /* InboxTopBar.swift */; };
 		A1000001 /* SimpleMailApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000001 /* SimpleMailApp.swift */; };
 		A1000002 /* Email.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002 /* Email.swift */; };
 		A1000003 /* Briefing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Briefing.swift */; };
@@ -63,7 +60,6 @@
 		A1000062 /* PrimaryRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* PrimaryRule.swift */; };
 		A1000063 /* InboxPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000063 /* InboxPreferences.swift */; };
 		A1000064 /* PrimaryInboxRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000064 /* PrimaryInboxRulesView.swift */; };
-		A1000065 /* PinnedTabSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000065 /* PinnedTabSettingsView.swift */; };
 		A1000099 /* EmailPreviewParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000099 /* EmailPreviewParser.swift */; };
 		A10000A0 /* InboxViewModelCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A0 /* InboxViewModelCacheTests.swift */; };
 		A10000A1 /* EmailSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000A1 /* EmailSection.swift */; };
@@ -98,7 +94,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		0059D67787CE426DFD714C41 /* CustomLanePickerSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CustomLanePickerSheet.swift; path = SimpleMail/Sources/Views/CustomLanePickerSheet.swift; sourceTree = "<group>"; };
 		4DC2BDD02F063BC300D0267A /* SimpleMailUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMailUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		99DE39A09AF391CBAFDC05DA /* EmailSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EmailSnapshot.swift; path = SimpleMail/Sources/ViewModels/EmailSnapshot.swift; sourceTree = "<group>"; };
 		B0000001 /* SimpleMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -155,7 +150,6 @@
 		B1000062 /* PrimaryRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryRule.swift; sourceTree = "<group>"; };
 		B1000063 /* InboxPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxPreferences.swift; sourceTree = "<group>"; };
 		B1000064 /* PrimaryInboxRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryInboxRulesView.swift; sourceTree = "<group>"; };
-		B1000065 /* PinnedTabSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabSettingsView.swift; sourceTree = "<group>"; };
 		B1000099 /* EmailPreviewParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailPreviewParser.swift; sourceTree = "<group>"; };
 		B10000A0 /* InboxViewModelCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxViewModelCacheTests.swift; sourceTree = "<group>"; };
 		B10000A1 /* EmailSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSection.swift; sourceTree = "<group>"; };
@@ -177,8 +171,6 @@
 		B9000100 /* GmailBucket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GmailBucket.swift; sourceTree = "<group>"; };
 		B9000101 /* BucketRowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketRowModel.swift; sourceTree = "<group>"; };
 		B9000102 /* BucketSeenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketSeenStore.swift; sourceTree = "<group>"; };
-		D39820256340CE972A760FE2 /* InboxTabBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InboxTabBar.swift; path = SimpleMail/Sources/Views/InboxTabBar.swift; sourceTree = "<group>"; };
-		20A4E0FE1092DEA1D1E22049 /* InboxTopBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InboxTopBar.swift; path = SimpleMail/Sources/Views/InboxTopBar.swift; sourceTree = "<group>"; };
 		D7F9E59BDEE31EB40CDDA6A6 /* GlassDesignSystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GlassDesignSystem.swift; path = SimpleMail/Sources/Views/GlassDesignSystem.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -226,9 +218,6 @@
 		6D4FE1EF1D508A5A4B90BC27 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				D39820256340CE972A760FE2 /* InboxTabBar.swift */,
-				20A4E0FE1092DEA1D1E22049 /* InboxTopBar.swift */,
-				0059D67787CE426DFD714C41 /* CustomLanePickerSheet.swift */,
 				D7F9E59BDEE31EB40CDDA6A6 /* GlassDesignSystem.swift */,
 			);
 			name = Views;
@@ -317,7 +306,6 @@
 				B1000009 /* SnoozePickerSheet.swift */,
 				B1000011 /* SettingsView.swift */,
 				B1000064 /* PrimaryInboxRulesView.swift */,
-				B1000065 /* PinnedTabSettingsView.swift */,
 				B1000021 /* AttachmentViewer.swift */,
 				B1000022 /* BatchOperations.swift */,
 				B1000024 /* SmartAvatarView.swift */,
@@ -544,7 +532,6 @@
 				A1000009 /* SnoozePickerSheet.swift in Sources */,
 				A1000011 /* SettingsView.swift in Sources */,
 				A1000064 /* PrimaryInboxRulesView.swift in Sources */,
-				A1000065 /* PinnedTabSettingsView.swift in Sources */,
 				A1000012 /* InboxViewModel.swift in Sources */,
 				A10000AB /* BriefingViewModel.swift in Sources */,
 				A1000013 /* GmailService.swift in Sources */,
@@ -596,9 +583,6 @@
 				A9000100 /* GmailBucket.swift in Sources */,
 				A9000101 /* BucketRowModel.swift in Sources */,
 				A9000102 /* BucketSeenStore.swift in Sources */,
-				74C8DAB2308F55DC0585915B /* InboxTabBar.swift in Sources */,
-				9FB64EEEB36C45EBD07877F4 /* InboxTopBar.swift in Sources */,
-				2D131647C9A0C5DF1ED2EF06 /* CustomLanePickerSheet.swift in Sources */,
 				BBFBC3F0BBE8AA4034E5608F /* GlassDesignSystem.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

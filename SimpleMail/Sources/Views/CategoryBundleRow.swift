@@ -33,7 +33,7 @@ struct CategoryBundleRow: View {
 
                 // Content
                 VStack(alignment: .leading, spacing: 3) {
-                    // Top row: category name + unread badge
+                    // Top row: category name + unread badge + chevron
                     HStack(spacing: 8) {
                         Text(category.displayName)
                             .font(.subheadline.weight(hasUnseen ? .semibold : .medium))
@@ -52,11 +52,6 @@ struct CategoryBundleRow: View {
                         }
 
                         Spacer()
-
-                        // Total count
-                        Text("\(model.totalCount)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
 
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))

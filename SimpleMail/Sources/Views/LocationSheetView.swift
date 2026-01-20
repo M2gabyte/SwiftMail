@@ -133,8 +133,10 @@ struct LocationSheetView: View {
                 }
 
                 Section {
-                    NavigationLink("Manage accounts…") {
+                    NavigationLink {
                         SettingsView()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
                     }
                 }
             }

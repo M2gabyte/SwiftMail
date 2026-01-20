@@ -355,15 +355,6 @@ struct SettingsView: View {
                     Text("Primary Inbox")
                 }
             }
-
-            NavigationLink {
-                PinnedTabSettingsView()
-            } label: {
-                HStack(spacing: 12) {
-                    SettingsIcon(systemName: "pin.fill", color: .orange)
-                    Text("Pinned Tab")
-                }
-            }
         } header: {
             Text("Inbox")
         }

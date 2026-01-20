@@ -2370,10 +2370,33 @@ class EmailDetailViewModel: ObservableObject {
         return AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
     }
 
+    private var undoObserver: NSObjectProtocol?
+
     init(threadId: String, accountEmail: String?) {
         self.threadId = threadId
         self.accountEmail = accountEmail
+
+        // Listen for undo notifications to reload the thread
+        undoObserver = NotificationCenter.default.addObserver(
+            forName: .singleMessageActionUndone,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let undoneThreadId = notification.userInfo?["threadId"] as? String,
+                      undoneThreadId == self.threadId else { return }
+                await self.loadThread()
+            }
+        }
     }
+
+    deinit {
+        if let observer = undoObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
     private let renderActor = BodyRenderActor()
     private var didLogBodySwap = false
 
@@ -2581,20 +2604,62 @@ class EmailDetailViewModel: ObservableObject {
         }
     }
 
-    func archive() async {
+    /// Archive the most recent message in the thread (with undo support).
+    /// Returns true if there are remaining messages in the thread, false if the thread is now empty.
+    func archive() async -> Bool {
+        guard let lastMessage = messages.last else { return false }
+        let remainingCount = messages.count - 1
+
+        // Remove the message from local view immediately
+        messages.removeAll { $0.id == lastMessage.id }
+        expandedMessageIds.remove(lastMessage.id)
+
+        // Expand the new last message if any remain
+        if let newLast = messages.last {
+            expandedMessageIds.insert(newLast.id)
+        }
+
+        // Post notification with all info needed for undo-able operation
         NotificationCenter.default.post(
-            name: .archiveThreadRequested,
+            name: .archiveMessageRequested,
             object: nil,
-            userInfo: ["threadId": threadId]
+            userInfo: [
+                "messageId": lastMessage.id,
+                "threadId": threadId,
+                "accountEmail": accountEmail as Any
+            ]
         )
+
+        return remainingCount > 0
     }
 
-    func trash() async {
+    /// Trash the most recent message in the thread (with undo support).
+    /// Returns true if there are remaining messages in the thread, false if the thread is now empty.
+    func trash() async -> Bool {
+        guard let lastMessage = messages.last else { return false }
+        let remainingCount = messages.count - 1
+
+        // Remove the message from local view immediately
+        messages.removeAll { $0.id == lastMessage.id }
+        expandedMessageIds.remove(lastMessage.id)
+
+        // Expand the new last message if any remain
+        if let newLast = messages.last {
+            expandedMessageIds.insert(newLast.id)
+        }
+
+        // Post notification with all info needed for undo-able operation
         NotificationCenter.default.post(
-            name: .trashThreadRequested,
+            name: .trashMessageRequested,
             object: nil,
-            userInfo: ["threadId": threadId]
+            userInfo: [
+                "messageId": lastMessage.id,
+                "threadId": threadId,
+                "accountEmail": accountEmail as Any
+            ]
         )
+
+        return remainingCount > 0
     }
 
     func toggleStar() async {

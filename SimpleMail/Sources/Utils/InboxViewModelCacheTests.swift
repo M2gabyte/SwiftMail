@@ -19,7 +19,6 @@ enum InboxViewModelCacheTests {
         results.append(contentsOf: await testRecomputesAfterFilterChange())
         results.append(contentsOf: await testRecomputesAfterEmailsChange())
         results.append(contentsOf: await testRecomputesAfterTabChange())
-        results.append(contentsOf: await testRecomputesAfterPinnedChange())
         results.append(contentsOf: await testRecomputesAfterFilterVersionChange())
 
         let passed = results.filter { $0.passed }.count
@@ -120,39 +119,6 @@ enum InboxViewModelCacheTests {
             name: "Recompute after tab change",
             passed: allCount == 1 && primaryCount == 0,
             message: "all=\(allCount), primary=\(primaryCount)"
-        ))
-
-        return results
-    }
-
-    private static func testRecomputesAfterPinnedChange() async -> [TestResult] {
-        var results: [TestResult] = []
-
-        let viewModel = InboxViewModel()
-        let now = Date()
-        let invoice = Email(
-            id: "money",
-            threadId: "tmoney",
-            snippet: "Payment due",
-            subject: "Invoice due",
-            from: "Billing <billing@example.com>",
-            date: now
-        )
-        viewModel.emails = [invoice]
-
-        viewModel.currentTab = .custom
-        viewModel.pinnedTabOption = .money
-        let moneyState = await viewModel.refreshViewStateForTests()
-        let moneyCount = totalEmailCount(moneyState.sections)
-
-        viewModel.pinnedTabOption = .deadlines
-        let deadlineState = await viewModel.refreshViewStateForTests()
-        let deadlineCount = totalEmailCount(deadlineState.sections)
-
-        results.append(TestResult(
-            name: "Recompute after pinned option change",
-            passed: moneyCount == 1 && deadlineCount == 0,
-            message: "money=\(moneyCount), deadlines=\(deadlineCount)"
         ))
 
         return results
