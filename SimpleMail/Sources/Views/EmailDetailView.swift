@@ -2360,7 +2360,6 @@ private struct ReplyButtonAnchorKey: PreferenceKey {
 private struct ReplySplitButton: View {
     let onReply: () -> Void
     let onShowActions: () -> Void
-    var enableLongPress: Bool = true
 
     var body: some View {
         HStack(spacing: 0) {
@@ -2397,11 +2396,6 @@ private struct ReplySplitButton: View {
         )
         .shadow(color: GlassTokens.shadowColor.opacity(0.04), radius: 4, y: 2)
         .anchorPreference(key: ReplyButtonAnchorKey.self, value: .bounds) { $0 }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                if enableLongPress { onShowActions() }
-            }
-        )
     }
 }
 
