@@ -19,21 +19,21 @@ struct CategoryBundleRow: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
-                // Category icon with colored background
+            HStack(spacing: 10) {
+                // Category icon with colored background (matches avatar size)
                 ZStack {
                     Circle()
                         .fill(category.color.opacity(0.14))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 40, height: 40)
 
                     Image(systemName: category.icon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(category.color)
                 }
 
                 // Content
                 VStack(alignment: .leading, spacing: 3) {
-                    // Top row: category name + unread badge
+                    // Top row: category name + unread badge + chevron
                     HStack(spacing: 8) {
                         Text(category.displayName)
                             .font(.subheadline.weight(hasUnseen ? .semibold : .medium))
@@ -53,11 +53,6 @@ struct CategoryBundleRow: View {
 
                         Spacer()
 
-                        // Total count
-                        Text("\(model.totalCount)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
@@ -73,8 +68,6 @@ struct CategoryBundleRow: View {
                     }
                 }
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

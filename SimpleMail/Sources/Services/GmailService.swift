@@ -919,10 +919,10 @@ actor GmailService: GmailAPIProvider {
             attachmentId: bodyAttachmentInfo.attachmentId
         )
 
-        // Decode the body content
+        // Decode the body content and clean it
         let body: String
         if let text = String(data: bodyData, encoding: .utf8) {
-            body = text
+            body = cleanBodyContent(text, mimeType: bodyAttachmentInfo.mimeType)
         } else {
             body = ""
         }
@@ -1951,7 +1951,65 @@ actor GmailService: GmailAPIProvider {
             return stripHTMLTags(from: trimmed)
         }
 
+        // Detect and decode Base64 content that wasn't decoded during extraction
+        // This can happen with certain MIME structures
+        if looksLikeBase64(trimmed) {
+            if let decoded = tryDecodeBase64(trimmed) {
+                return decoded
+            }
+        }
+
+        // Also check for Base64 content wrapped in HTML tags
+        // e.g., <div>Q2dwUGJpQkth...</div>
+        if mimeType == "text/html" {
+            let textContent = stripHTMLTags(from: trimmed)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if looksLikeBase64(textContent) {
+                if let decoded = tryDecodeBase64(textContent) {
+                    return decoded
+                }
+            }
+        }
+
         return trimmed
+    }
+
+    /// Check if string looks like Base64-encoded content
+    private nonisolated func looksLikeBase64(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Base64 strings: only alphanumeric + / - _ = and no spaces in middle
+        // Must be at least 20 chars to avoid false positives
+        guard trimmed.count >= 20 else { return false }
+        // Check for Base64 character set (URL-safe or standard)
+        let base64Pattern = "^[A-Za-z0-9+/\\-_=\\s]+$"
+        guard trimmed.range(of: base64Pattern, options: .regularExpression) != nil else { return false }
+        // Should not contain common text patterns
+        let hasCommonWords = trimmed.lowercased().contains(" the ") ||
+                            trimmed.lowercased().contains(" and ") ||
+                            trimmed.contains(". ")
+        return !hasCommonWords
+    }
+
+    /// Try to decode Base64 (both URL-safe and standard formats)
+    private nonisolated func tryDecodeBase64(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+
+        // Try URL-safe Base64 first
+        if let decoded = Base64URL.decode(trimmed), !decoded.isEmpty,
+           decoded.count > 5, // Must produce meaningful output
+           decoded.utf8.allSatisfy({ $0 < 128 || ($0 >= 0xC0) }) { // Valid UTF-8
+            return decoded
+        }
+
+        // Try standard Base64
+        if let data = Data(base64Encoded: trimmed),
+           let decoded = String(data: data, encoding: .utf8),
+           !decoded.isEmpty, decoded.count > 5 {
+            return decoded
+        }
+
+        return nil
     }
 
     // Cached date formatters for parsing (thread-safe static allocation)

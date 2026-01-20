@@ -20,6 +20,13 @@ private struct TopBarHeightKey: PreferenceKey {
     }
 }
 
+// MARK: - Inbox Scope (Primary vs All)
+
+enum InboxScope: String, CaseIterable {
+    case primary = "Primary"
+    case all = "All"
+}
+
 // MARK: - Inbox View
 
 struct InboxView: View {
@@ -41,11 +48,9 @@ struct InboxView: View {
     @State private var showingLocationSheet = false
     @State private var scrollOffset: CGFloat = 0
     @State private var restoredComposeMode: ComposeMode?
-    @State private var showingFilterSheet = false
-    @State private var showingLanePickerSheet = false
+    @State private var scope: InboxScope = .primary
     @State private var showAvatars = true
-    @State private var showCategoryBundles = true
-    @State private var showCategoryBundlesInline = false
+    @State private var bundlesPlacement: InboxBundlesPlacement = .pinned
     @State private var searchFieldFocused = false
     @State private var isSearchMode = false
     @State private var hasPrewarmedSearch = false
@@ -58,11 +63,6 @@ struct InboxView: View {
 
     init() {
         configureListHeaderAppearance()
-    }
-
-    /// Computed active filter label for bottom command surface
-    private var activeFilterLabel: String? {
-        viewModel.activeFilter?.rawValue
     }
 
     /// Cached VIP senders set - computed once per view update, not per-row
@@ -215,22 +215,6 @@ struct InboxView: View {
                     performBulkSnooze(until: date)
                 }
             }
-            .sheet(isPresented: $showingFilterSheet) {
-                FilterSheet(
-                    activeFilter: $viewModel.activeFilter,
-                    filterCounts: viewModel.filterCounts,
-                    bucketTotals: { viewModel.bucketTotalCount($0) },
-                    bucketUnseen: { viewModel.bucketUnseenCount($0) },
-                    onSelectCategory: { bucket in
-                        handleBucketTap(bucket)
-                        showingFilterSheet = false
-                    }
-                )
-                .presentationDetents([.medium])
-            }
-            .sheet(isPresented: $showingLanePickerSheet) {
-                CustomLanePickerSheet(selectedLane: $viewModel.pinnedTabOption)
-            }
             // MARK: - Dialogs & Navigation
             .confirmationDialog("Move to", isPresented: $showingMoveDialog) {
                 Button("Inbox") { performBulkMove(to: .inbox) }
@@ -269,15 +253,6 @@ struct InboxView: View {
                 isSearchMode = false
                 searchFieldFocused = false
             }
-            .onChange(of: viewModel.activeFilter) { oldValue, newValue in
-                exitSelectionMode()
-                // Haptic feedback for filter changes
-                if newValue != nil {
-                    HapticFeedback.light()
-                } else if oldValue != nil {
-                    HapticFeedback.selection()
-                }
-            }
             .onChange(of: viewModel.emails) { _, _ in
                 let valid = Set(viewModel.emails.map { $0.threadId })
                 selectedThreadIds = selectedThreadIds.intersection(valid)
@@ -313,6 +288,15 @@ struct InboxView: View {
                     withAnimation(.easeOut(duration: 0.15)) {
                         searchFieldFocused = false
                     }
+                }
+            }
+            .onChange(of: scope) { _, newScope in
+                // Sync local scope with ViewModel's tab for filtering
+                switch newScope {
+                case .primary:
+                    viewModel.currentTab = .primary
+                case .all:
+                    viewModel.currentTab = .all
                 }
             }
             .onChange(of: searchFieldFocused) { _, focused in
@@ -404,13 +388,10 @@ struct InboxView: View {
         }
         .overlay {
             // Bottom bar as overlay - content scrolls behind it (Apple Mail style)
-            if !isSelectionMode && !showingFilterSheet {
+            if !isSelectionMode {
                 VStack {
                     Spacer()
                     BottomCommandSurface(
-                        isFilterActive: viewModel.activeFilter != nil,
-                        activeFilterLabel: activeFilterLabel,
-                        activeFilterCount: viewModel.activeFilter.flatMap { viewModel.filterCounts[$0] },
                         searchMode: (isSearchMode || searchFieldFocused) ? .editing : .idle,
                         showSearchField: true,
                         searchText: $searchText,
@@ -437,7 +418,7 @@ struct InboxView: View {
                             debouncedSearchText = ""
                             viewModel.clearSearch()
                         },
-                        onTapFilter: { showingFilterSheet = true },
+                        onTapMenu: { showingLocationSheet = true },
                         onTapCompose: { showingCompose = true }
                     )
                     .padding(.horizontal, 12)
@@ -468,34 +449,31 @@ struct InboxView: View {
                 .animation(.easeInOut(duration: 0.25), value: pendingSendManager.wasQueuedOffline)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            // Custom top bar (only in normal inbox mode)
+            // Simple scope picker (only in normal inbox mode)
             if !isSelectionMode && !isSearchMode {
-                InboxTopBar(
-                    selectedTab: viewModel.currentTab,
-                    customLaneTitle: viewModel.pinnedTabOption.title,
-                    isPickerOpen: showingLanePickerSheet,
-                    onTapAll: { viewModel.currentTab = .all },
-                    onTapPrimary: { viewModel.currentTab = .primary },
-                    onTapCustom: {
-                        if viewModel.currentTab == .custom {
-                            showingLanePickerSheet = true
-                        } else {
-                            viewModel.currentTab = .custom
+                scopePickerBar
+                    .background(
+                        GeometryReader { proxy in
+                            Color(.systemBackground)
+                                .ignoresSafeArea(edges: .top)
+                                .preference(key: TopBarHeightKey.self, value: proxy.size.height)
                         }
-                    },
-                    onTapMailbox: { showingLocationSheet = true },
-                    onTapSettings: { showingSettings = true }
-                )
-                // Make the top bar fully opaque so list content never shows through while pinned headers are visible
-                .background(
-                    GeometryReader { proxy in
-                        Color(.systemBackground)
-                            .ignoresSafeArea(edges: .top)
-                            .preference(key: TopBarHeightKey.self, value: proxy.size.height)
-                    }
-                )
+                    )
             }
         }
+    }
+
+    /// Clean top bar with just the centered Primary/All scope picker
+    private var scopePickerBar: some View {
+        Picker("Scope", selection: $scope) {
+            ForEach(InboxScope.allCases, id: \.self) { scopeOption in
+                Text(scopeOption.rawValue).tag(scopeOption)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 48) // Inset to keep it compact and centered
+        .padding(.top, 0)
+        .padding(.bottom, 6)
     }
 
     // MARK: - Extracted View Components
@@ -521,20 +499,6 @@ struct InboxView: View {
 
             VStack(spacing: 0) {
                 if !isSearchMode {
-                    if let activeFilter = viewModel.activeFilter {
-                        FilterActiveBanner(
-                            filterLabel: activeFilter.rawValue,
-                            filterColor: activeFilter.color,
-                            onClear: {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    viewModel.activeFilter = nil
-                                }
-                            }
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    }
-
                     // Category viewing header (when drilled into a category from bundle tap)
                     if let category = viewModel.viewingCategory {
                         CategoryViewingHeader(category: category) {
@@ -545,71 +509,29 @@ struct InboxView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                     }
-                    // Category bundles (top block) when not inline
-                    else if showCategoryBundles && !showCategoryBundlesInline && viewModel.currentTab == .primary && !viewModel.bucketRows.isEmpty {
+                    // Category bundles (top block) when pinned - only in Primary scope
+                    else if bundlesPlacement == .pinned && scope == .primary && !viewModel.bucketRows.isEmpty {
                         CategoryBundlesSection(bundles: viewModel.bucketRows) { bucket in
                             handleBucketTap(bucket)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+
+                        // Visual boundary between bundles and email list
+                        Divider()
+                            .padding(.leading, 16)
+                            .padding(.bottom, 8)
                     }
                 }
 
-                let inlineBlocks = inlineCategoryBlocks(
-                    sections: displaySections,
-                    bundles: (showCategoryBundles && showCategoryBundlesInline && viewModel.currentTab == .primary) ? viewModel.bucketRows : []
-                )
-
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    ForEach(Array(inlineBlocks.enumerated()), id: \.offset) { _, block in
-                        switch block {
-                        case .section(let index, let section):
-                            Section {
-                                let sectionEmails = section.emails
-                                ForEach(Array(sectionEmails.enumerated()), id: \.element.id) { emailIndex, email in
-                                    let previousEmail = emailIndex > 0 ? sectionEmails[emailIndex - 1] : nil
-                                    let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
-                                    let isFirst = !isContinuation
-
-                                    emailRowView(
-                                        for: email,
-                                        isSelectionMode: isSelectionMode,
-                                        isContinuationInSenderRun: isContinuation,
-                                        isFirstInSenderRun: isFirst
-                                    )
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, isFirst ? 9 : 5)
-                                    .padding(.bottom, 5)
-
-                                    Divider()
-                                        .background(Color(.separator).opacity(0.35))
-                                        .padding(.leading, isSelectionMode ? 0 : 16)
-                                }
-                            } header: {
-                                SectionHeaderRow(title: section.title, isFirst: index == 0)
-                                    .background(Color(.systemBackground))
-                            }
-                        case .bucket(let bundle):
-                            CategoryBundleRow(model: bundle) {
-                                handleBucketTap(bundle.bucket)
-                            }
-                            .padding(.horizontal, 16)
-                            Divider()
-                                .background(Color(.separator).opacity(0.35))
-                                .padding(.leading, 16)
-                        }
-                    }
-
-                    if !isSearchMode {
-                        Color.clear
-                            .frame(height: 1)
-                            .onAppear { Task { await viewModel.loadMoreFromFooter() } }
-                    }
-
-                    if viewModel.isLoadingMore {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding()
+                // Inline mode: flat list with bundles intermixed by date
+                Group {
+                    if bundlesPlacement == .inline && scope == .primary {
+                        inlineEmailList(sections: displaySections)
+                    } else {
+                        // Section-based mode (pinned or off)
+                        sectionBasedEmailList(sections: displaySections)
                     }
                 }
                 .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
@@ -764,7 +686,7 @@ struct InboxView: View {
                 }
             }
         } else {
-            // Normal mode: toolbar items handled by InboxTopBar via safeAreaInset
+            // Normal mode: toolbar items in safeAreaInset via scopePickerBar
             // Empty spacer to maintain navigation structure
             ToolbarItem(placement: .principal) {
                 EmptyView()
@@ -1138,31 +1060,15 @@ struct InboxView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if displaySections.isEmpty && !viewModel.isLoading && viewModel.hasCompletedInitialLoad {
-                    if viewModel.activeFilter != nil {
-                        // Filter-specific empty state with clear button
-                        ContentUnavailableView {
-                            Label(emptyStateTitle, systemImage: emptyStateIcon)
-                        } description: {
-                            Text(emptyStateDescription)
-                        } actions: {
-                            Button("Clear Filter") {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    viewModel.activeFilter = nil
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
+                    ContentUnavailableView {
+                        Label(emptyStateTitle, systemImage: emptyStateIcon)
+                    } description: {
+                        Text(emptyStateDescription)
+                    } actions: {
+                        Button("Check for New Mail") {
+                            Task { await viewModel.refresh() }
                         }
-                    } else {
-                        ContentUnavailableView {
-                            Label(emptyStateTitle, systemImage: emptyStateIcon)
-                        } description: {
-                            Text(emptyStateDescription)
-                        } actions: {
-                            Button("Check for New Mail") {
-                                Task { await viewModel.refresh() }
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
+                        .buttonStyle(.borderedProminent)
                     }
                 } else if viewModel.isLoading && viewModel.emailSections.isEmpty {
                     InboxSkeletonView()
@@ -1192,13 +1098,52 @@ struct InboxView: View {
     }
 
     // MARK: - Inline category blocks (Gmail-style)
+
+    /// Represents either an email or a bundle in the unified inline list
+    private enum InlineItem: Identifiable {
+        case email(EmailDTO)
+        case bucket(BucketRowModel)
+
+        var id: String {
+            switch self {
+            case .email(let email): return email.id
+            case .bucket(let bundle): return "bucket-\(bundle.id)"
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .email(let email): return email.date
+            case .bucket(let bundle): return bundle.latestDate ?? .distantPast
+            }
+        }
+    }
+
+    /// For non-inline mode, we still need sections
     private enum InlineBlock {
         case section(index: Int, section: EmailSection)
         case bucket(BucketRowModel)
     }
 
+    /// Returns a flat list of items (emails + bundles) sorted by date for inline mode
+    private func inlineItems(emails: [EmailDTO], bundles: [BucketRowModel]) -> [InlineItem] {
+        var items: [InlineItem] = emails.map { .email($0) }
+        items.append(contentsOf: bundles.map { .bucket($0) })
+
+        // Sort by date descending (newest first)
+        items.sort { $0.date > $1.date }
+
+        return items
+    }
+
+    /// For pinned mode or when bundles are off - returns sections without bundles intermixed
     private func inlineCategoryBlocks(sections: [EmailSection], bundles: [BucketRowModel]) -> [InlineBlock] {
-        // Derive a sort key (latest date) for each section and bundle
+        // When bundles array is empty, just return sections
+        if bundles.isEmpty {
+            return sections.enumerated().map { .section(index: $0.offset, section: $0.element) }
+        }
+
+        // Otherwise sort bundles with sections (this path is for pinned mode edge cases)
         var blocks: [(Date, InlineBlock)] = []
 
         for (idx, section) in sections.enumerated() {
@@ -1214,10 +1159,164 @@ struct InboxView: View {
             blocks.append((date, .bucket(bundle)))
         }
 
-        // Sort by date descending (newest first)
         blocks.sort { $0.0 > $1.0 }
-
         return blocks.map { $0.1 }
+    }
+
+    // MARK: - Email List Views
+
+    /// Builds sections with bundles inserted inline at appropriate positions by date
+    private func sectionsWithInlineBundles(sections: [EmailSection], bundles: [BucketRowModel]) -> [(section: EmailSection, items: [InlineItem])] {
+        var result: [(section: EmailSection, items: [InlineItem])] = []
+
+        for section in sections {
+            // Find bundles that belong in this section (same date range as the section's emails)
+            let sectionStart = section.emails.first?.date ?? .distantPast
+            let sectionEnd = section.emails.last?.date ?? .distantFuture
+
+            // Get bundles whose latestDate falls within this section's date range
+            let sectionBundles = bundles.filter { bundle in
+                guard let bundleDate = bundle.latestDate else { return false }
+                return bundleDate <= sectionStart && bundleDate >= sectionEnd
+            }
+
+            // Create items list: emails + bundles for this section, sorted by date
+            var items: [InlineItem] = section.emails.map { .email($0) }
+            items.append(contentsOf: sectionBundles.map { .bucket($0) })
+            items.sort { $0.date > $1.date }
+
+            result.append((section: section, items: items))
+        }
+
+        // Handle any bundles that didn't fit into existing sections (e.g., newer than all emails)
+        let usedBundleIds = Set(result.flatMap { pair in
+            pair.items.compactMap { item -> String? in
+                if case .bucket(let b) = item { return b.id }
+                return nil
+            }
+        })
+        let unusedBundles = bundles.filter { !usedBundleIds.contains($0.id) }
+
+        // If there are unused bundles and we have sections, add them to the first section
+        if !unusedBundles.isEmpty, var firstPair = result.first {
+            var items = firstPair.items
+            items.append(contentsOf: unusedBundles.map { .bucket($0) })
+            items.sort { $0.date > $1.date }
+            result[0] = (section: firstPair.section, items: items)
+        }
+
+        return result
+    }
+
+    /// Inline mode: sections with bundles intermixed by date within each section
+    @ViewBuilder
+    private func inlineEmailList(sections: [EmailSection]) -> some View {
+        let sectionsWithBundles = sectionsWithInlineBundles(sections: sections, bundles: viewModel.bucketRows)
+
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            ForEach(Array(sectionsWithBundles.enumerated()), id: \.offset) { sectionIndex, pair in
+                Section {
+                    ForEach(Array(pair.items.enumerated()), id: \.element.id) { itemIndex, item in
+                        inlineItemView(item: item, index: itemIndex, items: pair.items)
+                    }
+                } header: {
+                    SectionHeaderRow(title: pair.section.title, isFirst: sectionIndex == 0)
+                        .background(Color(.systemBackground))
+                }
+            }
+
+            loadMoreTrigger
+        }
+    }
+
+    @ViewBuilder
+    private func inlineItemView(item: InlineItem, index: Int, items: [InlineItem]) -> some View {
+        switch item {
+        case .email(let email):
+            let previousItem = index > 0 ? items[index - 1] : nil
+            let previousEmail: EmailDTO? = {
+                if case .email(let prev) = previousItem { return prev }
+                return nil
+            }()
+            let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
+            let isFirst = !isContinuation
+
+            emailRowView(
+                for: email,
+                isSelectionMode: isSelectionMode,
+                isContinuationInSenderRun: isContinuation,
+                isFirstInSenderRun: isFirst
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, isFirst ? 9 : 5)
+            .padding(.bottom, 5)
+
+            Divider()
+                .background(Color(.separator).opacity(0.35))
+                .padding(.leading, isSelectionMode ? 0 : 16)
+
+        case .bucket(let bundle):
+            CategoryBundleRow(model: bundle) {
+                handleBucketTap(bundle.bucket)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 9)
+            .padding(.bottom, 5)
+
+            Divider()
+                .background(Color(.separator).opacity(0.35))
+                .padding(.leading, isSelectionMode ? 0 : 16)
+        }
+    }
+
+    /// Section-based mode: emails grouped by day with headers (pinned or off)
+    @ViewBuilder
+    private func sectionBasedEmailList(sections: [EmailSection]) -> some View {
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+                Section {
+                    ForEach(Array(section.emails.enumerated()), id: \.element.id) { emailIndex, email in
+                        let previousEmail = emailIndex > 0 ? section.emails[emailIndex - 1] : nil
+                        let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
+                        let isFirst = !isContinuation
+
+                        emailRowView(
+                            for: email,
+                            isSelectionMode: isSelectionMode,
+                            isContinuationInSenderRun: isContinuation,
+                            isFirstInSenderRun: isFirst
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.top, isFirst ? 9 : 5)
+                        .padding(.bottom, 5)
+
+                        Divider()
+                            .background(Color(.separator).opacity(0.35))
+                            .padding(.leading, isSelectionMode ? 0 : 16)
+                    }
+                } header: {
+                    SectionHeaderRow(title: section.title, isFirst: index == 0)
+                        .background(Color(.systemBackground))
+                }
+            }
+
+            loadMoreTrigger
+        }
+    }
+
+    @ViewBuilder
+    private var loadMoreTrigger: some View {
+        if !isSearchMode {
+            Color.clear
+                .frame(height: 1)
+                .onAppear { Task { await viewModel.loadMoreFromFooter() } }
+        }
+
+        if viewModel.isLoadingMore {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding()
+        }
     }
 
     private func handleAppear() {
@@ -1230,6 +1329,8 @@ struct InboxView: View {
         } else {
             inboxScope = .unified
         }
+        // Sync ViewModel tab with local scope (default is Primary)
+        viewModel.currentTab = (scope == .primary) ? .primary : .all
         Task.detached(priority: .utility) {
             await viewModel.preloadCachedEmails(
                 mailbox: await MainActor.run { viewModel.currentMailbox },
@@ -1251,8 +1352,7 @@ struct InboxView: View {
             let settings = try JSONDecoder().decode(AppSettings.self, from: data)
             listDensity = settings.listDensity
             showAvatars = settings.showAvatars
-            showCategoryBundles = settings.showCategoryBundles
-            showCategoryBundlesInline = settings.showCategoryBundlesInline
+            bundlesPlacement = settings.bundlesPlacement
 
             // Update threading setting on viewModel
             let threadingChanged = viewModel.conversationThreading != settings.conversationThreading
@@ -1279,61 +1379,21 @@ struct InboxView: View {
     }
 
     private var emptyStateTitle: String {
-        if let filter = viewModel.activeFilter {
-            return "No \(filter.rawValue)"
-        }
         if viewModel.currentTab == .primary {
             return "No Primary"
-        }
-        if viewModel.currentTab == .custom {
-            return "No \(viewModel.pinnedTabOption.title)"
         }
         return "Inbox Zero"
     }
 
     private var emptyStateDescription: String {
-        if let _ = viewModel.activeFilter {
-            return "Try clearing your filter."
-        }
         if viewModel.currentTab == .primary {
             return "No primary emails yet."
-        }
-        if viewModel.currentTab == .custom {
-            return "No \(viewModel.pinnedTabOption.title.lowercased()) emails yet."
         }
         return "You're all caught up."
     }
 
     private var emptyStateIcon: String {
-        if viewModel.activeFilter != nil {
-            return "line.3.horizontal.decrease.circle"
-        }
-        if viewModel.currentTab == .custom {
-            return "tray.2"
-        }
         return "tray"
-    }
-}
-
-// MARK: - Inbox Header Block (Tight Filter Chips)
-
-struct InboxHeaderBlock: View {
-    @Binding var currentTab: InboxTab
-    let customLaneTitle: String
-    @Binding var activeFilter: InboxFilter?
-    let filterCounts: [InboxFilter: Int]
-    let isCollapsed: Bool
-    var isPickerOpen: Bool = false
-    let onOpenFilters: () -> Void
-    let onTapCustomWhileSelected: () -> Void
-
-    var body: some View {
-        // InboxTabBar moved to InboxTopBar via safeAreaInset
-        // This block now serves as list anchor
-        Color.clear
-            .frame(height: 1)
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
     }
 }
 
@@ -1429,7 +1489,7 @@ private enum MailTypography {
 
 // MARK: - Scope
 
-// MARK: - Filter Pills
+// MARK: - Inbox Filter Types (used by ViewModel for filtering)
 
 enum InboxFilter: String, CaseIterable {
     case unread = "Unread"
@@ -1456,98 +1516,6 @@ enum InboxFilter: String, CaseIterable {
         case .money: return .green
         case .newsletters: return .purple
         }
-    }
-}
-
-struct FilterPill: View {
-    let filter: InboxFilter
-    let count: Int
-    let isActive: Bool
-    var anyFilterActive: Bool = false
-    let onTap: () -> Void
-
-    /// De-emphasized when another filter is active
-    private var isDeemphasized: Bool {
-        anyFilterActive && !isActive
-    }
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 5) {
-                Image(systemName: filter.icon)
-                    .font(.caption2)
-                    .foregroundStyle(isActive ? filter.color : filter.color.opacity(isDeemphasized ? 0.35 : 0.6))
-
-                Text(filter.rawValue)
-                    .font(.subheadline)
-                    .fontWeight(isActive ? .semibold : .regular)
-                    .foregroundStyle(isActive ? .primary : Color.primary.opacity(isDeemphasized ? 0.5 : 0.82))
-
-                // Count badge (compact, only when > 0)
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Color(.systemGray5))
-                        .clipShape(Capsule())
-                        .opacity(isDeemphasized ? 0.6 : 1.0)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Capsule().fill(isActive ? filter.color.opacity(0.16) : Color(.systemGray6).opacity(isDeemphasized ? 0.5 : 1.0))
-            )
-            .overlay(
-                Capsule().strokeBorder(
-                    isActive ? filter.color.opacity(0.35) : Color(.separator).opacity(0.55),
-                    lineWidth: 1
-                )
-            )
-        }
-        .buttonStyle(.plain)
-        .frame(minHeight: 44)
-        .contentShape(Capsule())
-        .accessibilityLabel("\(filter.rawValue) filter\(count > 0 ? ", \(count) emails" : "")")
-        .accessibilityAddTraits(isActive ? .isSelected : [])
-        .accessibilityHint(isActive ? "Double tap to clear filter" : "Double tap to apply filter")
-        .animation(.easeInOut(duration: 0.15), value: isActive)
-    }
-}
-
-// MARK: - Filter Active Banner
-
-struct FilterActiveBanner: View {
-    let filterLabel: String
-    let filterColor: Color
-    let onClear: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "line.3.horizontal.decrease.circle.fill")
-                .font(.subheadline)
-                .foregroundStyle(filterColor)
-
-            Text("Filtered by \(filterLabel)")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            Button(action: onClear) {
-                Text("Clear")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Color.accentColor)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(filterColor.opacity(0.08))
     }
 }
 
@@ -1951,201 +1919,6 @@ struct TimeOfDayGradient: View {
         }()
 
         LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
-    }
-}
-
-// MARK: - Filter Sheet
-
-struct FilterSheet: View {
-    @Binding var activeFilter: InboxFilter?
-    let filterCounts: [InboxFilter: Int]
-    let bucketTotals: (GmailBucket) -> Int
-    let bucketUnseen: (GmailBucket) -> Int
-    let onSelectCategory: (GmailBucket) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    private let smartFilters: [InboxFilter] = [.unread, .needsReply, .deadlines, .money]
-    private let otherFilters: [InboxFilter] = [.newsletters]
-    private let categoryBuckets: [GmailBucket] = GmailBucket.allCases
-    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    filterSection(title: "Smart", filters: smartFilters)
-                    filterSection(title: "Other", filters: otherFilters)
-                    categorySection()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
-            }
-            .navigationTitle("Filters")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    if activeFilter != nil {
-                        Button("Clear") {
-                            activeFilter = nil
-                        }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func filterSection(title: String, filters: [InboxFilter]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(filters, id: \.self) { filter in
-                    let count = filterCounts[filter] ?? 0
-                    Button {
-                        selectFilter(filter)
-                    } label: {
-                        SmartFilterCard(
-                            filter: filter,
-                            count: count,
-                            isSelected: activeFilter == filter
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    private func selectFilter(_ filter: InboxFilter) {
-        activeFilter = (activeFilter == filter) ? nil : filter
-    }
-
-    @ViewBuilder
-    private func categorySection() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Categories")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            VStack(spacing: 10) {
-                ForEach(categoryBuckets, id: \.self) { bucket in
-                    categoryRow(bucket: bucket)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func categoryRow(bucket: GmailBucket) -> some View {
-        let total = bucketTotals(bucket)
-        let unseen = bucketUnseen(bucket)
-        let category = bucket.category
-
-        Button {
-            selectCategory(bucket)
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(category.color.opacity(0.14))
-                        .frame(width: 32, height: 32)
-
-                    Image(systemName: category.icon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(category.color)
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(category.displayName)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-
-                        if unseen > 0 {
-                            Text("\(unseen) new")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(category.color)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 2)
-                                .background(
-                                    Capsule()
-                                        .fill(category.color.opacity(0.12))
-                                )
-                        }
-                    }
-
-                    Text(total == 0 ? "No mail yet" : "\(total) total")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(.secondarySystemGroupedBackground))
-            )
-        }
-        .buttonStyle(.plain)
-        .opacity(total == 0 ? 0.5 : 1)
-        .disabled(total == 0)
-    }
-
-    private func selectCategory(_ bucket: GmailBucket) {
-        onSelectCategory(bucket)
-        dismiss()
-    }
-}
-
-struct SmartFilterCard: View {
-    let filter: InboxFilter
-    let count: Int
-    let isSelected: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: filter.icon)
-                    .font(.headline)
-                    .foregroundStyle(filter.color)
-                Spacer()
-                Text("\(count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
-            Text(filter.rawValue)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(isSelected ? Color.accentColor.opacity(0.7) : Color(.separator).opacity(0.3), lineWidth: 1)
-        )
-        .opacity(count == 0 ? 0.5 : 1)
-        .disabled(count == 0)
     }
 }
 

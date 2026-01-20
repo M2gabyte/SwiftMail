@@ -238,10 +238,12 @@ struct EmailDetailView: View {
     @StateObject private var viewModel: EmailDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingReplySheet = false
+    @State private var replyModeOverride: ComposeMode?
     @State private var showingActionSheet = false
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
+    @State private var showReplyActions = false
 
     // Expose sanitized HTML cache for quoting
     private static let renderCacheVersion = 2
@@ -342,36 +344,49 @@ struct EmailDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            DetailBottomBar(
-                onReply: { showingReplySheet = true },
-                onArchive: {
-                    Task {
-                        await viewModel.archive()
-                        dismiss()
+            ZStack(alignment: .top) {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(alignment: .top) {
+                        Divider().opacity(0.25)
                     }
-                },
-                onTrash: {
-                    Task {
-                        await viewModel.trash()
-                        dismiss()
-                    }
-                }
-            )
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear { bottomBarHeight = geo.size.height }
-                        .onChange(of: geo.size.height) { _, newHeight in
-                            bottomBarHeight = newHeight
+
+                DetailBottomDock(
+                    showReplyActions: $showReplyActions,
+                    onArchive: {
+                        Task { await viewModel.archive(); dismiss() }
+                    },
+                    onReply: { showingReplySheet = true },
+                    onReplyAll: {
+                        if let latestMessage = viewModel.messages.last {
+                            showingReplySheet = false
+                            DispatchQueue.main.async {
+                                showingReplySheet = true
+                                replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
+                            }
                         }
-                }
-            )
+                    },
+                    onForward: {
+                        if let latestMessage = viewModel.messages.last {
+                            showingReplySheet = false
+                            DispatchQueue.main.async {
+                                showingReplySheet = true
+                                replyModeOverride = .forward(original: latestMessage)
+                            }
+                        }
+                    }
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+            }
+            .frame(height: 92)
         }
         .sheet(isPresented: $showingReplySheet) {
-            if let latestMessage = viewModel.messages.last {
-                ComposeView(
-                    mode: .reply(to: latestMessage, threadId: threadId)
-                )
+            if let mode = replyModeOverride {
+                ComposeView(mode: mode)
+            } else if let latestMessage = viewModel.messages.last {
+                ComposeView(mode: .reply(to: latestMessage, threadId: threadId))
             }
         }
         .sheet(isPresented: $showingSnoozeSheet) {
@@ -2179,6 +2194,97 @@ struct DetailBottomBar: View {
     }
 }
 
+// MARK: - New Detail Bottom Dock (Archive + Reply with long-press menu)
+
+private enum DockButtonStyle {
+    case primary
+    case secondary
+}
+
+private struct DockPillButton: View {
+    let title: String
+    let systemImage: String
+    let style: DockButtonStyle
+    let action: () -> Void
+    var onLongPress: (() -> Void)? = nil
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .frame(minHeight: 52)
+                .frame(maxWidth: .infinity)
+                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(foreground)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(style == .primary ? Color.accentColor.opacity(0.92) : Color(.systemBackground).opacity(0.8))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(GlassTokens.strokeColor.opacity(style == .primary ? 0.18 : 0.25), lineWidth: GlassTokens.strokeWidth)
+        )
+        .shadow(color: GlassTokens.shadowColor.opacity(0.02), radius: 2, y: 1)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                onLongPress?()
+            }
+        )
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .primary: return .white
+        case .secondary: return .primary
+        }
+    }
+}
+
+struct DetailBottomDock: View {
+    @Binding var showReplyActions: Bool
+    let onArchive: () -> Void
+    let onReply: () -> Void
+    let onReplyAll: () -> Void
+    let onForward: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            DockPillButton(title: "Archive", systemImage: "archivebox", style: .secondary, action: onArchive)
+                .frame(width: 140)
+
+            DockPillButton(
+                title: "Reply",
+                systemImage: "arrowshape.turn.up.left",
+                style: .primary,
+                action: onReply,
+                onLongPress: { showReplyActions = true }
+            )
+            .frame(maxWidth: .infinity)
+            .layoutPriority(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(GlassTokens.controlMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity), lineWidth: GlassTokens.strokeWidth)
+                )
+                .shadow(color: GlassTokens.shadowColor.opacity(0.04), radius: 6, y: 3)
+        )
+        .confirmationDialog("Reply", isPresented: $showReplyActions, titleVisibility: .hidden) {
+            Button("Reply") { onReply() }
+            Button("Reply All") { onReplyAll() }
+            Button("Forward") { onForward() }
+            Button("Cancel", role: .cancel) { }
+        }
+    }
+}
+
 // MARK: - Email Detail ViewModel
 
 @MainActor
@@ -2370,10 +2476,33 @@ class EmailDetailViewModel: ObservableObject {
         return AuthService.shared.accounts.first { $0.email.lowercased() == accountEmail }
     }
 
+    private var undoObserver: NSObjectProtocol?
+
     init(threadId: String, accountEmail: String?) {
         self.threadId = threadId
         self.accountEmail = accountEmail
+
+        // Listen for undo notifications to reload the thread
+        undoObserver = NotificationCenter.default.addObserver(
+            forName: .singleMessageActionUndone,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let undoneThreadId = notification.userInfo?["threadId"] as? String,
+                      undoneThreadId == self.threadId else { return }
+                await self.loadThread()
+            }
+        }
     }
+
+    deinit {
+        if let observer = undoObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
     private let renderActor = BodyRenderActor()
     private var didLogBodySwap = false
 
@@ -2581,20 +2710,62 @@ class EmailDetailViewModel: ObservableObject {
         }
     }
 
-    func archive() async {
+    /// Archive the most recent message in the thread (with undo support).
+    /// Returns true if there are remaining messages in the thread, false if the thread is now empty.
+    func archive() async -> Bool {
+        guard let lastMessage = messages.last else { return false }
+        let remainingCount = messages.count - 1
+
+        // Remove the message from local view immediately
+        messages.removeAll { $0.id == lastMessage.id }
+        expandedMessageIds.remove(lastMessage.id)
+
+        // Expand the new last message if any remain
+        if let newLast = messages.last {
+            expandedMessageIds.insert(newLast.id)
+        }
+
+        // Post notification with all info needed for undo-able operation
         NotificationCenter.default.post(
-            name: .archiveThreadRequested,
+            name: .archiveMessageRequested,
             object: nil,
-            userInfo: ["threadId": threadId]
+            userInfo: [
+                "messageId": lastMessage.id,
+                "threadId": threadId,
+                "accountEmail": accountEmail as Any
+            ]
         )
+
+        return remainingCount > 0
     }
 
-    func trash() async {
+    /// Trash the most recent message in the thread (with undo support).
+    /// Returns true if there are remaining messages in the thread, false if the thread is now empty.
+    func trash() async -> Bool {
+        guard let lastMessage = messages.last else { return false }
+        let remainingCount = messages.count - 1
+
+        // Remove the message from local view immediately
+        messages.removeAll { $0.id == lastMessage.id }
+        expandedMessageIds.remove(lastMessage.id)
+
+        // Expand the new last message if any remain
+        if let newLast = messages.last {
+            expandedMessageIds.insert(newLast.id)
+        }
+
+        // Post notification with all info needed for undo-able operation
         NotificationCenter.default.post(
-            name: .trashThreadRequested,
+            name: .trashMessageRequested,
             object: nil,
-            userInfo: ["threadId": threadId]
+            userInfo: [
+                "messageId": lastMessage.id,
+                "threadId": threadId,
+                "accountEmail": accountEmail as Any
+            ]
         )
+
+        return remainingCount > 0
     }
 
     func toggleStar() async {

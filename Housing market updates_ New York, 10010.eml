@@ -1,0 +1,1091 @@
+Delivered-To: mark.marge@gmail.com
+Received: by 2002:a05:7300:3f04:b0:2ac:1f66:5d99 with SMTP id fd4csp1020256dyb;
+        Sat, 17 Jan 2026 10:22:47 -0800 (PST)
+X-Received: by 2002:a05:690c:6511:b0:786:24c1:9d9f with SMTP id 00721157ae682-793c683ae1fmr51631527b3.54.1768674167205;
+        Sat, 17 Jan 2026 10:22:47 -0800 (PST)
+ARC-Seal: i=1; a=rsa-sha256; t=1768674167; cv=none;
+        d=google.com; s=arc-20240605;
+        b=eMMC1OJ2X4eHz2CIZUJM1ZRNhbzimDhBVkwoIvcFh/Yt88aZyBJsoLw4ZIxri88nhY
+         +w5xU5UdMm0qiGokqruJE7NszdcPnKkge/ecnJBVJ/S5fmkHZnTnhRgUJReiorzo4CnU
+         s5u9NwCM3wLj6oLzQD1ZRzH8aFF0kPcKciwHoOK+wxUsDWYXrG/YZSTL2Q4zw6Jbbih3
+         NhWb2VY3q223AAyt+l32kUXqmI3tfRf+UhpKXq3zWU/Zl3Wmmtdb3LH7ZQNcubUaIBwp
+         KxtzAu4QKk20BGUc552kZylttkbDVUQEQIY2zOVPHgeWmCQo/raZwq2pAPFS+ABno+GZ
+         0h3A==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=list-unsubscribe-post:list-unsubscribe:from:subject:list-id
+         :mime-version:date:message-id:to:dkim-signature;
+        bh=RDvLQXWPlue4kvN7I/VX6fS6RgBkgKFGnuklryjxZ5s=;
+        fh=mibUEr7shsh4iY6TYA1mUHByZZk/lFhYjIBc/BJ7kHg=;
+        b=U1rKMBFL14VVY79dyRxwPzH69QWS2M8dYIt1BRtUG3qmQq0hjPecgWa0jBBEeqRIEu
+         fR0rtF6PXJe3BjYcetkw/rKgblSVtkcxqwyBCLs1chkWOB04eJrJt+kQ53yfMGNyOjAI
+         k1KUZPI8Hk6f3rLcIyZJ3bQB1oiNwpi/+RRzrG2nV8aIkjkDVDimxyabekMNhJ2jBa9H
+         smAELeffuxB3HcG6+3EZIxxV3a5UbCjTOzyouwJhRqusPFOCUXyyVWbUTJ/GR7Vtu5/B
+         x2cAAtzPJnNguXVAW8ZoUUUD0dyjxiF4KeMgotXEJtr+9TsSNgzQZd4OVVQyk3kapCgG
+         mtxQ==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@mail.zillow.com header.s=s1214 header.b="WqlV/UPm";
+       spf=pass (google.com: domain of bounces-marketreport+mark.marge=gmail.com@mail.zillow.com designates 192.158.253.130 as permitted sender) smtp.mailfrom="bounces-marketreport+mark.marge=gmail.com@mail.zillow.com";
+       dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE) header.from=mail.zillow.com
+Return-Path: <bounces-marketreport+mark.marge=gmail.com@mail.zillow.com>
+Received: from mta-253-130.zillowmail.com (mta-253-130.zillowmail.com. [192.158.253.130])
+        by mx.google.com with ESMTPS id 00721157ae682-793c68a0dacsi50276097b3.124.2026.01.17.10.22.46
+        for <mark.marge@gmail.com>
+        (version=TLS1_2 cipher=ECDHE-ECDSA-AES128-GCM-SHA256 bits=128/128);
+        Sat, 17 Jan 2026 10:22:47 -0800 (PST)
+Received-SPF: pass (google.com: domain of bounces-marketreport+mark.marge=gmail.com@mail.zillow.com designates 192.158.253.130 as permitted sender) client-ip=192.158.253.130;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@mail.zillow.com header.s=s1214 header.b="WqlV/UPm";
+       spf=pass (google.com: domain of bounces-marketreport+mark.marge=gmail.com@mail.zillow.com designates 192.158.253.130 as permitted sender) smtp.mailfrom="bounces-marketreport+mark.marge=gmail.com@mail.zillow.com";
+       dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE) header.from=mail.zillow.com
+Return-Path: <bounces-marketreport+mark.marge=gmail.com@mail.zillow.com>
+X-MSFBL: Bs312twZ+93vqkqxiAKQgitHk3DF/ed52Urs2LmTmzE=|eyJyIjoibWFyay5tYXJ
+	nZUBnbWFpbC5jb20iLCJ0ZW5hbnRfaWQiOiJ6aWxsb3ciLCJjdXN0b21lcl9pZCI
+	6IjEiLCJtZXNzYWdlX2lkIjoiNjk2Yjc2ZDM2YjY5MDI1YzU4ZjUiLCJzdWJhY2N
+	vdW50X2lkIjoiMCJ9
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=mail.zillow.com;
+	s=s1214; t=1768674166; i=@mail.zillow.com;
+	bh=RDvLQXWPlue4kvN7I/VX6fS6RgBkgKFGnuklryjxZ5s=;
+	h=To:Message-ID:Date:Content-Type:Subject:From:List-Unsubscribe:
+	 List-Unsubscribe-Post:From:To:Cc:Subject;
+	b=WqlV/UPmBAbpnxb+qZl3i337E9xJNLgggYN5Kf19NPP/N+k4+wZbC3cGAWwiZm0PW
+	 p6TGGWjd/nn+dFtrLzSBMEAObpmIGgk2b0hxGh0/vT8Fwp2cgbRKezrziwyBwpokUk
+	 oUUGFR1xwFLx+luvaBe9NR2lixiLr1/Vl53VyTzc=
+Received: from [10.90.33.81] ([10.90.33.81])
+	by i-0d8976ea228f637ca.mta2vrest.sd.prd.sparkpost (ecelerity 5.1.0.74903 r(msys-ecelerity:tags/5.1.0.33)) with REST
+	id 5F/8D-50144-673DB696; Sat, 17 Jan 2026 18:22:46 +0000
+To: mark.marge@gmail.com
+Message-ID: <5F.8D.50144.673DB696@i-0d8976ea228f637ca.mta2vrest.sd.prd.sparkpost>
+Date: Sat, 17 Jan 2026 18:22:46 +0000
+Content-Type: multipart/alternative; boundary="_----d6Q0tVUjs+ea+1nVM9h3xA===_3F/8D-50144-673DB696"
+MIME-Version: 1.0
+x-cid: MarketReport
+List-id: <mail.zillow.com>
+Subject: Housing market updates: New York, 10010
+From: "Zillow" <market-updates@mail.zillow.com>
+List-Unsubscribe: <mailto:unsubscribe@mail.zillow.com?subject=unsubscribe:FS6tQ83w-GcwH0hDNkBhA97j1eGKWlUpqQK3Ewr550w~|eyAicmNwdF90byI6ICJtYXJrLm1hcmdlQGdtYWlsLmNvbSIsICJsaXN0X2lkIjogIm1haWwuemlsbG93LmNvbSIsICJ0ZW5hbnRfaWQiOiAiemlsbG93IiwgImN1c3RvbWVyX2lkIjogIjEiLCAibWVzc2FnZV9pZCI6ICI2OTZiNzZkMzZiNjkwMjVjNThmNSIsICJzdWJhY2NvdW50X2lkIjogIjAiIH0~>,<https://unsubscribe.spmta.com/u/rS4XkJLSkmTvDUS6oYRXRg~~/AAAAARA~/WbCjS6AytdWIfSM-jFiQ6UzXH0f9WrvwJjdBJ9YSaweNMSVBJ-7rd2X4IzLP_YjGltjwxTOPb5UWbUc69ZyGXQ~~>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+
+--_----d6Q0tVUjs+ea+1nVM9h3xA===_3F/8D-50144-673DB696
+Content-Transfer-Encoding: 7bit
+Content-Type: text/plain; charset="UTF-8"
+
+Check out popular and recently sold homes too!
+
+Zillow (r) -
+https://click.mail.zillow.com/f/a/S2KuUt4wKxOF_5bXD-bf_w~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dheaderzillowlogo
+--------------------
+
+Your market update for New York 10010, based on homes you saved in the&nbsp;area.
+
+$1,259,208 Typical home value
+$1,257,260 Typical value 1-year ago
+0.6% 1-Year forecasted value increase
+279 Homes for sale
+25 Homes recently sold
+
+
+View Homes -
+https://click.mail.zillow.com/f/a/JF5FDDMe5x0cmfHQy0dYLQ~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Fhomes%2Ffor_sale%2F10010_rb%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dviewhomesbutton
+
+--------------------
+
+Popular homes in New York 10010
+--------------------
+
+For sale 
+$1,150,000
+3 bd | 2 ba | -- sqft 
+New York
+
+View home-
+https://click.mail.zillow.com/f/a/3IJ4X3_P5dFgrcuVuqI2fg~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F458476489_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dforsaleaddress
+------
+
+For sale 
+$650,000
+1 bd | 1 ba | 600 sqft 
+New York
+
+View home-
+https://click.mail.zillow.com/f/a/bL8EXH0FM9TaCmekzl6KYg~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F244713138_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dforsaleaddress
+------
+
+For sale 
+$699,999
+2 bd | 2 ba | -- sqft 
+New York
+
+View home-
+https://click.mail.zillow.com/f/a/nruT5V9H-XyD3hmFxJtxlw~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F321905390_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dforsaleaddress
+
+Recently sold homes in New York 10010
+--------------------
+
+Sold 
+$782,000
+1 bd | 1 ba | -- sqft 
+Manhattan
+
+View home-
+https://click.mail.zillow.com/f/a/A1Rw4HRG5iPKvaYHdtRYzg~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F72518917_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dsoldaddress
+------
+
+Sold 
+$2,240,000
+3 bd | 3 ba | 1,390 sqft 
+New York
+
+View home-
+https://click.mail.zillow.com/f/a/3m227WYJAz4Aqzm-zqQrAQ~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F118327977_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dsoldaddress
+------
+
+Sold 
+$473,000
+0 bd | 1 ba | -- sqft 
+New York
+
+View home-
+https://click.mail.zillow.com/f/a/TNFitlvvGst9OsEv5n8LzQ~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F327264471_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dsoldaddress
+--------------------
+
+Zillow, Inc.
+1301 Second Avenue, Floor 36
+Seattle, WA 98101
+(c) 2006 - 2026
+
+Help improve your email experience!
+
+Share your feedback -
+https://click.mail.zillow.com/f/a/AYgpZUtGftCETCj29lnKYA~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Femail%2Ffeedback%3Femail_campaign%3Demo-MarketReport%26message_id%3Durn%253Amsg%253A20260117182225cfbfdf242267580e%26rtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dfooterfeedback
+
+
+Privacy policy -
+https://click.mail.zillow.com/f/a/9too3uo0ssxa6DHWezK0Tg~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillowgroup.com%2Fzg-privacy-policy%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dfooterprivacy
+
+
+Unsubscribe from this email -
+https://click.mail.zillow.com/f/a/925bYrYzy21GL3PZ5gYnkQ~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Femail%2FUnsubscribeEnrollment.htm%3Ftoken%3DenV3.1768674145202.GGD3SrhC0JhMLhD7ZIcCJg.B8HklOJNLhqREGk2zT8hSFivfzoGLXYbe9dI162c9K8.NICbEur0bwYxzrKaTehsznAUI4Cl-lHZ-oi1RMmXi5Y%26rtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dfooterunsub
+
+
+Update your preferences -
+https://click.mail.zillow.com/f/a/esxn9vqQwzBjnTgfTN2K-Q~~/AAAAARA~/86GBsb0Qg7kxdSK5Q6TMPU8OguwkO8TUJmJZzpgUW4Vqsn2QdxRaDCoXo66WVTvGmAVWBabvrIkUB_N63e7Sjw~~?target=https%3A%2F%2Fwww.zillow.com%2Fmyzillow%2Fnotifications%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dfooterpreferences
+--_----d6Q0tVUjs+ea+1nVM9h3xA===_3F/8D-50144-673DB696
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/html; charset="UTF-8"
+
+<!DOCTYPE html>=0A<html xmlns=3D"http://www.w3.org/1999/xhtml" xmlns:v=3D"u=
+rn:schemas-microsoft-com:vml" xmlns:o=3D"urn:schemas-microsoft-com:office:o=
+ffice" lang=3D"en" xml:lang=3D"en">=0A<head></head>=0A<head>=0A<title>Zillo=
+w</title>=0A<meta http-equiv=3D"content-type" content=3D"text/html; charset=
+=3Dutf-8" />=0A<meta name=3D"viewport" content=3D"width=3Ddevice-width, ini=
+tial-scale=3D1, maximum-scale=3D1" />=0A<meta http-equiv=3D"X-UA-Compatible=
+" content=3D"IE=3Dedge" />=0A<meta name=3D"x-apple-disable-message-reformat=
+ting" />=0A<meta name=3D"format-detection" content=3D"telephone=3Dno, date=
+=3Dno, address=3Dno, email=3Dno, url=3Dno" />=0A<meta name=3D"color-scheme"=
+ content=3D"light dark" />=0A<style>=0A/* Style Resets */=0Ahtml { height: =
+100%; }=0Aa { text-decoration: none; /* Necessary for Windows Mail CTAs */ =
+}=0A/* Email Client-Specific Hacks */=0Au + .body .gpadl08, [class~=3D'x_gp=
+adl08'] { padding-left: 8px !important; }=0Au + .body .gmailOnly { display:=
+ table !important; }=0A.badge .dot { font-size: 18px !important; }=0A/* Fon=
+ts */=0A@font-face {=0Afont-family: 'Open Sans';=0Afont-style: normal;=0Afo=
+nt-weight: 400;=0Asrc: local('Open Sans Regular'), local('OpenSans-Regular'=
+), url('https://fonts.gstatic.com/s/opensans/v18/mem8YaGs126MiZpBA-UFVZ0bf8=
+pkAg.woff2') format('woff2');=0Amso-font-alt: 'Arial';=0A}=0A@font-face {=
+=0Afont-family: 'Open Sans';=0Afont-style: italic;=0Afont-weight: 400;=0Asr=
+c: local('Open Sans Italic'), local('OpenSans-Italic'), url('https://fonts.=
+gstatic.com/s/opensans/v18/mem6YaGs126MiZpBA-UFUK0Zdc1GAK6b.woff2') format(=
+'woff2');=0Amso-font-alt: 'Arial';=0A}=0A@font-face {=0Afont-family: 'Open =
+Sans';=0Afont-style: normal;=0Afont-weight: 700;=0Asrc: local('Open Sans Bo=
+ld'), local('OpenSans-Bold'), url('https://fonts.gstatic.com/s/opensans/v18=
+/mem5YaGs126MiZpBA-UN7rgOUuhpKKSTjw.woff2') format('woff2');=0Asrc: url('ht=
+tps://fonts.gstatic.com/s/opensans/v18/mem5YaGs126MiZpBA-UNirkOUuhpKKSTjw.w=
+off2') format('woff2');=0Amso-font-alt: 'Arial';=0A}=0A@font-face {=0Afont-=
+family: 'Open Sans';=0Afont-style: italic;=0Afont-weight: 700;=0Asrc: local=
+('Open Sans SemiBold Italic'), local('OpenSans-SemiBoldItalic'), url('https=
+://fonts.gstatic.com/s/opensans/v18/memnYaGs126MiZpBA-UFUKXGUdhrIqOxjaPX.wo=
+ff2') format('woff2');=0Amso-font-alt: 'Arial';=0A}=0A/* Mobile Responsive =
+*/=0A@media only screen and (max-width: 640px) {=0A/* Badge fixes */=0A.bad=
+ge.label { padding: 1px 0 1px 0 !important; }=0A.badge .indicatorText { ver=
+tical-align: 1px !important; }=0A.badge .dot { line-height: 16px !important=
+; }=0A.badge.status { padding: 3px 0 2px 0 !important; }=0Au + .body .badge=
+ i,=0Au + .body .badge .dot {=0Aletter-spacing: 0px !important;=0A}=0Adiv >=
+ u + .body .badge.label { padding: 2px 4px 1px 4px !important; }=0Adiv > u =
++ .body .badge.status { padding: 3px 4px 1px 4px !important; }=0Adiv > u + =
+=2Ebody .badge .dot { font-size: 14px !important; }=0A.showDesktopOnly {=0A=
+display: none;=0Adisplay: none !important;=0A}=0A.showMobileOnly {=0Adispla=
+y: block !important;=0Awidth: auto !important;=0Aoverflow: visible !importa=
+nt;=0Afloat: none !important;=0Amax-height: inherit !important;=0Amax-width=
+: inherit !important;=0Aline-height: auto !important;=0Amargin-top: 0px !im=
+portant;=0Avisibility: inherit !important;=0A}=0A.stackCellWrap { display: =
+block !important; }=0A.borderNone { border: none !important; }=0A.borderRad=
+iusLeft { border-radius: 4px 0px 0px 4px !important; }=0A.borderPrimary { b=
+order: 1px solid #d1d1d5 !important; }=0A.cta14 { font-size: 14px !importan=
+t; }=0A.font12 { font-size: 12px !important; }=0A.font14 { font-size: 14px =
+!important; }=0A.font16 { font-size: 16px !important; }=0A.font20 { font-si=
+ze: 20px !important; }=0A.hauto { height: auto !important; }=0A.lh13 { line=
+-height: 13px !important; }=0A.lh16 { line-height: 16px !important; }=0A.lh=
+20 { line-height: 20px !important; }=0A.lh24 { line-height: 24px !important=
+; }=0A.mw504 { max-width: 504px !important; }=0A.mw600 { max-width: 600px !=
+important; }=0A.padb04 { padding-bottom: 4px !important; }=0A.tableWrap { d=
+isplay: table !important; }=0A.tableRow { display: table-row !important; }=
+=0A.tableCell {=0Adisplay: table-cell !important;=0Avertical-align: top !im=
+portant;=0A}=0A.w16 { width: 16px !important; }=0A.w40p { width: 40% !impor=
+tant; }=0A.w100p { width: 100% !important; }=0A/* Interactive - Dropdown Gm=
+ail Mobile */=0Au + .body .expandableSection {=0Aborder-width: 1px !importa=
+nt;=0Amax-height: 999px !important;=0Aoverflow: visible !important;=0A}=0Ad=
+iv > u + .body .expandableSection {=0Aborder-width: 0px !important;=0Amax-h=
+eight: 0 !important;=0Aoverflow: hidden !important;=0A}=0Au + .body .arrowR=
+ight,=0Adiv > u + .body .arrowDown,=0Au + .body #rightDark,=0Au + .body #ri=
+ghtLight,=0Adiv > u + .body #downLight {=0Adisplay: none !important;=0A}=0A=
+u + .body .arrowDown,=0Adiv > u + .body .arrowRight,=0Au + .body #downLight=
+,=0Adiv > u + .body #rightLight {=0Adisplay: block !important;=0A}=0A}=0A/*=
+ Interactive - Dropdown Gmail iPad */=0A@media only screen and (min-device-=
+width: 768px) and (max-device-width: 1366px) {=0Au + .body .expandableSecti=
+on {=0Aborder-width: 1px !important;=0Amax-height: 999px !important;=0Aover=
+flow: visible !important;=0A}=0Au + .body .arrowRight,=0Au + .body #rightDa=
+rk,=0Au + .body #rightLight {=0Adisplay: none !important;=0A}=0Au + .body .=
+arrowDown,=0Au + .body #downLight {=0Adisplay: block !important;=0A}=0A}=0A=
+/* Hover Effects */=0A.ctaPrimary, .ctaSecondary, .ctaTertiary, .ctaTxt,=0A=
+=2EctaPrimaryInverse, .ctaSecondaryInverse, .ctaTertiaryInverse,=0A.imageFa=
+de, span {=0Atransition: 0.3s !important;=0A}=0A.txtLinkPrimary:hover, .txt=
+LinkFooter:hover {=0Atext-decoration: none !important;=0A}=0A.txtLinkSecond=
+ary:hover { text-decoration: underline !important; }=0A.ctaPrimary:hover {=
+=0Abackground-color: #0d4599 !important;=0Aborder-color: #0d4599 !important=
+;=0A}=0A.ctaSecondary:hover {=0Abackground-color: #e0f2ff !important;=0Abor=
+der-color: #0d4599 !important;=0A}=0A.ctaSecondary:hover span { color: #0d4=
+599 !important; }=0A.ctaTertiary:hover { background-color: #f1f1f4 !importa=
+nt; }=0A.ctaTxt:hover {=0Abackground-color: #e0f2ff !important;=0Aborder-co=
+lor: #e0f2ff !important;=0A}=0A.ctaPrimaryInverse:hover {=0Abackground-colo=
+r: #f2faff !important;=0Aborder-color: #f2faff !important;=0A}=0A.ctaPrimar=
+yInverse:hover span { color: #0d4599 !important; }=0A.ctaSecondaryInverse:h=
+over span { color: #2a2a33 !important; }=0A.ctaSecondaryInverse:hover {=0Ab=
+order-color: #f1f1f4 !important;=0Abackground-color: #f1f1f4 !important;=0A=
+}=0A</style>=0A<style>=0A/* Dark Mode */=0A[data-ogsc] h1, [data-ogsc] h2, =
+[data-ogsc] h3, [data-ogsc] h4,=0A[data-ogsc] h5, [data-ogsc] p, [data-ogsc=
+] a, [data-ogsc] b,=0A[data-ogsc] span, [data-ogsc] small, [data-ogsc] stro=
+ng,=0A[data-ogsc] address, [data-ogsc] .alt {=0Acolor: #fffffe !important;=
+=0A}=0A[data-ogsc] .txtLinkPrimary, [data-ogsc] .txtLinkSecondary {=0Acolor=
+: #579dff !important;=0A}=0A[data-ogsc] .txtLinkFooter, [data-ogsc] .dmTxtG=
+ray400 {=0Acolor: #a7a6ab !important;=0A}=0A[data-ogsc] .dmBgGray700 { back=
+ground-color: #151516 !important; }=0A[data-ogsc] .dmBgGray600 { background=
+-color: #2a2a33 !important; }=0A[data-ogsc] .dmBorderGray500 { border-color=
+: #54545a !important; }=0A[data-ogsc] .buyDM,=0A[data-ogsb] .buyDM {=0Acolo=
+r: #D8F4DE !important;=0Aborder-color: #D8F4DE !important;=0A}=0A[data-ogsb=
+] .ctaPrimary {=0Abackground-color: #579dff !important;=0Aborder-color: #57=
+9dff !important;=0A}=0A[data-ogsc] .ctaPrimary span { color: #2a2a33 !impor=
+tant; }=0A[data-ogsc] .ctaPrimary:hover span { color: #fffffe !important; }=
+=0A[data-ogsb] .ctaSecondary {=0Abackground-color: transparent !important;=
+=0Aborder-color: #579dff !important;=0A}=0A[data-ogsb] .ctaSecondary span {=
+ color: #579dff !important; }=0A[data-ogsc] .ctaSecondary:hover span { colo=
+r: #006aff !important; }=0A[data-ogsc] .ctaSecondary:hover {=0Aborder-color=
+: #006aff !important;=0Abackground-color: #001751 !important;=0A}=0A[data-o=
+gsb] .ctaTertiary {=0Abackground-color: transparent !important;=0Aborder-co=
+lor: #fffffe !important;=0A}=0A[data-ogsc] .ctaTertiary span { color: #ffff=
+fe !important; }=0A[data-ogsc] .ctaTertiary:hover span { color: #fffffe !im=
+portant; }=0A[data-ogsb] .ctaTertiary:hover {=0Abackground-color: #001751 !=
+important;=0Aborder-color: #fffffe !important;=0A}=0A[data-ogsc] .ctaTxt sp=
+an { color: #579dff !important; }=0A[data-ogsb] .ctaTxt:hover {=0Abackgroun=
+d-color: #001751 !important;=0Aborder-color: #001751 !important;=0A}=0A[dat=
+a-ogsc] .ctaPrimaryInverse span { color: #006aff !important; }=0A[data-ogsc=
+] .ctaTertiaryInverse span { color: #2a2a33 !important; }=0A[data-ogsc] .im=
+gDark { display: block !important; }=0A[data-ogsc] .imgLight {=0Adisplay: n=
+one;=0Adisplay: none !important;=0A}=0A@media (prefers-color-scheme: dark) =
+{=0Ah1, h2, h3, h4, h5, p, a, b, span, small, strong, address, .alt {=0Acol=
+or: #fffffe !important;=0A}=0A.txtLinkPrimary, .txtLinkSecondary { color: #=
+579dff !important; }=0A.txtLinkFooter, .dmTxtGray400 { color: #a7a6ab !impo=
+rtant; }=0A.dmBgGray700 { background-color: #151516 !important; }=0A.dmBgGr=
+ay600 { background-color: #2a2a33 !important; }=0A.dmBorderGray500 { border=
+-color: #54545a !important; }=0A.buyDM {=0Acolor: #D8F4DE !important;=0Abor=
+der-color: #D8F4DE !important;=0A}=0A.ctaPrimary {=0Abackground-color: #579=
+dff !important;=0Aborder-color: #579dff !important;=0A}=0A.ctaPrimary span =
+{ color: #2a2a33 !important; }=0A.ctaPrimary:hover span { color: #fffffe !i=
+mportant; }=0A.ctaSecondary {=0Abackground-color: transparent !important;=
+=0Aborder-color: #579dff !important;=0A}=0A.ctaSecondary span { color: #579=
+dff !important; }=0A.ctaSecondary:hover span { color: #006aff !important; }=
+=0A.ctaSecondary:hover {=0Aborder-color: #006aff !important;=0Abackground-c=
+olor: #001751 !important;=0A}=0A.ctaTertiary {=0Abackground-color: transpar=
+ent !important;=0Aborder-color: #fffffe !important;=0A}=0A.ctaTertiary span=
+ { color: #fffffe !important; }=0A.ctaTertiary:hover span { color: #fffffe =
+!important; }=0A.ctaTertiary:hover {=0Abackground-color: #001751 !important=
+;=0Aborder-color: #fffffe !important;=0A}=0A.ctaTxt span { color: #579dff !=
+important; }=0A.ctaTxt:hover {=0Abackground-color: #001751 !important;=0Abo=
+rder-color: #001751 !important;=0A}=0A.ctaPrimaryInverse span { color: #006=
+aff !important; }=0A.ctaTertiaryInverse span { color: #2a2a33 !important; }=
+=0A.imgDark { display: block !important; }=0A.imgLight {=0Adisplay: none;=
+=0Adisplay: none !important;=0A}=0A}=0A/* Interactive - Hoverable Dropdown =
+*/=0A.arrowRight,=0A.expand:hover .arrowDown,=0A.expand:hover #downLight,=
+=0A#rightLight {=0Adisplay: block !important;=0A}=0A.arrowDown,=0A.expand:h=
+over .arrowRight,=0A.expand:hover #rightLight,=0A#rightDark,=0A#downLight {=
+=0Adisplay: none !important;=0A}=0A.expand:hover .txtLinkSecondary {=0Atext=
+-decoration: underline !important;=0A}=0A.expandableSection {=0Aborder-widt=
+h: 0 !important;=0Adisplay: block !important;=0Amax-height: 0 !important;=
+=0Aoverflow: hidden !important;=0Aposition: static !important;=0Atransition=
+: all 0.5s;=0A}=0A.expand:hover .expandableSection {=0Aborder-width: 1px !i=
+mportant;=0Amax-height: 999px !important;=0Aoverflow: visible !important;=
+=0Atransition: all 0.5s;=0A}=0A</style>=0A<style>=0A.& .yahooAolOnly { disp=
+lay: /* table !important */; }=0Aimg { background-color: transparent !impor=
+tant; }=0A</style>=0A<!--[if mso]>=0A<noscript>=0A<xml>=0A<o:OfficeDocument=
+Settings>=0A<o:AllowPNG />=0A<o:PixelsPerInch>96</o:PixelsPerInch>=0A</o:Of=
+ficeDocumentSettings>=0A</xml>=0A</noscript>=0A<![endif]-->=0A</head>=0A<bo=
+dy class=3D"body dmBgGray700" style=3D"background-color: #ffffff; padding: =
+0; margin: 0; text-align: center; width: 100%; height: 100%">=0D=0A<div sty=
+le=3D"color:transparent;visibility:hidden;opacity:0;font-size:0px;border:0;=
+max-height:1px;width:1px;margin:0px;padding:0px;border-width:0px!important;=
+display:none!important;line-height:0px!important;"><img border=3D"0" width=
+=3D"1" height=3D"1" src=3D"https://click.mail.zillow.com/q/LpesiqpFLNq81cAT=
+0D0lZg~~/AAAAARA~/ibX6jtnOcaSjVELULmrdKutkjRB1cRY8H4JPb-brdKV_JqiFsdzYjaZhu=
+sE6nOdXNQd1pjB1ohL2nexmOembKw~~" alt=3D""/></div>=0D=0A=0A<table role=3D"ar=
+ticle" aria-label=3D"Zillow" lang=3D"en" cellpadding=3D"0" cellspacing=3D"0=
+" border=3D"0" style=3D"width: 100%; text-align: center; vertical-align: mi=
+ddle; margin: 0 auto; table-layout: fixed">=0A<tr>=0A<td align=3D"center" c=
+lass=3D"dmBgGray700" bgcolor=3D"#ffffff">=0A<img src=3D"https://www.zillow.=
+com/app/=3Ftok=3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da~X1-ZU10jwhwqqk8nih_47=
+pep&service=3Demailtrackingservice" width=3D"1" height=3D"1" style=3D"displ=
+ay:none;">=0A<!--[if !mso]><! -->=0A<div style=3D"display: none !important;=
+ display: none; overflow: hidden; float: left; width: 0px; max-height: 0px;=
+ max-width: 0px; line-height: 0px; visibility: hidden">=0ACheck out popular=
+ and recently sold homes too!&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&z=
+wnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&=
+zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;=
+&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847=
+;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#84=
+7;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#8=
+47;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#=
+847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&=
+#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;=
+&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy=
+;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&sh=
+y;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&s=
+hy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&=
+shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;=
+&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279=
+;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#6527=
+9;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#652=
+79;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65=
+279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#6=
+5279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#=
+65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&=
+#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;=
+&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199=
+;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#819=
+9;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#81=
+99;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8=
+199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#=
+8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&=
+#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;=
+&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp=
+;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbs=
+p;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nb=
+sp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&n=
+bsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&=
+nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;=
+&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj=
+;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwn=
+j;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zw=
+nj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&z=
+wnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&=
+zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;=
+&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847=
+;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#84=
+7;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#8=
+47;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#=
+847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&=
+#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;=
+&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy=
+;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&sh=
+y;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&s=
+hy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&=
+shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;=
+&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279=
+;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#6527=
+9;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#652=
+79;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65=
+279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#6=
+5279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#=
+65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&=
+#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;=
+&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199=
+;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#819=
+9;&#65279;&shy;&#847;&zwnj;&nbsp;&#8199;&#65279;&shy;&#847;&zwnj;&nbsp;&#81=
+99;&#65279;&shy;&nbsp;&nbsp;=0A</div>=0A<!--<![endif]-->=0A<!-- template_id=
+: market_report_atomized -->=0A<table role=3D"presentation" width=3D"100%" =
+cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr>=0A<td align=3D"cen=
+ter" style=3D"padding: 0px 20px">=0A<table role=3D"presentation" cellpaddin=
+g=3D"0" cellspacing=3D"0" border=3D"0"><tr><td style=3D"font-size: 0px; lin=
+e-height: 32px">&nbsp;</td></tr></table>=0A<h1 style=3D"margin: 0 auto; pad=
+ding: 0">=0A<a href=3D"https://click.mail.zillow.com/f/a/QfFXnlg_M086p85Cm6=
+FHDw~~/AAAAARA~/YhF8uVcftjoqUdoUcLWasuJg316oFq0OrYgUSOWI0kcMtFnrnAjdHGvJ6bL=
+8f0r_rXJGGuSJcJz6oLG_HV_PG12gdAhODeP62-O-FCNqgstAjVYJ0O3oxqsRR-suipYh=3Ftar=
+get=3Dhttps%3A%2F%2Fwww.zillow.com%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-ca=
+d6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%2=
+6utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e=
+%26utm_medium%3Demail%26utm_content%3Dheaderzillowlogo" target=3D"_blank" s=
+tyle=3D"text-decoration: none">=0A<img class=3D"imgLight" src=3D"https://zi=
+llowstatic.com/s3/email-statics/images/Zillow_Logo_300x64.png" alt=3D"Zillo=
+w" border=3D"0" height=3D"32" width=3D"150" style=3D"display: block; color:=
+ #006aff; font-family: Arial, sans-serif; font-weight: bold; font-size: 32p=
+x; line-height: 1; text-align: center; text-decoration: none; margin: 0 aut=
+o; padding: 0; max-width: 100%; height: auto" />=0A<!--[if !mso]><! -->=0A<=
+div class=3D"imgDark" style=3D"display: none">=0A<img src=3D"https://zillow=
+static.com/s3/email-statics/images/Zillow_Logo_300x64_dm.png" alt=3D"Zillow=
+" border=3D"0" height=3D"32" width=3D"150" style=3D"display: block; color: =
+#ffffff; font-family: Arial, sans-serif; font-weight: bold; font-size: 32px=
+; line-height: 1; text-align: center; text-decoration: none; margin: 0 auto=
+; padding: 0; max-width: 100%; height: auto" />=0A</div>=0A<!--<![endif]-->=
+=0A</a>=0A</h1>=0A<table role=3D"presentation" cellpadding=3D"0" cellspacin=
+g=3D"0" border=3D"0"><tr><td style=3D"font-size: 0px; line-height: 24px">&n=
+bsp;</td></tr></table>=0A<table role=3D"presentation" cellpadding=3D"0" cel=
+lspacing=3D"0" border=3D"0">=0A<tr>=0A<td style=3D"border-bottom: 2px solid=
+ #ffd237; width: 152px; font-size: 0; height: 0; line-height: 0; mso-line-h=
+eight-rule: exactly">&nbsp;</td>=0A</tr>=0A</table>=0A<table role=3D"presen=
+tation" cellpadding=3D"0" cellspacing=3D"0" border=3D"0"><tr><td style=3D"f=
+ont-size: 0px; line-height: 32px">&nbsp;</td></tr></table>=0A<table role=3D=
+"presentation" class=3D"mw504 w100p" cellpadding=3D"0" cellspacing=3D"0" bo=
+rder=3D"0" style=3D"width: 504px">=0A<tr>=0A<td align=3D"center">=0A<p clas=
+s=3D"font14" style=3D"font-family: 'Open Sans', Helvetica, Arial, sans-seri=
+f; font-weight: 400; font-size: 16px; line-height: 24px; color: #2a2a33; ma=
+rgin: 0; padding: 0">Your market update for New York 10010, based on homes =
+you saved in the&nbsp;area.=0A</p>=0A</td>=0A</tr>=0A</table>=0A<table role=
+=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" border=3D"0"><tr><td =
+style=3D"font-size: 0px; line-height: 24px">&nbsp;</td></tr></table>=0A<a h=
+ref=3D"https://click.mail.zillow.com/f/a/4iUgLmiKOqUdYvhKE0ek4A~~/AAAAARA~/=
+_q17a3OkcYqnfEeCo5laWFLuShGnpnpfwsd7GMNMm25yVtIEMRs5aWonxlVkbPQ-dG0SaxgVOIh=
+i6cGQihg5WC5EbHbIn-L0Tf8AGruBQhQ~=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2=
+Fhomes%2Ffor_sale%2F10010_rb%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f=
+49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_s=
+ource%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm=
+_medium%3Demail%26utm_content%3Dmap" style=3D"text-decoration: none">=0A<ta=
+ble role=3D"presentation" class=3D"w100p mw504" cellpadding=3D"0" cellspaci=
+ng=3D"0" border=3D"0">=0A<tr>=0A<td class=3D"w40p" bgcolor=3D"#0D4599" vali=
+gn=3D"middle" style=3D"border-radius: 4px 0 0 4px; padding: 0 8px 0 16px">=
+=0A<table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" border=
+=3D"0">=0A<tr>=0A<td class=3D"lh16" style=3D"font-size: 0px; line-height: 2=
+0px">&nbsp;</td>=0A</tr>=0A</table>=0A<table role=3D"presentation" class=3D=
+"w100p" cellspacing=3D"0" cellpadding=3D"0" border=3D"0" width=3D"166" styl=
+e=3D"width: 166px">=0A<tr>=0A<td valign=3D"top" align=3D"left">=0A<p class=
+=3D"font16 lh20" style=3D"font-family: 'Open Sans', Helvetica, Arial, sans-=
+serif; font-weight: 700; font-size: 20px; line-height: 24px; color: #ffffff=
+; margin: 0 0 4px; padding: 0">$1,259,208</p>=0A<p class=3D"font12 lh16" st=
+yle=3D"font-family: 'Open Sans', Helvetica, Arial, sans-serif; font-size: 1=
+4px; line-height: 20px; mso-line-height-rule: exactly; color: #ffffff; marg=
+in: 0 0 16px; padding: 0">Typical home value</p>=0A<p class=3D"font16 lh20"=
+ style=3D"font-family: 'Open Sans', Helvetica, Arial, sans-serif; font-weig=
+ht: 700; font-size: 20px; line-height: 24px; mso-line-height-rule: exactly;=
+ color: #ffffff; margin: 0 0 4px; padding: 0">$1,257,260</p>=0A<p class=3D"=
+font12 lh16" style=3D"font-family: 'Open Sans', Helvetica, Arial, sans-seri=
+f; font-size: 14px; line-height: 20px; mso-line-height-rule: exactly; color=
+: #ffffff; margin: 0 0 16px; padding: 0">Typical value 1&#8209;year ago</p>=
+=0A<p class=3D"font16 lh20" style=3D"font-family: 'Open Sans', Helvetica, A=
+rial, sans-serif; font-weight: 700; font-size: 20px; line-height: 24px; mso=
+-line-height-rule: exactly; color: #ffffff; margin: 0">=0A<img src=3Dhttps:=
+//zillowstatic.com/s3/email-statics/images/uparrow-transparent.png width=3D=
+"11" style=3D"vertical-align: 0px" />=0A0.6%</p=0A><p class=3D"font12 lh16"=
+ style=3D"font-family: 'Open Sans', Helvetica, Arial, sans-serif; font-size=
+: 14px; line-height: 20px; mso-line-height-rule: exactly; color: #ffffff; m=
+argin: 4px 0 16px; padding: 0">1&#8209;Year forecasted value&nbsp;increase<=
+/p>=0A<p class=3D"font16 lh20" style=3D"font-family: 'Open Sans', Helvetica=
+, Arial, sans-serif; font-weight: 700; font-size: 20px; line-height: 24px; =
+mso-line-height-rule: exactly; color: #ffffff; margin: 0 0 4px; padding: 0;=
+">279</p>=0A<p class=3D"font12 lh16" style=3D"font-family: 'Open Sans', Hel=
+vetica, Arial, sans-serif; font-size: 14px; line-height: 20px; mso-line-hei=
+ght-rule: exactly; color: #ffffff; margin: 0 0 16px; padding: 0;">Homes for=
+ sale</p>=0A<p class=3D"font16 lh20" style=3D"font-family: 'Open Sans', Hel=
+vetica, Arial, sans-serif; font-weight: 700; font-size: 20px; line-height: =
+24px; mso-line-height-rule: exactly; color: #ffffff; margin: 0 0 4px; paddi=
+ng: 0;">25</p>=0A<p class=3D"font12 lh16" style=3D"font-family: 'Open Sans'=
+, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; mso-lin=
+e-height-rule: exactly; color: #ffffff; margin: 0; padding: 0;">Homes recen=
+tly sold</p>=0A</td>=0A</tr>=0A</table>=0A<table role=3D"presentation" cell=
+padding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr>=0A<td class=3D"lh16" s=
+tyle=3D"font-size: 0px; line-height: 20px">&nbsp;</td>=0A</tr>=0A</table>=
+=0A</td>=0A<td class=3D"dmBgGray600" align=3D"center" background=3D"https:/=
+/maps.googleapis.com/maps/api/staticmap=3Fsize=3D636x800&maptype=3Droadmap&=
+key=3DAIzaSyCfQWAnACiCRvfosGECB2PdqAjVFAAWtV4&path=3Dweight:3%7Ccolor:0x387=
+cedcc%7Cenc:a%7CrwFtdobMjIqAHCOp%40%5BbAq%40tBkArCcAbD%7D%40rCgBzFYt%40y%40=
+xBoE%60NYz%40aDbKQKcBiAkArDvBpA%7D%40pC%7B%40lCwBqAa%40tAe%40xArBtAkDvKaBhF=
+i%40%5BoC%7EF%7BBdKoAy%40yByAeCaBeC_BeAs%40u%40e%40yByAkAw%40o%40a%40pDcLnB=
+T%60%40DdAcD%7BBwAfC_IfCcIzBxAfCcI%7BByA%7CAyE%5ETzA%7E%40h%40aBvB%7DGdAaDl=
+BiGtAoE%7CBxAzD%7DLn%40_BQe%40iKqGgQmCwFeBBIDM%60%40sAdCnAhRhCjTa%40%40xA%7=
+BBfHvA%60Bn%40AfAM%40X%7EEy%40&signature=3DyOigqMo3ByBd9TVvYJVam-KtWjY=3D" =
+style=3D"background-repeat: no-repeat; background-position: center; backgro=
+und-size: cover; border-radius: 0 4px 4px 0; background-color: #f1f1f4">=0A=
+<!--[if gte mso 9]>=0A<v:image xmlns:v=3D"urn:schemas-microsoft-com:vml" fi=
+ll=3D"true" stroke=3D"false" style=3D"border: 0px; display: inline-block; w=
+idth: 314px; height: 368px;" src=3Dhttps://maps.googleapis.com/maps/api/sta=
+ticmap=3Fsize=3D636x800&maptype=3Droadmap&key=3DAIzaSyCfQWAnACiCRvfosGECB2P=
+dqAjVFAAWtV4&path=3Dweight:3%7Ccolor:0x387cedcc%7Cenc:a%7CrwFtdobMjIqAHCOp%=
+40%5BbAq%40tBkArCcAbD%7D%40rCgBzFYt%40y%40xBoE%60NYz%40aDbKQKcBiAkArDvBpA%7=
+D%40pC%7B%40lCwBqAa%40tAe%40xArBtAkDvKaBhFi%40%5BoC%7EF%7BBdKoAy%40yByAeCaB=
+eC_BeAs%40u%40e%40yByAkAw%40o%40a%40pDcLnBT%60%40DdAcD%7BBwAfC_IfCcIzBxAfCc=
+I%7BByA%7CAyE%5ETzA%7E%40h%40aBvB%7DGdAaDlBiGtAoE%7CBxAzD%7DLn%40_BQe%40iKq=
+GgQmCwFeBBIDM%60%40sAdCnAhRhCjTa%40%40xA%7BBfHvA%60Bn%40AfAM%40X%7EEy%40&si=
+gnature=3DyOigqMo3ByBd9TVvYJVam-KtWjY=3D />=0A<v:rect xmlns:v=3D"urn:schema=
+s-microsoft-com:vml" fill=3D"true" stroke=3D"false" style=3D"border: 0px; d=
+isplay: inline-block; position: absolute; width: 314px; height: 368px;" hre=
+f=3Dhttps://www.zillow.com/homes/for_sale/10010_rb/=3Frtoken=3Dcf12779b-339=
+7-4ca3-bcd9-cad6be3f49da%7EX1-ZU10jwhwqqk8nih_47pep&utm_campaign=3Demo-Mark=
+etReport&utm_source=3Demail&utm_term=3Durn:msg:20260117182225cfbfdf24226758=
+0e&utm_medium=3Demail&utm_content=3Dmap">=0A<v:fill opacity=3D"0%" color=3D=
+"#f1f1f4"/>=0A<v:textbox inset=3D"0,0,0,0">=0A<![endif]-->=0A<table role=3D=
+"presentation" class=3D"w100p" align=3D"center" cellpadding=3D"0" cellspaci=
+ng=3D"0" border=3D"0" width=3D"314" style=3D"width: 314px">=0A<tr>=0A<td cl=
+ass=3D"hauto" align=3D"left" valign=3D"bottom" height=3D"365" style=3D"heig=
+ht: 365px" role=3D"img" aria-label=3D"Map image"></td>=0A</tr>=0A</table>=
+=0A<!--[if gte mso 9]>=0A</v:textbox>=0A</v:fill>=0A</v:rect>=0A</v:image>=
+=0A<![endif]-->=0A</td>=0A</tr>=0A</table>=0A</a>=0A<table role=3D"presenta=
+tion" cellpadding=3D"0" cellspacing=3D"0" border=3D"0"><tr><td class=3D"lh2=
+4" style=3D"font-size: 0px; line-height: 40px">&nbsp;</td></tr></table>=0A<=
+a class=3D"lh13 ctaPrimary" href=3D"https://click.mail.zillow.com/f/a/3Tc-e=
+-lpiMceTnWK5Gp8ug~~/AAAAARA~/vqzBwd86UwBO6unBENoSnFiZNlWpr6SvRKqDPfj8a9wlcA=
+tXPZJvcwlZRXHgqwPtg7rY90QlgMu4UuXZ4D_k4oaoC-6jwaeEDX2OYJZHHsJ70kLTiyq15m75F=
+NDUNiGa=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomes%2Ffor_sale%2F10010_=
+rb%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8ni=
+h_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3=
+Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_cont=
+ent%3Dviewhomesbutton" style=3D"display: inline-block; line-height: 17px; m=
+argin: 0; mso-padding-alt: 0; text-align: center; text-decoration: none; wi=
+dth: auto; border-radius: 4px; border: 1px solid #006aff; mso-border-alt: 0=
+; padding: 12px 0; background-color: #006aff; font-size: 16px; color: #ffff=
+ff"><i style=3D"letter-spacing: 14px; mso-text-raise: 20px">&nbsp;</i><span=
+ style=3D"margin: 0; font-family: 'Open Sans', Helvetica, Arial, sans-serif=
+; font-weight: 700; mso-text-raise: 10px">View Homes</span><i style=3D"lett=
+er-spacing: 14px">&nbsp;</i></a>=0A<table role=3D"presentation" cellpadding=
+=3D"0" cellspacing=3D"0" border=3D"0"><tr><td style=3D"font-size: 0px; line=
+-height: 48px">&nbsp;</td></tr></table>=0A<table role=3D"presentation" clas=
+s=3D"mw504 w100p" cellpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D=
+"width: 504px">=0A<tr>=0A<td align=3D"center">=0A<h3 class=3D"font16" style=
+=3D"font-family: 'Open Sans', Helvetica, Arial, sans-serif; font-weight: 70=
+0; font-size: 20px; line-height: 24px; color: #2a2a33; margin: 0; padding: =
+0">Popular homes in New York 10010=0A</h3>=0A<table class=3D"showDesktopOnl=
+y" role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=
+=0A<tr>=0A<td style=3D"font-size: 0px; line-height: 24px">&nbsp;</td>=0A</t=
+r>=0A</table>=0A</td>=0A</tr>=0A</table>=0A<table role=3D"presentation" cla=
+ss=3D"mw504 w100p" cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr>=
+=0A<th class=3D"stackCellWrap w100p" style=3D"font-size: 0px; line-height: =
+16px; font-weight: normal; width: 12px">&nbsp;</th>=0A<th class=3D"stackCel=
+lWrap w100p" valign=3D"top" align=3D"center" style=3D"width: 160px">=0A<div=
+ class=3D"w100p tableWrap borderPrimary dmBorderGray500" style=3D"border-ra=
+dius: 4px">=0A<table role=3D"presentation" class=3D"w100p borderNone dmBord=
+erGray500 tableRow" align=3D"center" cellpadding=3D"0" cellspacing=3D"0" bo=
+rder=3D"0" style=3D"border: 1px solid #d1d1d5; width: 157px; border-radius:=
+ 4px; mso-border-alt: 0">=0A<tr class=3D"tableCell">=0A<td class=3D"dmBgGra=
+y600 borderRadiusLeft" width=3D"158" align=3D"center" background=3D"https:/=
+/photos.zillowstatic.com/fp/fb10d13f61650248aaa16db638c11709-p_i.jpg" style=
+=3D"background-repeat: no-repeat; background-position: center; background-s=
+ize: cover; border-radius: 4px 4px 0px 0px; background-color: #f1f1f4">=0A<=
+!--[if gte mso 9]>=0A<v:image xmlns:v=3D"urn:schemas-microsoft-com:vml" fil=
+l=3D"true" stroke=3D"false" style=3D"border: 0; display: inline-block; widt=
+h: 158px; height: 102px;" src=3Dhttps://photos.zillowstatic.com/fp/fb10d13f=
+61650248aaa16db638c11709-p_i.jpg />=0A<v:rect xmlns:v=3D"urn:schemas-micros=
+oft-com:vml" fill=3D"true" stroke=3D"false" style=3D"border: 0; display: in=
+line-block; position: absolute; width: 158px; height: 102px;" href=3Dhttps:=
+//www.zillow.com/homedetails/458476489_zpid/=3Frtoken=3Dcf12779b-3397-4ca3-=
+bcd9-cad6be3f49da%7EX1-ZU10jwhwqqk8nih_47pep&utm_campaign=3Demo-MarketRepor=
+t&utm_source=3Demail&utm_term=3Durn:msg:20260117182225cfbfdf242267580e&utm_=
+medium=3Demail&utm_content=3Dforsaleimage data-msys-linkname=3Demo-MarketRe=
+port-forsaleimage>=0A<v:fill opacity=3D"0%" color=3D"transparent" />=0A<v:t=
+extbox inset=3D"0,0,0,0">=0A<![endif]-->=0A<a style=3D"text-decoration: non=
+e" href=3D"https://click.mail.zillow.com/f/a/XkOMvWB050-rBI5icClw2w~~/AAAAA=
+RA~/TzsP2IZf7lMF7B64ucRIrUO1X79RpkDZkakn7YoSpQxCol-kjQU-8UAoRCqJcvPIlc4a0Sv=
+laD_fMS6E0PS0OsGhNfVW-fWaAaULcLibHr_uD-gv78k_gstWlAobjdt9=3Ftarget=3Dhttps%=
+3A%2F%2Fwww.zillow.com%2Fhomedetails%2F458476489_zpid%2F%3Frtoken%3Dcf12779=
+b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3=
+Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182=
+225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dforsaleimage">=0A<=
+table role=3D"presentation" align=3D"center" cellpadding=3D"0" cellspacing=
+=3D"0" border=3D"0" style=3D"width: 158px">=0A<tr>=0A<td height=3D"102" sty=
+le=3D"height: 102px" role=3D"img" aria-label=3D"Photo of a Property"></td>=
+=0A</tr>=0A</table>=0A</a>=0A<!--[if gte mso 9]>=0A</v:textbox>=0A</v:fill>=
+=0A</v:rect>=0A</v:image>=0A<![endif]-->=0A</td>=0A</tr>=0A<tr class=3D"tab=
+leCell">=0A<td>=0A<a href=3D"https://click.mail.zillow.com/f/a/2mdJLyUut5j4=
+ewcajWFlGQ~~/AAAAARA~/TMuiXLJfah26PxqY6QOpOf28l3tMWjAB_MhvwajYaoSazBe2_XFpc=
+3dttIP88hxjvA1IQkA8FjGX3-9fpEB-nLgv71D8fzXpgvXjGcKWgtV1Q_jaB84nUd4RolNttojl=
+=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F458476489_zpid%2F%=
+3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pe=
+p%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3=
+Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3D=
+forsaleaddress" style=3D"text-decoration: none">=0A<table role=3D"presentat=
+ion" width=3D"100%" cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr=
+>=0A<td class=3D"padb04" align=3D"left" valign=3D"top" style=3D"padding: 4p=
+x 6px 8px 8px">=0A<strong style=3D"display: block; font-family: 'Open Sans'=
+, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 24px; color: =
+#2a2a33; font-weight: 700">$1,150,000</strong>=0A<p style=3D"font-family: '=
+Open Sans', Helvetica, Arial, sans-serif; font-size: 12px; line-height: 16p=
+x; font-weight: 400; color: #2a2a33; font-style: normal; margin: 0; padding=
+: 0 0 4px 0">=0A<b>3</b>&nbsp;<abbr title=3D"bedrooms" style=3D"text-decora=
+tion: none">bd</abbr>=0A<span style=3D"color: #d1d1d5">|</span>=0A<b>2</b>&=
+nbsp;<abbr title=3D"bathrooms" style=3D"text-decoration: none">ba</abbr>=0A=
+<span style=3D"color: #d1d1d5">|</span>=0A<b>--</b>&nbsp;<abbr title=3D"squ=
+are feet" style=3D"text-decoration: none">sqft</abbr>=0A</p>=0A<p style=3D"=
+font-family: 'Open Sans', Helvetica, Arial, sans-serif; font-size: 12px; li=
+ne-height: 16px; font-weight: 400; color: #2a2a33; font-style: normal; marg=
+in: 0; padding: 0">New York</p>=0A</td>=0A</tr>=0A</table>=0A</a>=0A</td>=
+=0A</tr>=0A</table>=0A</div>=0A</th>=0A<th class=3D"stackCellWrap w100p" st=
+yle=3D"font-size: 0px; line-height: 16px; font-weight: normal; width: 12px"=
+>&nbsp;</th>=0A<th class=3D"stackCellWrap w100p" valign=3D"top" align=3D"ce=
+nter" style=3D"width: 160px">=0A<div class=3D"w100p tableWrap borderPrimary=
+ dmBorderGray500" style=3D"border-radius: 4px">=0A<table role=3D"presentati=
+on" class=3D"w100p borderNone dmBorderGray500 tableRow" align=3D"center" ce=
+llpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D"border: 1px solid #=
+d1d1d5; width: 157px; border-radius: 4px; mso-border-alt: 0">=0A<tr class=
+=3D"tableCell">=0A<td class=3D"dmBgGray600 borderRadiusLeft" width=3D"158" =
+align=3D"center" background=3D"https://photos.zillowstatic.com/fp/ca7a8b4b0=
+f6afa8d125810c4bf06cfd1-p_i.jpg" style=3D"background-repeat: no-repeat; bac=
+kground-position: center; background-size: cover; border-radius: 4px 4px 0p=
+x 0px; background-color: #f1f1f4">=0A<!--[if gte mso 9]>=0A<v:image xmlns:v=
+=3D"urn:schemas-microsoft-com:vml" fill=3D"true" stroke=3D"false" style=3D"=
+border: 0; display: inline-block; width: 158px; height: 102px;" src=3Dhttps=
+://photos.zillowstatic.com/fp/ca7a8b4b0f6afa8d125810c4bf06cfd1-p_i.jpg />=
+=0A<v:rect xmlns:v=3D"urn:schemas-microsoft-com:vml" fill=3D"true" stroke=
+=3D"false" style=3D"border: 0; display: inline-block; position: absolute; w=
+idth: 158px; height: 102px;" href=3Dhttps://www.zillow.com/homedetails/2447=
+13138_zpid/=3Frtoken=3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%7EX1-ZU10jwhwqq=
+k8nih_47pep&utm_campaign=3Demo-MarketReport&utm_source=3Demail&utm_term=3Du=
+rn:msg:20260117182225cfbfdf242267580e&utm_medium=3Demail&utm_content=3Dfors=
+aleimage data-msys-linkname=3Demo-MarketReport-forsaleimage>=0A<v:fill opac=
+ity=3D"0%" color=3D"transparent" />=0A<v:textbox inset=3D"0,0,0,0">=0A<![en=
+dif]-->=0A<a style=3D"text-decoration: none" href=3D"https://click.mail.zil=
+low.com/f/a/4SSV3j51dWSrbS44YMFzNQ~~/AAAAARA~/TzsP2IZf7lMF7B64ucRIrUO1X79Rp=
+kDZkakn7YoSpQxCol-kjQU-8UAoRCqJcvPIlc4a0SvlaD_fMS6E0PS0OsGhNfVW-fWaAaULcLib=
+Hr_uD-gv78k_gstWlAobjdt9=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomedeta=
+ils%2F244713138_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257=
+EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3D=
+email%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%=
+3Demail%26utm_content%3Dforsaleimage">=0A<table role=3D"presentation" align=
+=3D"center" cellpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D"width=
+: 158px">=0A<tr>=0A<td height=3D"102" style=3D"height: 102px" role=3D"img" =
+aria-label=3D"Photo of a Property"></td>=0A</tr>=0A</table>=0A</a>=0A<!--[i=
+f gte mso 9]>=0A</v:textbox>=0A</v:fill>=0A</v:rect>=0A</v:image>=0A<![endi=
+f]-->=0A</td>=0A</tr>=0A<tr class=3D"tableCell">=0A<td>=0A<a href=3D"https:=
+//click.mail.zillow.com/f/a/gCQvxFAMrkFZ9EQwEeJyLQ~~/AAAAARA~/TMuiXLJfah26P=
+xqY6QOpOf28l3tMWjAB_MhvwajYaoSazBe2_XFpc3dttIP88hxjvA1IQkA8FjGX3-9fpEB-nLgv=
+71D8fzXpgvXjGcKWgtV1Q_jaB84nUd4RolNttojl=3Ftarget=3Dhttps%3A%2F%2Fwww.zillo=
+w.com%2Fhomedetails%2F244713138_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-=
+cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport=
+%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf24226758=
+0e%26utm_medium%3Demail%26utm_content%3Dforsaleaddress" style=3D"text-decor=
+ation: none">=0A<table role=3D"presentation" width=3D"100%" cellpadding=3D"=
+0" cellspacing=3D"0" border=3D"0">=0A<tr>=0A<td class=3D"padb04" align=3D"l=
+eft" valign=3D"top" style=3D"padding: 4px 6px 8px 8px">=0A<strong style=3D"=
+display: block; font-family: 'Open Sans', Helvetica, Arial, sans-serif; fon=
+t-size: 14px; line-height: 24px; color: #2a2a33; font-weight: 700">$650,000=
+</strong>=0A<p style=3D"font-family: 'Open Sans', Helvetica, Arial, sans-se=
+rif; font-size: 12px; line-height: 16px; font-weight: 400; color: #2a2a33; =
+font-style: normal; margin: 0; padding: 0 0 4px 0">=0A<b>1</b>&nbsp;<abbr t=
+itle=3D"bedrooms" style=3D"text-decoration: none">bd</abbr>=0A<span style=
+=3D"color: #d1d1d5">|</span>=0A<b>1</b>&nbsp;<abbr title=3D"bathrooms" styl=
+e=3D"text-decoration: none">ba</abbr>=0A<span style=3D"color: #d1d1d5">|</s=
+pan>=0A<b>600</b>&nbsp;<abbr title=3D"square feet" style=3D"text-decoration=
+: none">sqft</abbr>=0A</p>=0A<p style=3D"font-family: 'Open Sans', Helvetic=
+a, Arial, sans-serif; font-size: 12px; line-height: 16px; font-weight: 400;=
+ color: #2a2a33; font-style: normal; margin: 0; padding: 0">New York</p>=0A=
+</td>=0A</tr>=0A</table>=0A</a>=0A</td>=0A</tr>=0A</table>=0A</div>=0A</th>=
+=0A<th class=3D"stackCellWrap w100p" style=3D"font-size: 0px; line-height: =
+16px; font-weight: normal; width: 12px">&nbsp;</th>=0A<th class=3D"stackCel=
+lWrap w100p" valign=3D"top" align=3D"center" style=3D"width: 160px">=0A<div=
+ class=3D"w100p tableWrap borderPrimary dmBorderGray500" style=3D"border-ra=
+dius: 4px">=0A<table role=3D"presentation" class=3D"w100p borderNone dmBord=
+erGray500 tableRow" align=3D"center" cellpadding=3D"0" cellspacing=3D"0" bo=
+rder=3D"0" style=3D"border: 1px solid #d1d1d5; width: 157px; border-radius:=
+ 4px; mso-border-alt: 0">=0A<tr class=3D"tableCell">=0A<td class=3D"dmBgGra=
+y600 borderRadiusLeft" width=3D"158" align=3D"center" background=3D"https:/=
+/photos.zillowstatic.com/fp/b90ab085087d5a119c947d8766cec34c-p_i.jpg" style=
+=3D"background-repeat: no-repeat; background-position: center; background-s=
+ize: cover; border-radius: 4px 4px 0px 0px; background-color: #f1f1f4">=0A<=
+!--[if gte mso 9]>=0A<v:image xmlns:v=3D"urn:schemas-microsoft-com:vml" fil=
+l=3D"true" stroke=3D"false" style=3D"border: 0; display: inline-block; widt=
+h: 158px; height: 102px;" src=3Dhttps://photos.zillowstatic.com/fp/b90ab085=
+087d5a119c947d8766cec34c-p_i.jpg />=0A<v:rect xmlns:v=3D"urn:schemas-micros=
+oft-com:vml" fill=3D"true" stroke=3D"false" style=3D"border: 0; display: in=
+line-block; position: absolute; width: 158px; height: 102px;" href=3Dhttps:=
+//www.zillow.com/homedetails/321905390_zpid/=3Frtoken=3Dcf12779b-3397-4ca3-=
+bcd9-cad6be3f49da%7EX1-ZU10jwhwqqk8nih_47pep&utm_campaign=3Demo-MarketRepor=
+t&utm_source=3Demail&utm_term=3Durn:msg:20260117182225cfbfdf242267580e&utm_=
+medium=3Demail&utm_content=3Dforsaleimage data-msys-linkname=3Demo-MarketRe=
+port-forsaleimage>=0A<v:fill opacity=3D"0%" color=3D"transparent" />=0A<v:t=
+extbox inset=3D"0,0,0,0">=0A<![endif]-->=0A<a style=3D"text-decoration: non=
+e" href=3D"https://click.mail.zillow.com/f/a/osjw2Te7F-oPEpXtenTEjw~~/AAAAA=
+RA~/TzsP2IZf7lMF7B64ucRIrUO1X79RpkDZkakn7YoSpQxCol-kjQU-8UAoRCqJcvPIlc4a0Sv=
+laD_fMS6E0PS0OsGhNfVW-fWaAaULcLibHr_uD-gv78k_gstWlAobjdt9=3Ftarget=3Dhttps%=
+3A%2F%2Fwww.zillow.com%2Fhomedetails%2F321905390_zpid%2F%3Frtoken%3Dcf12779=
+b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3=
+Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182=
+225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dforsaleimage">=0A<=
+table role=3D"presentation" align=3D"center" cellpadding=3D"0" cellspacing=
+=3D"0" border=3D"0" style=3D"width: 158px">=0A<tr>=0A<td height=3D"102" sty=
+le=3D"height: 102px" role=3D"img" aria-label=3D"Photo of a Property"></td>=
+=0A</tr>=0A</table>=0A</a>=0A<!--[if gte mso 9]>=0A</v:textbox>=0A</v:fill>=
+=0A</v:rect>=0A</v:image>=0A<![endif]-->=0A</td>=0A</tr>=0A<tr class=3D"tab=
+leCell">=0A<td>=0A<a href=3D"https://click.mail.zillow.com/f/a/gdoKZQooohP9=
+pR8mxkeKDw~~/AAAAARA~/TMuiXLJfah26PxqY6QOpOf28l3tMWjAB_MhvwajYaoSazBe2_XFpc=
+3dttIP88hxjvA1IQkA8FjGX3-9fpEB-nLgv71D8fzXpgvXjGcKWgtV1Q_jaB84nUd4RolNttojl=
+=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F321905390_zpid%2F%=
+3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pe=
+p%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3=
+Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3D=
+forsaleaddress" style=3D"text-decoration: none">=0A<table role=3D"presentat=
+ion" width=3D"100%" cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr=
+>=0A<td class=3D"padb04" align=3D"left" valign=3D"top" style=3D"padding: 4p=
+x 6px 8px 8px">=0A<strong style=3D"display: block; font-family: 'Open Sans'=
+, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 24px; color: =
+#2a2a33; font-weight: 700">$699,999</strong>=0A<p style=3D"font-family: 'Op=
+en Sans', Helvetica, Arial, sans-serif; font-size: 12px; line-height: 16px;=
+ font-weight: 400; color: #2a2a33; font-style: normal; margin: 0; padding: =
+0 0 4px 0">=0A<b>2</b>&nbsp;<abbr title=3D"bedrooms" style=3D"text-decorati=
+on: none">bd</abbr>=0A<span style=3D"color: #d1d1d5">|</span>=0A<b>2</b>&nb=
+sp;<abbr title=3D"bathrooms" style=3D"text-decoration: none">ba</abbr>=0A<s=
+pan style=3D"color: #d1d1d5">|</span>=0A<b>--</b>&nbsp;<abbr title=3D"squar=
+e feet" style=3D"text-decoration: none">sqft</abbr>=0A</p>=0A<p style=3D"fo=
+nt-family: 'Open Sans', Helvetica, Arial, sans-serif; font-size: 12px; line=
+-height: 16px; font-weight: 400; color: #2a2a33; font-style: normal; margin=
+: 0; padding: 0">New York</p>=0A</td>=0A</tr>=0A</table>=0A</a>=0A</td>=0A<=
+/tr>=0A</table>=0A</div>=0A</th>=0A<th class=3D"stackCellWrap w100p" style=
+=3D"font-size: 0px; line-height: 16px; font-weight: normal; width: 12px">&n=
+bsp;</th>=0A</tr>=0A</table>=0A<table role=3D"presentation" class=3D"mw504 =
+w100p" cellpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D"width: 504=
+px">=0A<tr>=0A<td align=3D"center">=0A<table class=3D"showDesktopOnly" role=
+=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr>=
+=0A<td style=3D"font-size: 0px; line-height: 24px">&nbsp;</td>=0A</tr>=0A</=
+table>=0A<a class=3D"cta14 txtLinkSecondary" href=3D"https://click.mail.zil=
+low.com/f/a/LTLkr1sKyPetnlk0yF_wPg~~/AAAAARA~/ZtdtMbUjhBHFeHu2ThES9_d9L6X3p=
+MyUCA5Ejnkju6B8ogcyJZ-pB0XdAvxN8f6ctwPL9-Ne_0_Lf7f0IUenYIwp1d3SBYjXGUyum7hS=
+Q67tts391Hfg08wN8VoXJDra=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomes%2F=
+for_sale%2F10010_rb%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-=
+ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demai=
+l%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Dem=
+ail%26utm_content%3Dviewhomesbutton" style=3D"display: inline-block; font-f=
+amily: 'Open Sans', Helvetica, Arial, sans-serif; font-weight: 700; color: =
+#0d4599; font-size: 16px; line-height: 24px; text-decoration: none; margin:=
+ 0; padding: 0">=0AView more homes=0A</a>=0A</td>=0A</tr>=0A</table>=0A<tab=
+le role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" border=3D"0"><=
+tr><td style=3D"font-size: 0px; line-height: 48px">&nbsp;</td></tr></table>=
+=0A<table role=3D"presentation" class=3D"mw504 w100p" cellpadding=3D"0" cel=
+lspacing=3D"0" border=3D"0" style=3D"width: 504px">=0A<tr>=0A<td align=3D"c=
+enter">=0A<h3 class=3D"font16" style=3D"font-family: 'Open Sans', Helvetica=
+, Arial, sans-serif; font-weight: 700; font-size: 20px; line-height: 24px; =
+color: #2a2a33; margin: 0; padding: 0">Recently sold homes in New York 1001=
+0=0A</h3>=0A<table class=3D"showDesktopOnly" role=3D"presentation" cellpadd=
+ing=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr>=0A<td style=3D"font-size: =
+0px; line-height: 24px">&nbsp;</td>=0A</tr>=0A</table>=0A</td>=0A</tr>=0A</=
+table>=0A<table role=3D"presentation" class=3D"mw504 w100p" cellpadding=3D"=
+0" cellspacing=3D"0" border=3D"0">=0A<tr>=0A<th class=3D"stackCellWrap w100=
+p" style=3D"font-size: 0px; line-height: 16px; font-weight: normal; width: =
+12px">&nbsp;</th>=0A<th class=3D"stackCellWrap w100p" valign=3D"top" align=
+=3D"center" style=3D"width: 160px">=0A<div class=3D"w100p tableWrap borderP=
+rimary dmBorderGray500" style=3D"border-radius: 4px">=0A<table role=3D"pres=
+entation" class=3D"w100p borderNone dmBorderGray500 tableRow" align=3D"cent=
+er" cellpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D"border: 1px s=
+olid #d1d1d5; width: 157px; border-radius: 4px; mso-border-alt: 0">=0A<tr c=
+lass=3D"tableCell">=0A<td class=3D"dmBgGray600 borderRadiusLeft" width=3D"1=
+58" align=3D"center" background=3D"https://photos.zillowstatic.com/fp/e9c52=
+3935c9d0cdc6949e7a3da2ae113-p_i.jpg" style=3D"background-repeat: no-repeat;=
+ background-position: center; background-size: cover; border-radius: 4px 4p=
+x 0px 0px; background-color: #f1f1f4">=0A<!--[if gte mso 9]>=0A<v:image xml=
+ns:v=3D"urn:schemas-microsoft-com:vml" fill=3D"true" stroke=3D"false" style=
+=3D"border: 0; display: inline-block; width: 158px; height: 102px;" src=3Dh=
+ttps://photos.zillowstatic.com/fp/e9c523935c9d0cdc6949e7a3da2ae113-p_i.jpg =
+/>=0A<v:rect xmlns:v=3D"urn:schemas-microsoft-com:vml" fill=3D"true" stroke=
+=3D"false" style=3D"border: 0; display: inline-block; position: absolute; w=
+idth: 158px; height: 102px;" href=3Dhttps://www.zillow.com/homedetails/7251=
+8917_zpid/=3Frtoken=3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%7EX1-ZU10jwhwqqk=
+8nih_47pep&utm_campaign=3Demo-MarketReport&utm_source=3Demail&utm_term=3Dur=
+n:msg:20260117182225cfbfdf242267580e&utm_medium=3Demail&utm_content=3Dsoldi=
+mage data-msys-linkname=3Demo-MarketReport-soldimage>=0A<v:fill opacity=3D"=
+0%" color=3D"transparent" />=0A<v:textbox inset=3D"0,0,0,0">=0A<![endif]-->=
+=0A<a style=3D"text-decoration: none" href=3D"https://click.mail.zillow.com=
+/f/a/_C4xu8TDkQl_oUiJebUfvA~~/AAAAARA~/PpebJNrkEgTzk51UsPJQxjdVxaGicNI6wqjZ=
+yxK6_v7JS8HFuzzsEqY5S_YxaH-uVb7Te0wM7ISiVo85tJT--xy0cO1lgZsExm0DGUoIYSQC1r8=
+QGIA0T10gG84k84o4=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F7=
+2518917_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10=
+jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26=
+utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%=
+26utm_content%3Dsoldimage">=0A<table role=3D"presentation" align=3D"center"=
+ cellpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D"width: 158px">=
+=0A<tr>=0A<td height=3D"102" style=3D"height: 102px" role=3D"img" aria-labe=
+l=3D"Photo of a Property"></td>=0A</tr>=0A</table>=0A</a>=0A<!--[if gte mso=
+ 9]>=0A</v:textbox>=0A</v:fill>=0A</v:rect>=0A</v:image>=0A<![endif]-->=0A<=
+/td>=0A</tr>=0A<tr class=3D"tableCell">=0A<td>=0A<a href=3D"https://click.m=
+ail.zillow.com/f/a/F0QV1GCdsLv1vjAFZop1Bw~~/AAAAARA~/N9vQYbzPvLCChKYzjaO1dm=
+bf0MikQINvK923t59Vq4sM5xH2g0ywdnawHNSaHCV9KizGTNkSdyN7PyYGx4EaRwQJJvdch25gG=
+JJRp6Zdtsr1DfTEuDrB8DnWBuiW9qBl=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fh=
+omedetails%2F72518917_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49=
+da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_sou=
+rce%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_m=
+edium%3Demail%26utm_content%3Dsoldaddress" style=3D"text-decoration: none">=
+=0A<table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cellspacin=
+g=3D"0" border=3D"0">=0A<tr>=0A<td class=3D"padb04" align=3D"left" valign=
+=3D"top" style=3D"padding: 4px 6px 8px 8px">=0A<strong style=3D"display: bl=
+ock; font-family: 'Open Sans', Helvetica, Arial, sans-serif; font-size: 14p=
+x; line-height: 24px; color: #2a2a33; font-weight: 700">$782,000</strong>=
+=0A<p style=3D"font-family: 'Open Sans', Helvetica, Arial, sans-serif; font=
+-size: 12px; line-height: 16px; font-weight: 400; color: #2a2a33; font-styl=
+e: normal; margin: 0; padding: 0 0 4px 0">=0A<b>1</b>&nbsp;<abbr title=3D"b=
+edrooms" style=3D"text-decoration: none">bd</abbr>=0A<span style=3D"color: =
+#d1d1d5">|</span>=0A<b>1</b>&nbsp;<abbr title=3D"bathrooms" style=3D"text-d=
+ecoration: none">ba</abbr>=0A<span style=3D"color: #d1d1d5">|</span>=0A<b>-=
+-</b>&nbsp;<abbr title=3D"square feet" style=3D"text-decoration: none">sqft=
+</abbr>=0A</p>=0A<p style=3D"font-family: 'Open Sans', Helvetica, Arial, sa=
+ns-serif; font-size: 12px; line-height: 16px; font-weight: 400; color: #2a2=
+a33; font-style: normal; margin: 0; padding: 0">Manhattan</p>=0A</td>=0A</t=
+r>=0A</table>=0A</a>=0A</td>=0A</tr>=0A</table>=0A</div>=0A</th>=0A<th clas=
+s=3D"stackCellWrap w100p" style=3D"font-size: 0px; line-height: 16px; font-=
+weight: normal; width: 12px">&nbsp;</th>=0A<th class=3D"stackCellWrap w100p=
+" valign=3D"top" align=3D"center" style=3D"width: 160px">=0A<div class=3D"w=
+100p tableWrap borderPrimary dmBorderGray500" style=3D"border-radius: 4px">=
+=0A<table role=3D"presentation" class=3D"w100p borderNone dmBorderGray500 t=
+ableRow" align=3D"center" cellpadding=3D"0" cellspacing=3D"0" border=3D"0" =
+style=3D"border: 1px solid #d1d1d5; width: 157px; border-radius: 4px; mso-b=
+order-alt: 0">=0A<tr class=3D"tableCell">=0A<td class=3D"dmBgGray600 border=
+RadiusLeft" width=3D"158" align=3D"center" background=3D"https://photos.zil=
+lowstatic.com/fp/aeb2bcd862502e464384a5e9aa11968b-p_i.jpg" style=3D"backgro=
+und-repeat: no-repeat; background-position: center; background-size: cover;=
+ border-radius: 4px 4px 0px 0px; background-color: #f1f1f4">=0A<!--[if gte =
+mso 9]>=0A<v:image xmlns:v=3D"urn:schemas-microsoft-com:vml" fill=3D"true" =
+stroke=3D"false" style=3D"border: 0; display: inline-block; width: 158px; h=
+eight: 102px;" src=3Dhttps://photos.zillowstatic.com/fp/aeb2bcd862502e46438=
+4a5e9aa11968b-p_i.jpg />=0A<v:rect xmlns:v=3D"urn:schemas-microsoft-com:vml=
+" fill=3D"true" stroke=3D"false" style=3D"border: 0; display: inline-block;=
+ position: absolute; width: 158px; height: 102px;" href=3Dhttps://www.zillo=
+w.com/homedetails/118327977_zpid/=3Frtoken=3Dcf12779b-3397-4ca3-bcd9-cad6be=
+3f49da%7EX1-ZU10jwhwqqk8nih_47pep&utm_campaign=3Demo-MarketReport&utm_sourc=
+e=3Demail&utm_term=3Durn:msg:20260117182225cfbfdf242267580e&utm_medium=3Dem=
+ail&utm_content=3Dsoldimage data-msys-linkname=3Demo-MarketReport-soldimage=
+>=0A<v:fill opacity=3D"0%" color=3D"transparent" />=0A<v:textbox inset=3D"0=
+,0,0,0">=0A<![endif]-->=0A<a style=3D"text-decoration: none" href=3D"https:=
+//click.mail.zillow.com/f/a/o4CmQa3NmxKi3RehVdV3RA~~/AAAAARA~/PpebJNrkEgTzk=
+51UsPJQxjdVxaGicNI6wqjZyxK6_v7JS8HFuzzsEqY5S_YxaH-uVb7Te0wM7ISiVo85tJT--xy0=
+cO1lgZsExm0DGUoIYSQC1r8QGIA0T10gG84k84o4=3Ftarget=3Dhttps%3A%2F%2Fwww.zillo=
+w.com%2Fhomedetails%2F118327977_zpid%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-=
+cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport=
+%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf24226758=
+0e%26utm_medium%3Demail%26utm_content%3Dsoldimage">=0A<table role=3D"presen=
+tation" align=3D"center" cellpadding=3D"0" cellspacing=3D"0" border=3D"0" s=
+tyle=3D"width: 158px">=0A<tr>=0A<td height=3D"102" style=3D"height: 102px" =
+role=3D"img" aria-label=3D"Photo of a Property"></td>=0A</tr>=0A</table>=0A=
+</a>=0A<!--[if gte mso 9]>=0A</v:textbox>=0A</v:fill>=0A</v:rect>=0A</v:ima=
+ge>=0A<![endif]-->=0A</td>=0A</tr>=0A<tr class=3D"tableCell">=0A<td>=0A<a h=
+ref=3D"https://click.mail.zillow.com/f/a/YaJN2wD84dPqxTHjtHnSwg~~/AAAAARA~/=
+N9vQYbzPvLCChKYzjaO1dmbf0MikQINvK923t59Vq4sM5xH2g0ywdnawHNSaHCV9KizGTNkSdyN=
+7PyYGx4EaRwQJJvdch25gGJJRp6Zdtsr1DfTEuDrB8DnWBuiW9qBl=3Ftarget=3Dhttps%3A%2=
+F%2Fwww.zillow.com%2Fhomedetails%2F118327977_zpid%2F%3Frtoken%3Dcf12779b-33=
+97-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo=
+-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225c=
+fbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dsoldaddress" style=3D"=
+text-decoration: none">=0A<table role=3D"presentation" width=3D"100%" cellp=
+adding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr>=0A<td class=3D"padb04" =
+align=3D"left" valign=3D"top" style=3D"padding: 4px 6px 8px 8px">=0A<strong=
+ style=3D"display: block; font-family: 'Open Sans', Helvetica, Arial, sans-=
+serif; font-size: 14px; line-height: 24px; color: #2a2a33; font-weight: 700=
+">$2,240,000</strong>=0A<p style=3D"font-family: 'Open Sans', Helvetica, Ar=
+ial, sans-serif; font-size: 12px; line-height: 16px; font-weight: 400; colo=
+r: #2a2a33; font-style: normal; margin: 0; padding: 0 0 4px 0">=0A<b>3</b>&=
+nbsp;<abbr title=3D"bedrooms" style=3D"text-decoration: none">bd</abbr>=0A<=
+span style=3D"color: #d1d1d5">|</span>=0A<b>3</b>&nbsp;<abbr title=3D"bathr=
+ooms" style=3D"text-decoration: none">ba</abbr>=0A<span style=3D"color: #d1=
+d1d5">|</span>=0A<b>1,390</b>&nbsp;<abbr title=3D"square feet" style=3D"tex=
+t-decoration: none">sqft</abbr>=0A</p>=0A<p style=3D"font-family: 'Open San=
+s', Helvetica, Arial, sans-serif; font-size: 12px; line-height: 16px; font-=
+weight: 400; color: #2a2a33; font-style: normal; margin: 0; padding: 0">New=
+ York</p>=0A</td>=0A</tr>=0A</table>=0A</a>=0A</td>=0A</tr>=0A</table>=0A</=
+div>=0A</th>=0A<th class=3D"stackCellWrap w100p" style=3D"font-size: 0px; l=
+ine-height: 16px; font-weight: normal; width: 12px">&nbsp;</th>=0A<th class=
+=3D"stackCellWrap w100p" valign=3D"top" align=3D"center" style=3D"width: 16=
+0px">=0A<div class=3D"w100p tableWrap borderPrimary dmBorderGray500" style=
+=3D"border-radius: 4px">=0A<table role=3D"presentation" class=3D"w100p bord=
+erNone dmBorderGray500 tableRow" align=3D"center" cellpadding=3D"0" cellspa=
+cing=3D"0" border=3D"0" style=3D"border: 1px solid #d1d1d5; width: 157px; b=
+order-radius: 4px; mso-border-alt: 0">=0A<tr class=3D"tableCell">=0A<td cla=
+ss=3D"dmBgGray600 borderRadiusLeft" width=3D"158" align=3D"center" backgrou=
+nd=3D"https://photos.zillowstatic.com/fp/20b8b3aa2b0c6fcddc2fcf0b20756b9a-p=
+_i.jpg" style=3D"background-repeat: no-repeat; background-position: center;=
+ background-size: cover; border-radius: 4px 4px 0px 0px; background-color: =
+#f1f1f4">=0A<!--[if gte mso 9]>=0A<v:image xmlns:v=3D"urn:schemas-microsoft=
+-com:vml" fill=3D"true" stroke=3D"false" style=3D"border: 0; display: inlin=
+e-block; width: 158px; height: 102px;" src=3Dhttps://photos.zillowstatic.co=
+m/fp/20b8b3aa2b0c6fcddc2fcf0b20756b9a-p_i.jpg />=0A<v:rect xmlns:v=3D"urn:s=
+chemas-microsoft-com:vml" fill=3D"true" stroke=3D"false" style=3D"border: 0=
+; display: inline-block; position: absolute; width: 158px; height: 102px;" =
+href=3Dhttps://www.zillow.com/homedetails/327264471_zpid/=3Frtoken=3Dcf1277=
+9b-3397-4ca3-bcd9-cad6be3f49da%7EX1-ZU10jwhwqqk8nih_47pep&utm_campaign=3Dem=
+o-MarketReport&utm_source=3Demail&utm_term=3Durn:msg:20260117182225cfbfdf24=
+2267580e&utm_medium=3Demail&utm_content=3Dsoldimage data-msys-linkname=3Dem=
+o-MarketReport-soldimage>=0A<v:fill opacity=3D"0%" color=3D"transparent" />=
+=0A<v:textbox inset=3D"0,0,0,0">=0A<![endif]-->=0A<a style=3D"text-decorati=
+on: none" href=3D"https://click.mail.zillow.com/f/a/95DUbNqWsuypX4hKQQDgCA~=
+~/AAAAARA~/PpebJNrkEgTzk51UsPJQxjdVxaGicNI6wqjZyxK6_v7JS8HFuzzsEqY5S_YxaH-u=
+Vb7Te0wM7ISiVo85tJT--xy0cO1lgZsExm0DGUoIYSQC1r8QGIA0T10gG84k84o4=3Ftarget=
+=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F327264471_zpid%2F%3Frtoken%=
+3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_c=
+ampaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20=
+260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dsoldimage=
+">=0A<table role=3D"presentation" align=3D"center" cellpadding=3D"0" cellsp=
+acing=3D"0" border=3D"0" style=3D"width: 158px">=0A<tr>=0A<td height=3D"102=
+" style=3D"height: 102px" role=3D"img" aria-label=3D"Photo of a Property"><=
+/td>=0A</tr>=0A</table>=0A</a>=0A<!--[if gte mso 9]>=0A</v:textbox>=0A</v:f=
+ill>=0A</v:rect>=0A</v:image>=0A<![endif]-->=0A</td>=0A</tr>=0A<tr class=3D=
+"tableCell">=0A<td>=0A<a href=3D"https://click.mail.zillow.com/f/a/_WtKKxI4=
+GmzAtZa1--za0A~~/AAAAARA~/N9vQYbzPvLCChKYzjaO1dmbf0MikQINvK923t59Vq4sM5xH2g=
+0ywdnawHNSaHCV9KizGTNkSdyN7PyYGx4EaRwQJJvdch25gGJJRp6Zdtsr1DfTEuDrB8DnWBuiW=
+9qBl=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomedetails%2F327264471_zpid=
+%2F%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_=
+47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Du=
+rn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium%3Demail%26utm_conten=
+t%3Dsoldaddress" style=3D"text-decoration: none">=0A<table role=3D"presenta=
+tion" width=3D"100%" cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=0A<t=
+r>=0A<td class=3D"padb04" align=3D"left" valign=3D"top" style=3D"padding: 4=
+px 6px 8px 8px">=0A<strong style=3D"display: block; font-family: 'Open Sans=
+', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 24px; color:=
+ #2a2a33; font-weight: 700">$473,000</strong>=0A<p style=3D"font-family: 'O=
+pen Sans', Helvetica, Arial, sans-serif; font-size: 12px; line-height: 16px=
+; font-weight: 400; color: #2a2a33; font-style: normal; margin: 0; padding:=
+ 0 0 4px 0">=0A<b>0</b>&nbsp;<abbr title=3D"bedrooms" style=3D"text-decorat=
+ion: none">bd</abbr>=0A<span style=3D"color: #d1d1d5">|</span>=0A<b>1</b>&n=
+bsp;<abbr title=3D"bathrooms" style=3D"text-decoration: none">ba</abbr>=0A<=
+span style=3D"color: #d1d1d5">|</span>=0A<b>--</b>&nbsp;<abbr title=3D"squa=
+re feet" style=3D"text-decoration: none">sqft</abbr>=0A</p>=0A<p style=3D"f=
+ont-family: 'Open Sans', Helvetica, Arial, sans-serif; font-size: 12px; lin=
+e-height: 16px; font-weight: 400; color: #2a2a33; font-style: normal; margi=
+n: 0; padding: 0">New York</p>=0A</td>=0A</tr>=0A</table>=0A</a>=0A</td>=0A=
+</tr>=0A</table>=0A</div>=0A</th>=0A<th class=3D"stackCellWrap w100p" style=
+=3D"font-size: 0px; line-height: 16px; font-weight: normal; width: 12px">&n=
+bsp;</th>=0A</tr>=0A</table>=0A<table role=3D"presentation" class=3D"mw504 =
+w100p" cellpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D"width: 504=
+px">=0A<tr>=0A<td align=3D"center">=0A<table class=3D"showDesktopOnly" role=
+=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr>=
+=0A<td style=3D"font-size: 0px; line-height: 24px">&nbsp;</td>=0A</tr>=0A</=
+table>=0A<a class=3D"cta14 txtLinkSecondary" href=3D"https://click.mail.zil=
+low.com/f/a/Y1Z0cy0ah0REwAiLPy66gQ~~/AAAAARA~/aE2Erns18lTCAG41z80DAw1K35ZiQ=
+-i9yW51sKZwv0qDyPUkRih17xKVdjTG3EOD6l5B84CJfMYMPt_Ljyx9LLtaEdFo0Vm3yjUlBfT5=
+j7w2jhbLvo9C-nxxG589joun=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.com%2Fhomes%2F=
+recently_sold%2F10010_rb%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49da%25=
+7EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_source%3=
+Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_medium=
+%3Demail%26utm_content%3Dviewhomesbutton" style=3D"display: inline-block; f=
+ont-family: 'Open Sans', Helvetica, Arial, sans-serif; font-weight: 700; co=
+lor: #0d4599; font-size: 16px; line-height: 24px; text-decoration: none; ma=
+rgin: 0; padding: 0">=0AView more homes=0A</a>=0A</td>=0A</tr>=0A</table>=
+=0A<table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" border=
+=3D"0"><tr><td style=3D"font-size: 0px; line-height: 48px">&nbsp;</td></tr>=
+</table>=0A</td>=0A</tr>=0A</table>=0A<table role=3D"presentation" width=3D=
+"100%" cellpadding=3D"0" cellspacing=3D"0" border=3D"0">=0A<tr>=0A<td align=
+=3D"center">=0A<!--[if !mso]><! -->=0A<table role=3D"presentation" class=3D=
+"gmailOnly w100p" width=3D"600" cellpadding=3D"0" cellspacing=3D"0" border=
+=3D"0" style=3D"background-color: #001751; display: none">=0A<tr>=0A<td ali=
+gn=3D"center" style=3D"padding: 0px 20px">=0A<table role=3D"presentation" c=
+ellpadding=3D"0" cellspacing=3D"0" border=3D"0"><tr><td style=3D"font-size:=
+ 0px; line-height: 32px">&nbsp;</td></tr></table>=0A<table role=3D"presenta=
+tion" class=3D"mw504 w100p" cellpadding=3D"0" cellspacing=3D"0" border=3D"0=
+" style=3D"width: 504px">=0A<tr>=0A<td align=3D"center">=0A<strong style=3D=
+"font-family: 'Open Sans', Helvetica, Arial, sans-serif; font-weight: 700; =
+font-size: 16px; line-height: 24px; color: #ffffff; margin: 0; padding: 0">=
+Never miss your Zillow alerts=0A</strong>=0A<table role=3D"presentation" ce=
+llpadding=3D"0" cellspacing=3D"0" border=3D"0"><tr><td style=3D"font-size: =
+0px; line-height: 8px">&nbsp;</td></tr></table>=0A<p class=3D"showDesktopOn=
+ly" style=3D"font-family: 'Open Sans', Helvetica, Arial, sans-serif; font-w=
+eight: 400; font-size: 16px; line-height: 24px; color: #ffffff; margin: 0; =
+padding: 0">To make sure updates land where you&rsquo;ll see them, drag and=
+ drop your Zillow emails into your Inbox&rsquo;s <strong>Primary</strong> t=
+ab.=0A</p>=0A<p class=3D"showMobileOnly" style=3D"display: none; font-famil=
+y: 'Open Sans', Helvetica, Arial, sans-serif; font-weight: 400; font-size: =
+14px; line-height: 24px; color: #ffffff; margin: 0; padding: 0">Tap the thr=
+ee-dot <strong>More</strong> icon at the top of this screen, choose <strong=
+>Move</strong>, then <strong>Primary</strong>.=0A</p>=0A</td>=0A</tr>=0A</t=
+able>=0A<table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" bo=
+rder=3D"0"><tr><td style=3D"font-size: 0px; line-height: 32px">&nbsp;</td><=
+/tr></table>=0A</td>=0A</tr>=0A</table>=0A<!--<![endif]-->=0A<!--[if !mso]>=
+<! -->=0A<table role=3D"presentation" class=3D"yahooAolOnly w100p" width=3D=
+"600" cellpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D"background-=
+color: #001751; display: none">=0A<tr>=0A<td align=3D"center" style=3D"padd=
+ing: 0px 20px">=0A<table role=3D"presentation" cellpadding=3D"0" cellspacin=
+g=3D"0" border=3D"0"><tr><td style=3D"font-size: 0px; line-height: 32px">&n=
+bsp;</td></tr></table>=0A<table role=3D"presentation" class=3D"mw504 w100p"=
+ cellpadding=3D"0" cellspacing=3D"0" border=3D"0" style=3D"width: 504px">=
+=0A<tr>=0A<td align=3D"left">=0A<strong style=3D"font-family: 'Open Sans', =
+Helvetica, Arial, sans-serif; font-weight: 700; font-size: 16px; line-heigh=
+t: 24px; color: #ffffff; margin: 0; padding: 0">Never miss your Zillow aler=
+ts=0A</strong>=0A<table role=3D"presentation" cellpadding=3D"0" cellspacing=
+=3D"0" border=3D"0"><tr><td style=3D"font-size: 0px; line-height: 8px">&nbs=
+p;</td></tr></table>=0A<p class=3D"showDesktopOnly" style=3D"font-family: '=
+Open Sans', Helvetica, Arial, sans-serif; font-weight: 400; font-size: 16px=
+; line-height: 24px; color: #ffffff; margin: 0; padding: 0">From your spam =
+folder, select any Zillow email and click <strong>Not Spam</strong> at the =
+top of the page to ensure you see timely updates in your&nbsp;inbox.=0A</p>=
+=0A<p class=3D"showMobileOnly" style=3D"display: none; font-family: 'Open S=
+ans', Helvetica, Arial, sans-serif; font-weight: 400; font-size: 14px; line=
+-height: 24px; color: #ffffff; margin: 0; padding: 0">From your spam folder=
+, open any Zillow email, tap the three-dot icon at the bottom of the screen=
+, and choose <strong>Not&nbsp;Spam</strong>.=0A</p>=0A</td>=0A</tr>=0A</tab=
+le>=0A<table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" bord=
+er=3D"0"><tr><td style=3D"font-size: 0px; line-height: 32px">&nbsp;</td></t=
+r></table>=0A</td>=0A</tr>=0A</table>=0A<!--<![endif]-->=0A<table role=3D"p=
+resentation" class=3D"w100p" cellpadding=3D"0" cellspacing=3D"0" border=3D"=
+0" style=3D"width: 600px">=0A<tr>=0A<td class=3D"dmBorderGray500" style=3D"=
+border-bottom: 1px solid #d1d1d5; font-size: 0; height: 0; line-height: 0; =
+mso-line-height-rule: exactly">&nbsp;</td>=0A</tr>=0A</table>=0A<table role=
+=3D"presentation" class=3D"mw600 w100p" cellpadding=3D"0" cellspacing=3D"0"=
+ border=3D"0" style=3D"width: 600px">=0A<tr>=0A<td align=3D"center" style=
+=3D"padding: 0px 20px">=0A<table role=3D"presentation" cellpadding=3D"0" ce=
+llspacing=3D"0" border=3D"0"><tr><td style=3D"font-size: 0px; line-height: =
+16px">&nbsp;</td></tr></table>=0A<address style=3D"font-family: 'Open Sans'=
+, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 16px; color: =
+#54545a; font-style: normal; text-align: center; margin: 0; padding: 0">=0A=
+<a style=3D"color: #54545a; text-decoration: none; cursor: pointer">=0AZill=
+ow, Inc.<br />=0A1301 Second Avenue, Floor 36<br />=0ASeattle, WA 98101<br =
+/>=0A&copy;2006&ndash;2026=0A</a>=0A</address>=0A<table role=3D"presentatio=
+n" cellpadding=3D"0" cellspacing=3D"0" border=3D"0"><tr><td style=3D"font-s=
+ize: 0px; line-height: 16px">&nbsp;</td></tr></table>=0A<small style=3D"fon=
+t-family: 'Open Sans', Helvetica, Arial, sans-serif; font-weight: 400; font=
+-size: 12px; line-height: 16px; color: #54545a; margin: 0; padding: 0">Help=
+ improve your email experience!=0A<a class=3D"txtLinkPrimary" href=3D"https=
+://click.mail.zillow.com/f/web/iQ2PvTahW6T38pZnvPmZzw~~/AAAAARA~/TMuiXLJfah=
+26PxqY6QOpOVFreQAYw6gJ4HVQCwucLqy-VxyUIxLoyu7FJ8DWgQDoiZV69xhUSsJFyz0GcEtAI=
+ZIgcgwLoJY7zYUMr6meudiK7x5BdCXpbaIOqIxPdMjW=3Ftarget=3Dhttps%3A%2F%2Fwww.zi=
+llow.com%2Femail%2Ffeedback%3Femail_campaign%3Demo-MarketReport%26message_i=
+d%3Durn%253Amsg%253A20260117182225cfbfdf242267580e%26rtoken%3Dcf12779b-3397=
+-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-M=
+arketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfb=
+fdf242267580e%26utm_medium%3Demail%26utm_content%3Dfooterfeedback" style=3D=
+"color: #0d4599; font-weight: 700; text-decoration: underline">Share&nbsp;y=
+our&nbsp;feedback=0A</a></small>=0A<table role=3D"presentation" cellpadding=
+=3D"0" cellspacing=3D"0" border=3D"0"><tr><td style=3D"font-size: 0px; line=
+-height: 16px">&nbsp;</td></tr></table>=0A<small style=3D"font-family: 'Ope=
+n Sans', Helvetica, Arial, sans-serif; font-weight: 400; font-size: 12px; l=
+ine-height: 16px; color: #54545a; margin: 0; padding: 0"><a class=3D"txtLin=
+kSecondary" href=3D"https://click.mail.zillow.com/f/a/56_0ukvyUZkPR2pyt0si4=
+g~~/AAAAARA~/-qt0mNm1QQRIXjErr9PYYRwch-RwIn4lNYQ_DKmQTTLU0Na_sHUmgmg5v_FRlp=
+hKx1yjIB45_OyQOGPhV2ntrQZFhwn8XwM6SFSyup1S79QpxZydU0p3e_9HKsHU59DH=3Ftarget=
+=3Dhttps%3A%2F%2Fwww.zillowgroup.com%2Fzg-privacy-policy%2F%3Frtoken%3Dcf12=
+779b-3397-4ca3-bcd9-cad6be3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaig=
+n%3Demo-MarketReport%26utm_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117=
+182225cfbfdf242267580e%26utm_medium%3Demail%26utm_content%3Dfooterprivacy" =
+style=3D"color: #0d4599; font-weight: 700; text-decoration: none">Privacy&n=
+bsp;policy</a>=0A&nbsp;|&nbsp;=0A<a class=3D"txtLinkSecondary" href=3D"http=
+s://click.mail.zillow.com/f/a/6Yt3O0B-6K1akfl6sA4ffw~~/AAAAARA~/N9vQYbzPvLC=
+ChKYzjaO1dtnRTJ_1LpEPAfWTJYGG90kJKSBJmcMW0r2XoJ1nmdPI3T6tpnkzxWJGhFCVvQehBa=
+p_6UUpL79mQDYSw-jujcuXFwSGHybUNcXtsyc_bcXx=3Ftarget=3Dhttps%3A%2F%2Fwww.zil=
+low.com%2Femail%2FUnsubscribeEnrollment.htm%3Ftoken%3DenV3.1768674145202.GG=
+D3SrhC0JhMLhD7ZIcCJg.B8HklOJNLhqREGk2zT8hSFivfzoGLXYbe9dI162c9K8.NICbEur0bw=
+YxzrKaTehsznAUI4Cl-lHZ-oi1RMmXi5Y%26rtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be=
+3f49da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm=
+_source%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26u=
+tm_medium%3Demail%26utm_content%3Dfooterunsub" style=3D"color: #0d4599; fon=
+t-weight: 700; text-decoration: none">Unsubscribe&nbsp;from&nbsp;this&nbsp;=
+email</a>=0A&nbsp;|&nbsp;=0A<a class=3D"txtLinkSecondary" href=3D"https://c=
+lick.mail.zillow.com/f/a/IbcbzBcRllE8rxm5e-ckKg~~/AAAAARA~/zwNy1AM01wx04ouY=
+eIExk_His0vlEkfCwdl8Psft_AJORefn7PDm5_GkoEg5GpJVKW6jFauG5F9jorAZPC6vZgEXAnr=
+KNdvgjriyxOague5v9ik9CI04dk8tpDEdr_fl=3Ftarget=3Dhttps%3A%2F%2Fwww.zillow.c=
+om%2Fmyzillow%2Fnotifications%3Frtoken%3Dcf12779b-3397-4ca3-bcd9-cad6be3f49=
+da%257EX1-ZU10jwhwqqk8nih_47pep%26utm_campaign%3Demo-MarketReport%26utm_sou=
+rce%3Demail%26utm_term%3Durn%3Amsg%3A20260117182225cfbfdf242267580e%26utm_m=
+edium%3Demail%26utm_content%3Dfooterpreferences" style=3D"color: #0d4599; f=
+ont-weight: 700; text-decoration: none">Update&nbsp;your&nbsp;preferences</=
+a>=0A</small>=0A</td>=0A</tr>=0A</table>=0A<table role=3D"presentation" cel=
+lpadding=3D"0" cellspacing=3D"0" border=3D"0"><tr><td style=3D"font-size: 0=
+px; line-height: 24px">&nbsp;</td></tr></table>=0A</td>=0A</tr>=0A</table>=
+=0A</td>=0A</tr>=0A</table>=0A=0D=0A<img border=3D"0" width=3D"1" height=3D=
+"1" alt=3D"" src=3D"https://click.mail.zillow.com/q/W885QPPssM59tC2qwhUUfg~=
+~/AAAAARA~/0X0HsyoKXLATyGbKBeVPqQ9bIAbJAoaKM0DaZw_ItRdm8ZxX-mWYzw0X1bbFQwEX=
+6i4DW6H4ZeZ5zy8TZ8-X-w~~">=0D=0A</body>=0A</html>
+--_----d6Q0tVUjs+ea+1nVM9h3xA===_3F/8D-50144-673DB696--
+

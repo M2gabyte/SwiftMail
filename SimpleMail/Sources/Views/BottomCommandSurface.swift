@@ -1,11 +1,8 @@
 import SwiftUI
 
 /// Apple Mail-style bottom command bar (iOS 26).
-/// Left: filter/menu button, Center: search, Right: compose button.
+/// Left: hamburger menu, Center: search, Right: compose button.
 struct BottomCommandSurface: View {
-    let isFilterActive: Bool
-    let activeFilterLabel: String?
-    let activeFilterCount: Int?
     var searchMode: SearchMode = .idle
     var showSearchField: Bool = true
     @Binding var searchText: String
@@ -13,7 +10,7 @@ struct BottomCommandSurface: View {
     let onSubmitSearch: () -> Void
     let onTapSearch: () -> Void
     let onCancelSearch: () -> Void
-    let onTapFilter: () -> Void
+    let onTapMenu: () -> Void
     let onTapCompose: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -27,8 +24,7 @@ struct BottomCommandSurface: View {
         let isEditing = searchMode == .editing
         HStack(spacing: isEditing ? 6 : 8) {
             if !isEditing {
-                leftButton
-                    .frame(width: 44, height: 44)
+                menuButton
             }
 
             centerSearchContent
@@ -49,7 +45,7 @@ struct BottomCommandSurface: View {
                 .contentShape(Rectangle())
                 .accessibilityLabel("Cancel search")
             } else {
-                rightButton
+                composeButton
             }
         }
         .padding(.horizontal, isEditing ? 8 : 12)
@@ -58,33 +54,24 @@ struct BottomCommandSurface: View {
         .animation(.snappy(duration: 0.22), value: isSearchActive)
     }
 
-    private var leftButton: some View {
-        Button(action: onTapFilter) {
-            Image(systemName: "line.3.horizontal.decrease.circle")
-                .font(.system(size: 21, weight: .regular))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(isFilterActive ? Color.accentColor.opacity(0.8) : .secondary)
+    private var menuButton: some View {
+        Button(action: onTapMenu) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.secondary)
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(GlassTokens.chromeMaterial))
                 .glassStroke(Circle())
                 .glassShadow()
-                .overlay(alignment: .topTrailing) {
-                    if isFilterActive {
-                        FilterActiveBadge(count: activeFilterCount)
-                            .offset(x: 6, y: -6)
-                            .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFilterActive)
         }
         .buttonStyle(.plain)
         .frame(width: 50, height: 50)
         .contentShape(Rectangle())
-        .accessibilityLabel(filterAccessibilityLabel)
-        .accessibilityHint(isFilterActive ? "Double tap to change or clear filter" : "Double tap to add a filter")
+        .accessibilityLabel("Mailboxes")
+        .accessibilityHint("Double tap to open mailboxes and settings")
     }
 
-    private var rightButton: some View {
+    private var composeButton: some View {
         Button(action: onTapCompose) {
             Image(systemName: "square.and.pencil")
                 .font(.system(size: 21, weight: .medium))
@@ -117,36 +104,6 @@ struct BottomCommandSurface: View {
         .accessibilityHidden(!showSearchField)
         .accessibilityLabel("Search emails")
     }
-
-    private var filterAccessibilityLabel: String {
-        guard isFilterActive else {
-            return "Filter"
-        }
-        let label = activeFilterLabel ?? "active"
-        if let count = activeFilterCount, count > 0 {
-            return "Filter: \(label), \(count) messages"
-        }
-        return "Filter: \(label)"
-    }
-}
-
-private struct FilterActiveBadge: View {
-    let count: Int?
-
-    var body: some View {
-        if let count, count > 0 {
-            Text("\(count)")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color.accentColor))
-        } else {
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 8, height: 8)
-        }
-    }
 }
 
 enum SearchMode: Equatable {
@@ -166,9 +123,6 @@ enum SearchMode: Equatable {
                 VStack {
                     Spacer()
                     BottomCommandSurface(
-                        isFilterActive: false,
-                        activeFilterLabel: nil,
-                        activeFilterCount: nil,
                         searchMode: .idle,
                         showSearchField: true,
                         searchText: $searchText,
@@ -176,7 +130,7 @@ enum SearchMode: Equatable {
                         onSubmitSearch: { },
                         onTapSearch: { },
                         onCancelSearch: { },
-                        onTapFilter: { },
+                        onTapMenu: { },
                         onTapCompose: { }
                     )
                 }
