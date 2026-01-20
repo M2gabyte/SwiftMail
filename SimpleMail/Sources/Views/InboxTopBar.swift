@@ -12,7 +12,7 @@ struct InboxTopBar: View {
     let onTapSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             // LEFT: Hamburger (mailbox picker)
             Button(action: onTapMailbox) {
                 GlassIconButton(systemName: "line.3.horizontal")
@@ -40,7 +40,7 @@ struct InboxTopBar: View {
             .frame(width: 44, height: 44)
             .accessibilityLabel("Settings")
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.top, 6)
         .padding(.bottom, 10)
     }

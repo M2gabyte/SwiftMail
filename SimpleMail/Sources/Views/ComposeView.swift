@@ -646,66 +646,40 @@ private func rankAndDedupe(
 ) -> [RecipientSuggestion] {
     let q = queryToken.trimmingCharacters(in: .whitespacesAndNewlines)
     let emailMode = isEmailMode(q)
-    let mySet = Set(myEmails.map(normalizeEmail))
     let selectedSet = Set(alreadySelected.map(normalizeEmail))
 
-    // Dedupe by normalized email
-    var bestByEmail: [String: PeopleService.Contact] = [:]
+    // Dedupe while preserving the incoming order (PeopleService is already ranked with recency/domain/name heuristics)
+    var seen: Set<String> = []
+    var ordered: [PeopleService.Contact] = []
     for r in results {
         let key = normalizeEmail(r.email)
-        // Skip already selected recipients
         if selectedSet.contains(key) { continue }
-
-        if bestByEmail[key] == nil {
-            bestByEmail[key] = r
-        } else {
-            // Prefer contact with a name if duplicate
-            let existing = bestByEmail[key]!
-            if existing.name.isEmpty && !r.name.isEmpty {
-                bestByEmail[key] = r
-            }
+        if seen.insert(key).inserted {
+            ordered.append(r)
         }
     }
 
-    var deduped = Array(bestByEmail.values)
+    var filtered = ordered
 
-    // If user is typing an email, do email-first scoring
-    if emailMode {
-        deduped.sort {
-            let aSelf = mySet.contains(normalizeEmail($0.email))
-            let bSelf = mySet.contains(normalizeEmail($1.email))
-            let sa = emailScore(email: $0.email, token: q, isSelf: aSelf)
-            let sb = emailScore(email: $1.email, token: q, isSelf: bSelf)
-
-            if sa != sb { return sa > sb }
-            // stable tie-breakers
-            if $0.email != $1.email { return $0.email.lowercased() < $1.email.lowercased() }
-            return $0.name < $1.name
-        }
-
-        // Hard filter: if token contains '@', drop non-matching emails
-        if q.contains("@") {
-            deduped = deduped.filter { normalizeEmail($0.email).contains(normalizeEmail(q)) }
-        }
-
-        var suggestions = deduped.prefix(5).map { RecipientSuggestion(from: $0) }
-
-        // Add "use exactly what I typed" if valid email and not already in list
-        if isValidEmailFormat(q) {
-            let normalizedQ = normalizeEmail(q)
-            let alreadyInList = suggestions.contains { normalizeEmail($0.email) == normalizedQ }
-            let alreadySelected = selectedSet.contains(normalizedQ)
-            if !alreadyInList && !alreadySelected {
-                suggestions.insert(RecipientSuggestion(typedEmail: q), at: 0)
-            }
-        }
-
-        return Array(suggestions.prefix(5))
+    // If query contains '@', restrict to email matches
+    if q.contains("@") {
+        let nq = normalizeEmail(q)
+        filtered = filtered.filter { normalizeEmail($0.email).contains(nq) }
     }
 
-    // Non-email mode: simple name/email sorting
-    deduped.sort { ($0.name.isEmpty ? $0.email : $0.name) < ($1.name.isEmpty ? $1.email : $1.name) }
-    return Array(deduped.prefix(5).map { RecipientSuggestion(from: $0) })
+    var suggestions = filtered.prefix(5).map { RecipientSuggestion(from: $0) }
+
+    // Add "use exactly what I typed" if valid email and not already suggested/selected
+    if emailMode, isValidEmailFormat(q) {
+        let normalizedQ = normalizeEmail(q)
+        let alreadyInList = suggestions.contains { normalizeEmail($0.email) == normalizedQ }
+        let alreadySelected = selectedSet.contains(normalizedQ)
+        if !alreadyInList && !alreadySelected {
+            suggestions.insert(RecipientSuggestion(typedEmail: q), at: 0)
+        }
+    }
+
+    return Array(suggestions.prefix(5))
 }
 
 private func commitTokenIfNeeded(
@@ -2590,6 +2564,13 @@ class ComposeViewModel: ObservableObject {
                 inReplyTo: replyToMessageId,
                 threadId: replyThreadId
             )
+
+            // Record recent recipients for ranking (include names when available)
+            let accountEmail = AuthService.shared.currentAccount?.email
+            let all = to + cc + bcc
+            for address in all {
+                await RecentRecipientStore.shared.record(email: address, name: nil, accountEmail: accountEmail)
+            }
 
             // Delete draft if exists
             if let draftId = draftId {

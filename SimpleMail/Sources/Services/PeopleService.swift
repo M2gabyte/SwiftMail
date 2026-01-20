@@ -1,5 +1,7 @@
 import Foundation
 import OSLog
+import Contacts
+import Foundation
 
 // MARK: - People Service Logger
 
@@ -10,6 +12,8 @@ private let logger = Logger(subsystem: "com.simplemail.app", category: "PeopleSe
 /// Service for Google People API - provides contact autocomplete functionality
 actor PeopleService {
     static let shared = PeopleService()
+    // (placeholder retained for API compatibility; no-op)
+    static func sharedDisplayName(for email: String) -> String? { nil }
 
     private let baseURL = "https://people.googleapis.com/v1"
     private let requestTimeout: TimeInterval = TimeoutConfig.peopleAPI
@@ -25,6 +29,8 @@ actor PeopleService {
     private var inflightFetchByAccount: [String: Task<[Contact], Error>] = [:]
     /// Single-flight preload task to prevent repeated API calls
     private var preloadTask: Task<Void, Never>?
+    /// Simple in-memory display-name lookup (lowercased email -> name) for quick reuse.
+    private var displayNameCache: [String: String] = [:]
 
     // MARK: - Contact Model
 
@@ -217,12 +223,144 @@ actor PeopleService {
             }
         }
 
-        // Search in cached contacts
-        let cached = cachedContactsByAccount[accountKey] ?? []
-        return cached.filter { contact in
-            contact.name.lowercased().contains(lowercasedQuery) ||
-            contact.email.lowercased().contains(lowercasedQuery)
+        // Merge Google + local contacts, then rank
+        let myEmail = await AuthService.shared.currentAccount?.email.lowercased()
+        let merged = await mergedContacts(query: lowercasedQuery, accountKey: accountKey, myEmail: myEmail)
+        let recent = await RecentRecipientStore.shared.recent(accountEmail: await AuthService.shared.currentAccount?.email)
+        let recentMap: [String: Date] = Dictionary(uniqueKeysWithValues: recent.map { ($0.email, $0.lastUsed) })
+
+        // Filter: if query includes '@', restrict to email matches only
+        let filtered = merged.filter { contact in
+            let email = contact.email.lowercased()
+            if lowercasedQuery.contains("@") {
+                return email.contains(lowercasedQuery)
+            }
+            return contact.name.lowercased().contains(lowercasedQuery) || email.contains(lowercasedQuery)
         }
+
+        func score(_ contact: Contact) -> Int {
+            let name = contact.name.lowercased()
+            let email = contact.email.lowercased()
+            var s = 0
+            let now = Date()
+
+            // Email priority
+            if email == lowercasedQuery { s += 1_000_000 }
+            else if email.hasPrefix(lowercasedQuery) { s += 900_000 }
+            else if let at = email.firstIndex(of: "@") {
+                let local = email[..<at]
+                if local.hasPrefix(lowercasedQuery) { s += 850_000 }
+            }
+
+            // Name priority
+            if name.hasPrefix(lowercasedQuery) { s += 800_000 }
+            else if let range = name.range(of: lowercasedQuery) {
+                let dist = name.distance(from: name.startIndex, to: range.lowerBound)
+                s += max(760_000 - dist * 5, 0)
+            }
+
+            // Email substring fallback
+            if let range = email.range(of: lowercasedQuery) {
+                let dist = email.distance(from: email.startIndex, to: range.lowerBound)
+                s += max(700_000 - dist * 5, 0)
+            }
+
+            // Prefer contacts with display names
+            if !contact.name.isEmpty { s += 5_000 }
+
+            // Slight boost for self email so it surfaces quickly
+            if let myEmail, email == myEmail { s += 20_000 }
+
+            // Recency boost (recent send/receive)
+            if let used = recentMap[email] {
+                let age = now.timeIntervalSince(used)
+                // 0-7 days strong, 7-30 medium, beyond minimal
+                if age < 7 * 86_400 { s += 120_000 }
+                else if age < 30 * 86_400 { s += 70_000 }
+                else if age < 90 * 86_400 { s += 25_000 }
+            }
+
+            // Domain affinity boost: match account domain when query hints at email
+            if let myEmail, let myDomain = myEmail.split(separator: "@").last {
+                if let domain = email.split(separator: "@").last {
+                    if domain == myDomain {
+                        s += 30_000
+                    }
+                }
+            }
+
+            return s
+        }
+
+        let ranked = filtered.sorted {
+            let sa = score($0)
+            let sb = score($1)
+            if sa != sb { return sa > sb }
+            if $0.name != $1.name { return $0.name < $1.name }
+            return $0.email < $1.email
+        }
+
+        return Array(ranked.prefix(50))
+    }
+
+    // MARK: - Display name helper
+    func cachedDisplayName(for lowercasedEmail: String) -> String? {
+        displayNameCache[lowercasedEmail]
+    }
+
+    // MARK: - Local Contacts Integration
+
+    /// Merge Google contacts with local device contacts (email-only), preferring local when equal.
+    /// Returns combined list (deduped by email, case-insensitive).
+    private func mergedContacts(query: String, accountKey: String, myEmail: String?) async -> [Contact] {
+        let google = cachedContactsByAccount[accountKey] ?? []
+        let local = await LocalContactsService.shared.search(query: query)
+
+        var bestByEmail: [String: Contact] = [:]
+
+        func upsert(_ contact: Contact, isLocal: Bool) {
+            let key = contact.email.lowercased()
+            if let existing = bestByEmail[key] {
+                // Prefer local over google; prefer one with a name
+                let existingHasName = !existing.name.isEmpty
+                let incomingHasName = !contact.name.isEmpty
+                if isLocal && !existingHasName && incomingHasName {
+                    bestByEmail[key] = contact
+                } else if isLocal && !existingHasName {
+                    bestByEmail[key] = contact
+                } else if incomingHasName && !existingHasName {
+                    bestByEmail[key] = contact
+                }
+            } else {
+                bestByEmail[key] = contact
+            }
+        }
+
+        google.forEach { upsert($0, isLocal: false) }
+        local.forEach {
+            let c = Contact(
+                id: "local-\($0.id)",
+                name: $0.name,
+                email: $0.email,
+                photoURL: nil
+            )
+            upsert(c, isLocal: true)
+        }
+
+        // Optional: small boost for self email to ensure it's kept even if no name
+        if let myEmail {
+            let norm = myEmail.lowercased()
+            if let existing = bestByEmail[norm] {
+                bestByEmail[norm] = Contact(
+                    id: existing.id,
+                    name: existing.name,
+                    email: existing.email,
+                    photoURL: existing.photoURL
+                )
+            }
+        }
+
+        return Array(bestByEmail.values)
     }
 
     /// Preloads contacts in the background (single-flight)
@@ -411,6 +549,138 @@ actor PeopleService {
     func clearCache() {
         cachedContactsByAccount = [:]
         lastCacheTimeByAccount = [:]
+    }
+}
+
+// MARK: - Local Contacts (inline to avoid target wiring)
+
+actor LocalContactsService {
+    static let shared = LocalContactsService()
+    private let store = CNContactStore()
+    private let logger = Logger(subsystem: "com.simplemail.app", category: "LocalContactsService")
+    private let cacheTTL: TimeInterval = 60 * 30
+    private var cached: [LocalContact] = []
+    private var lastFetch: Date?
+
+    struct LocalContact: Hashable {
+        let id: String
+        let name: String
+        let email: String
+    }
+
+    func search(query: String) async -> [LocalContact] {
+        guard await ensureAccess() else { return [] }
+        let q = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        let contacts = await loadIfNeeded()
+        return contacts.filter { c in
+            let name = c.name.lowercased()
+            let email = c.email.lowercased()
+            if q.contains("@") { return email.contains(q) }
+            return name.contains(q) || email.contains(q)
+        }
+    }
+
+    private func ensureAccess() async -> Bool {
+        switch CNContactStore.authorizationStatus(for: .contacts) {
+        case .authorized, .limited: return true
+        case .notDetermined:
+            do { return try await store.requestAccess(for: .contacts) }
+            catch {
+                logger.warning("Contacts permission failed: \(error.localizedDescription)")
+                return false
+            }
+        default: return false
+        }
+    }
+
+    private func loadIfNeeded() async -> [LocalContact] {
+        if let lastFetch, Date().timeIntervalSince(lastFetch) < cacheTTL, !cached.isEmpty {
+            return cached
+        }
+        do {
+            let keys: [CNKeyDescriptor] = [
+                CNContactIdentifierKey as CNKeyDescriptor,
+                CNContactGivenNameKey as CNKeyDescriptor,
+                CNContactFamilyNameKey as CNKeyDescriptor,
+                CNContactMiddleNameKey as CNKeyDescriptor,
+                CNContactEmailAddressesKey as CNKeyDescriptor,
+                // Required for CNContactFormatter to avoid "property not requested" warnings
+                CNContactFormatter.descriptorForRequiredKeys(for: .fullName)
+            ]
+            let request = CNContactFetchRequest(keysToFetch: keys)
+            var results: [LocalContact] = []
+            var seen: Set<String> = []
+            try store.enumerateContacts(with: request) { contact, _ in
+                guard !contact.emailAddresses.isEmpty else { return }
+                let name = CNContactFormatter.string(from: contact, style: .fullName) ?? ""
+                for emailValue in contact.emailAddresses {
+                    let email = (emailValue.value as String).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    guard !email.isEmpty else { continue }
+                    if seen.contains(email) { continue }
+                    seen.insert(email)
+                    results.append(LocalContact(id: contact.identifier + "-" + email, name: name, email: email))
+                }
+            }
+            cached = results
+            lastFetch = Date()
+            logger.info("Loaded \(results.count) local contacts with email addresses.")
+            return results
+        } catch {
+            logger.warning("Failed to load local contacts: \(error.localizedDescription)")
+            cached = []
+            return []
+        }
+    }
+}
+
+// MARK: - Recent Recipients (inline store)
+
+actor RecentRecipientStore {
+    static let shared = RecentRecipientStore()
+    private let logger = Logger(subsystem: "com.simplemail.app", category: "RecentRecipientStore")
+    private let maxEntries = 200
+    private let userDefaults = UserDefaults.standard
+    private let keyPrefix = "recentRecipients:"
+
+    struct Entry: Codable {
+        let email: String
+        let name: String?
+        let lastUsed: Date
+    }
+
+    func record(email: String, name: String?, accountEmail: String?) {
+        guard let accountEmail else { return }
+        let norm = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !norm.isEmpty else { return }
+        var entries = load(accountEmail: accountEmail)
+        entries.removeAll { $0.email == norm }
+        entries.insert(Entry(email: norm, name: name, lastUsed: Date()), at: 0)
+        if entries.count > maxEntries { entries = Array(entries.prefix(maxEntries)) }
+        save(entries, accountEmail: accountEmail)
+    }
+
+    func recent(accountEmail: String?) -> [Entry] {
+        guard let accountEmail else { return [] }
+        return load(accountEmail: accountEmail)
+    }
+
+    private func storageKey(for account: String) -> String { "\(keyPrefix)\(account.lowercased())" }
+
+    private func load(accountEmail: String) -> [Entry] {
+        let key = storageKey(for: accountEmail)
+        guard let data = userDefaults.data(forKey: key) else { return [] }
+        do { return try JSONDecoder().decode([Entry].self, from: data) }
+        catch {
+            logger.warning("Decode recent recipients failed: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private func save(_ entries: [Entry], accountEmail: String) {
+        let key = storageKey(for: accountEmail)
+        do { userDefaults.set(try JSONEncoder().encode(entries), forKey: key) }
+        catch { logger.warning("Save recent recipients failed: \(error.localizedDescription)") }
     }
 }
 

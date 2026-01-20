@@ -12,7 +12,7 @@ struct InboxTabBar: View {
     @State private var customLabelScale: CGFloat = 1.0
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             // "All" - short, no special handling needed
             segmentAll(isSelected: selectedTab == .all, action: onTapAll)
 
@@ -52,7 +52,7 @@ struct InboxTabBar: View {
     private func segmentAll(isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text("All")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .semibold))
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .frame(maxWidth: .infinity, minHeight: 28)
@@ -69,10 +69,10 @@ struct InboxTabBar: View {
     private func segmentPrimary(isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text("Primary")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .semibold))
                 .lineLimit(1)
                 .allowsTightening(true)
-                .minimumScaleFactor(0.9)
+                .minimumScaleFactor(0.95)
                 .layoutPriority(1)
                 .foregroundStyle(isSelected ? .primary : .secondary)
                 .frame(maxWidth: .infinity, minHeight: 28)
@@ -92,13 +92,13 @@ struct InboxTabBar: View {
         return Button(action: action) {
             HStack(spacing: 4) {
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
                     .allowsTightening(true)
-                    .minimumScaleFactor(0.85)
+                    .minimumScaleFactor(0.95)
                     .layoutPriority(2)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(isPickerOpen ? -180 : 0))
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPickerOpen)
