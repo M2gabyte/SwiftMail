@@ -504,7 +504,9 @@ struct EmailDetailView: View {
             let popoverWidth: CGFloat = 260
             let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
             let popoverHeight: CGFloat = 150
-            let anchoredY = proxy.size.height - safeAreaBottom - 92 - 12 - (popoverHeight / 2)
+            let naturalY = frame.minY - popoverHeight / 2 - 12
+            let minY = popoverHeight / 2 + 12
+            let anchoredY = max(minY, naturalY)
 
             ZStack {
                 Color.black.opacity(0.10)
