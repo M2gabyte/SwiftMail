@@ -479,6 +479,7 @@ struct EmailDetailView: View {
             .padding(.bottom, 10)
         }
         .frame(height: 92)
+        .coordinateSpace(name: "ReplyDock")
     }
 
     // Popover overlay anchored to reply split button
@@ -500,7 +501,7 @@ struct EmailDetailView: View {
     @ViewBuilder
     private func popoverContent(anchor: Anchor<CGRect>?, proxy: GeometryProxy) -> some View {
         if showReplyPopover, let anchor {
-            let frame = proxy[anchor]
+            let frame = proxy[anchor, in: .named("ReplyDock")]
             let popoverWidth: CGFloat = 260
             let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
             let popoverHeight: CGFloat = 150
