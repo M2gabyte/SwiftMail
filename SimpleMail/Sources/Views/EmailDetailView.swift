@@ -501,7 +501,7 @@ struct EmailDetailView: View {
     @ViewBuilder
     private func popoverContent(anchor: Anchor<CGRect>?, proxy: GeometryProxy) -> some View {
         if showReplyPopover, let anchor {
-            let frame = proxy[anchor, in: .named("ReplyDock")]
+            let frame = proxy[anchor]
             let popoverWidth: CGFloat = 260
             let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
             let popoverHeight: CGFloat = 150
