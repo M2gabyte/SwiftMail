@@ -1,11 +1,19 @@
 import SwiftUI
 import OSLog
+import UIKit
 // MainThreadWatchdog is a local utility in Sources/Utils
 
 private let logger = Logger(subsystem: "com.simplemail.app", category: "InboxView")
 typealias SelectionID = String
 
 private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct TopBarHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
@@ -44,8 +52,13 @@ struct InboxView: View {
     @State private var inboxScope: InboxLocationScope = .unified
     @State private var bottomBarHeight: CGFloat = 56
     @State private var safeAreaBottom: CGFloat = 0
+    @State private var topBarHeight: CGFloat = 0
     private var pendingSendManager = PendingSendManager.shared
     private var networkMonitor = NetworkMonitor.shared
+
+    init() {
+        configureListHeaderAppearance()
+    }
 
     /// Computed active filter label for bottom command surface
     private var activeFilterLabel: String? {
@@ -473,7 +486,14 @@ struct InboxView: View {
                     onTapMailbox: { showingLocationSheet = true },
                     onTapSettings: { showingSettings = true }
                 )
-                .background(Color(.systemBackground).opacity(0.95))
+                // Make the top bar fully opaque so list content never shows through while pinned headers are visible
+                .background(
+                    GeometryReader { proxy in
+                        Color(.systemBackground)
+                            .ignoresSafeArea(edges: .top)
+                            .preference(key: TopBarHeightKey.self, value: proxy.size.height)
+                    }
+                )
             }
         }
     }
@@ -485,105 +505,126 @@ struct InboxView: View {
     }
 
     private var mailList: some View {
-        List {
-            if !isSearchMode {
-                // Scroll tracking anchor (invisible)
-                Color.clear
-                    .frame(height: 0)
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear
-                                .preference(
-                                    key: ScrollOffsetKey.self,
-                                    value: proxy.frame(in: .named("inboxScroll")).minY
-                                )
-                        }
-                    )
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+        ScrollView {
+            // Scroll tracking anchor (invisible)
+            Color.clear
+                .frame(height: 0)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .preference(
+                                key: ScrollOffsetKey.self,
+                                value: proxy.frame(in: .named("inboxScroll")).minY
+                            )
+                    }
+                )
 
-                if let activeFilter = viewModel.activeFilter {
-                    FilterActiveBanner(
-                        filterLabel: activeFilter.rawValue,
-                        filterColor: activeFilter.color,
-                        onClear: {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                viewModel.activeFilter = nil
+            VStack(spacing: 0) {
+                if !isSearchMode {
+                    if let activeFilter = viewModel.activeFilter {
+                        FilterActiveBanner(
+                            filterLabel: activeFilter.rawValue,
+                            filterColor: activeFilter.color,
+                            onClear: {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    viewModel.activeFilter = nil
+                                }
+                            }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    }
+
+                    // Category viewing header (when drilled into a category from bundle tap)
+                    if let category = viewModel.viewingCategory {
+                        CategoryViewingHeader(category: category) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                viewModel.viewingCategory = nil
                             }
                         }
-                    )
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    }
+                    // Category bundles (top block) when not inline
+                    else if showCategoryBundles && !showCategoryBundlesInline && viewModel.currentTab == .primary && !viewModel.bucketRows.isEmpty {
+                        CategoryBundlesSection(bundles: viewModel.bucketRows) { bucket in
+                            handleBucketTap(bucket)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    }
                 }
 
-                // Category viewing header (when drilled into a category from bundle tap)
-                if let category = viewModel.viewingCategory {
-                    CategoryViewingHeader(category: category) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            viewModel.viewingCategory = nil
+                let inlineBlocks = inlineCategoryBlocks(
+                    sections: displaySections,
+                    bundles: (showCategoryBundles && showCategoryBundlesInline && viewModel.currentTab == .primary) ? viewModel.bucketRows : []
+                )
+
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ForEach(Array(inlineBlocks.enumerated()), id: \.offset) { _, block in
+                        switch block {
+                        case .section(let index, let section):
+                            Section {
+                                let sectionEmails = section.emails
+                                ForEach(Array(sectionEmails.enumerated()), id: \.element.id) { emailIndex, email in
+                                    let previousEmail = emailIndex > 0 ? sectionEmails[emailIndex - 1] : nil
+                                    let isContinuation = previousEmail?.senderEmail.lowercased() == email.senderEmail.lowercased()
+                                    let isFirst = !isContinuation
+
+                                    emailRowView(
+                                        for: email,
+                                        isSelectionMode: isSelectionMode,
+                                        isContinuationInSenderRun: isContinuation,
+                                        isFirstInSenderRun: isFirst
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, isFirst ? 9 : 5)
+                                    .padding(.bottom, 5)
+
+                                    Divider()
+                                        .background(Color(.separator).opacity(0.35))
+                                        .padding(.leading, isSelectionMode ? 0 : 16)
+                                }
+                            } header: {
+                                SectionHeaderRow(title: section.title, isFirst: index == 0)
+                                    .background(Color(.systemBackground))
+                            }
+                        case .bucket(let bundle):
+                            CategoryBundleRow(model: bundle) {
+                                handleBucketTap(bundle.bucket)
+                            }
+                            .padding(.horizontal, 16)
+                            Divider()
+                                .background(Color(.separator).opacity(0.35))
+                                .padding(.leading, 16)
                         }
                     }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                }
-                // Category bundles (top block) when not inline
-                else if showCategoryBundles && !showCategoryBundlesInline && viewModel.currentTab == .primary && !viewModel.bucketRows.isEmpty {
-                    CategoryBundlesSection(bundles: viewModel.bucketRows) { bucket in
-                        handleBucketTap(bucket)
+
+                    if !isSearchMode {
+                        Color.clear
+                            .frame(height: 1)
+                            .onAppear { Task { await viewModel.loadMoreFromFooter() } }
                     }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                }
-            }
 
-            let inlineBlocks = inlineCategoryBlocks(
-                sections: displaySections,
-                bundles: (showCategoryBundles && showCategoryBundlesInline && viewModel.currentTab == .primary) ? viewModel.bucketRows : []
-            )
-
-            ForEach(Array(inlineBlocks.enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .section(let index, let section):
-                    sectionView(section: section, sectionIndex: index)
-                case .bucket(let bundle):
-                    CategoryBundleRow(model: bundle) {
-                        handleBucketTap(bundle.bucket)
+                    if viewModel.isLoadingMore {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding()
                     }
-                    .listRowSeparator(.visible)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                    .listRowBackground(Color(.systemBackground))
                 }
-            }
-
-            if !isSearchMode {
-                Color.clear
-                    .frame(height: 1)
-                    .onAppear { Task { await viewModel.loadMoreFromFooter() } }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-
-            if viewModel.isLoadingMore {
-                ProgressView().frame(maxWidth: .infinity).padding()
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                .padding(.bottom, bottomBarHeight + safeAreaBottom + 8)
             }
         }
-        .listStyle(.plain)
-        .environment(\.defaultMinListRowHeight, 0)
-        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: viewModel.bucketRows)
-        .listSectionSpacing(0)
-        .contentMargins(.top, -8, for: .scrollContent)
-        .contentMargins(.bottom, bottomBarHeight + safeAreaBottom + 8, for: .scrollContent)
-        .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
         .coordinateSpace(name: "inboxScroll")
+        // Opaque background all the way through safe areas so pinned headers never show through
+        .background(Color(.systemBackground).ignoresSafeArea())
+        // Start content just slightly below the measured top bar; subtract 2pt to align initial and pinned Y
+        .padding(.top, max(topBarHeight - 2, 0))
         .onPreferenceChange(ScrollOffsetKey.self) { value in
             scrollOffset = value
+        }
+        .onPreferenceChange(TopBarHeightKey.self) { value in
+            topBarHeight = value
         }
     }
 
@@ -1302,28 +1343,73 @@ struct SectionHeaderRow: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.primary.opacity(0.85))
-                .textCase(nil)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, isFirst ? 4 : 8)
-                .padding(.bottom, 4)
-                .accessibilityAddTraits(.isHeader)
-
-            // Inset separator with softer opacity
+        ZStack(alignment: .leading) {
+            // Glassy yet opaque-enough background to match the original gray strip look
             Rectangle()
-                .fill(Color(.separator).opacity(0.18))
-                .frame(height: 1.0 / displayScale)
-                .padding(.leading, 16)
+                .fill(.regularMaterial)
+                .overlay(
+                    Color(UIColor.systemBackground)
+                        .opacity(0.45)
+                )
+                .ignoresSafeArea(edges: [.top, .horizontal])
+
+            VStack(spacing: 0) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .textCase(nil)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    // Uniform padding keeps pinned and initial positions aligned
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
+                    .accessibilityAddTraits(.isHeader)
+
+                Rectangle()
+                    .fill(Color(.separator).opacity(0.18))
+                    .frame(height: 1.0 / displayScale)
+                    .padding(.leading, 16)
+            }
         }
         .frame(maxWidth: .infinity)
-        .background(Color(UIColor.systemGroupedBackground))
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
+        .zIndex(10)
+    }
+}
+
+// MARK: - Appearance helpers
+
+private func configureListHeaderAppearance() {
+    // Apply once per app run to avoid repeated global UIAppearance churn
+    struct Static {
+        static var configured = false
+    }
+    guard !Static.configured else { return }
+    Static.configured = true
+
+    // UITableView reuses a separate header container when pinning; set its background
+    // so transient reuse doesn't show a black flash.
+    let headerAppearance = UITableViewHeaderFooterView.appearance()
+    headerAppearance.tintColor = UIColor.systemBackground
+    headerAppearance.backgroundColor = UIColor.systemBackground
+    headerAppearance.contentView.backgroundColor = UIColor.systemBackground
+
+    if headerAppearance.backgroundView == nil {
+        let bg = UIView()
+        bg.backgroundColor = UIColor.systemBackground
+        headerAppearance.backgroundView = bg
+    } else {
+        headerAppearance.backgroundView?.backgroundColor = UIColor.systemBackground
+    }
+
+    let tableAppearance = UITableView.appearance()
+    tableAppearance.backgroundColor = UIColor.systemBackground
+    tableAppearance.sectionHeaderTopPadding = 0
+    if tableAppearance.backgroundView == nil {
+        let bg = UIView()
+        bg.backgroundColor = UIColor.systemBackground
+        tableAppearance.backgroundView = bg
+    } else {
+        tableAppearance.backgroundView?.backgroundColor = UIColor.systemBackground
     }
 }
 

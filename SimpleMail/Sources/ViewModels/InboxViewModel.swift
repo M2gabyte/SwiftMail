@@ -32,6 +32,11 @@ extension Notification.Name {
     static let cachesDidClear = Notification.Name("cachesDidClear")
     static let archiveThreadRequested = Notification.Name("archiveThreadRequested")
     static let trashThreadRequested = Notification.Name("trashThreadRequested")
+    static let archiveMessageRequested = Notification.Name("archiveMessageRequested")
+    static let trashMessageRequested = Notification.Name("trashMessageRequested")
+    static let emailArchivedFromDetail = Notification.Name("emailArchivedFromDetail")
+    static let emailTrashedFromDetail = Notification.Name("emailTrashedFromDetail")
+    static let singleMessageActionUndone = Notification.Name("singleMessageActionUndone")
     static let movedToPrimaryRequested = Notification.Name("movedToPrimaryRequested")
     static let senderBlocked = Notification.Name("senderBlocked")
     static let spamReported = Notification.Name("spamReported")
@@ -304,6 +309,15 @@ final class InboxViewModel: ObservableObject {
 
     private var pendingBulkAction: PendingBulkAction?
 
+    // Pending single message action (from detail view)
+    private struct PendingSingleMessageAction {
+        let messageId: String
+        let threadId: String
+        let accountEmail: String?
+        let action: PendingBulkActionType
+    }
+    private var pendingSingleMessageAction: PendingSingleMessageAction?
+
     struct PendingArchive {
         let email: Email
         let index: Int
@@ -327,6 +341,10 @@ final class InboxViewModel: ObservableObject {
     @ObservationIgnored private var accountChangeObserver: NSObjectProtocol?
     @ObservationIgnored private var archiveThreadObserver: NSObjectProtocol?
     @ObservationIgnored private var trashThreadObserver: NSObjectProtocol?
+    @ObservationIgnored private var archiveMessageObserver: NSObjectProtocol?
+    @ObservationIgnored private var trashMessageObserver: NSObjectProtocol?
+    @ObservationIgnored private var emailArchivedFromDetailObserver: NSObjectProtocol?
+    @ObservationIgnored private var emailTrashedFromDetailObserver: NSObjectProtocol?
     @ObservationIgnored private var movedToPrimaryObserver: NSObjectProtocol?
     @ObservationIgnored private var inboxPreferencesObserver: NSObjectProtocol?
     @ObservationIgnored private let inboxWorker = InboxStoreWorker()
@@ -603,6 +621,44 @@ final class InboxViewModel: ObservableObject {
             }
         }
 
+        archiveMessageObserver = NotificationCenter.default.addObserver(
+            forName: .archiveMessageRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let messageId = notification.userInfo?["messageId"] as? String,
+                      let threadId = notification.userInfo?["threadId"] as? String else { return }
+                let accountEmail = notification.userInfo?["accountEmail"] as? String
+                self.performUndoableSingleMessageAction(
+                    messageId: messageId,
+                    threadId: threadId,
+                    accountEmail: accountEmail,
+                    action: .archive
+                )
+            }
+        }
+
+        trashMessageObserver = NotificationCenter.default.addObserver(
+            forName: .trashMessageRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let messageId = notification.userInfo?["messageId"] as? String,
+                      let threadId = notification.userInfo?["threadId"] as? String else { return }
+                let accountEmail = notification.userInfo?["accountEmail"] as? String
+                self.performUndoableSingleMessageAction(
+                    messageId: messageId,
+                    threadId: threadId,
+                    accountEmail: accountEmail,
+                    action: .trash
+                )
+            }
+        }
+
         movedToPrimaryObserver = NotificationCenter.default.addObserver(
             forName: .movedToPrimaryRequested,
             object: nil,
@@ -658,6 +714,12 @@ final class InboxViewModel: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = trashThreadObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = archiveMessageObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = trashMessageObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = inboxPreferencesObserver {
@@ -1399,6 +1461,19 @@ final class InboxViewModel: ObservableObject {
             return
         }
 
+        // Check for single message undo (from detail view)
+        if let pending = pendingSingleMessageAction {
+            pendingSingleMessageAction = nil
+            // Notify detail view to restore the message by reloading the thread
+            NotificationCenter.default.post(
+                name: .singleMessageActionUndone,
+                object: nil,
+                userInfo: ["threadId": pending.threadId]
+            )
+            HapticFeedback.light()
+            return
+        }
+
         if let pendingBulkAction {
             restoreBulkAction(pendingBulkAction)
         } else if let pendingArchive {
@@ -1941,6 +2016,94 @@ final class InboxViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             guard let self, let pending = self.pendingBulkAction else { return }
             self.finalizeBulkAction(pending)
+        }
+    }
+
+    /// Archive or trash a single message from detail view (with undo support)
+    /// This doesn't modify the inbox list directly - it shows an undo toast and makes the API call after delay
+    private func performUndoableSingleMessageAction(
+        messageId: String,
+        threadId: String,
+        accountEmail: String?,
+        action: PendingBulkActionType
+    ) {
+        // Cancel any pending operations
+        if let pendingArchive {
+            undoTask?.cancel()
+            finalizeArchive(pendingArchive.email)
+        }
+        if let pendingBulkAction {
+            undoTask?.cancel()
+            finalizeBulkAction(pendingBulkAction)
+        }
+        if pendingSingleMessageAction != nil {
+            undoTask?.cancel()
+            if let pending = pendingSingleMessageAction {
+                finalizeSingleMessageAction(pending)
+            }
+        }
+
+        // Store the pending action
+        pendingSingleMessageAction = PendingSingleMessageAction(
+            messageId: messageId,
+            threadId: threadId,
+            accountEmail: accountEmail,
+            action: action
+        )
+
+        // Show undo toast
+        undoToastMessage = action == .archive ? "Archived" : "Moved to Trash"
+        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showingUndoToast = true
+        }
+
+        let delaySeconds = undoDelaySeconds()
+        startUndoCountdown(seconds: delaySeconds)
+
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delaySeconds))
+            guard !Task.isCancelled else { return }
+            guard let self, let pending = self.pendingSingleMessageAction else { return }
+            self.finalizeSingleMessageAction(pending)
+        }
+    }
+
+    private func finalizeSingleMessageAction(_ pending: PendingSingleMessageAction) {
+        clearUndoState()
+        pendingSingleMessageAction = nil
+
+        Task {
+            do {
+                // Get the account for the API call
+                let account: AuthService.Account?
+                if let email = pending.accountEmail {
+                    account = AuthService.shared.accounts.first { $0.email == email }
+                } else {
+                    account = AuthService.shared.currentAccount
+                }
+
+                guard let account else {
+                    logger.error("No account found for single message action")
+                    return
+                }
+
+                switch pending.action {
+                case .archive:
+                    try await GmailService.shared.archive(messageId: pending.messageId, account: account)
+                case .trash:
+                    try await GmailService.shared.trash(messageId: pending.messageId, account: account)
+                }
+
+                // Refresh inbox to reflect the change
+                await refresh()
+            } catch {
+                logger.error("Single message action failed: \(error.localizedDescription)")
+                bulkToastMessage = "Action failed"
+                bulkToastIsError = true
+                bulkToastShowsRetry = false
+                try? await Task.sleep(for: .seconds(3))
+                bulkToastMessage = nil
+            }
         }
     }
 

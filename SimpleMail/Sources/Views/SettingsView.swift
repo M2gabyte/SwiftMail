@@ -294,6 +294,26 @@ struct SettingsView: View {
             }
 
             HStack(spacing: 12) {
+                SettingsIcon(systemName: "arrow.triangle.2.circlepath.circle.fill", color: .indigo)
+                Toggle("Follow-up Nudges", isOn: $viewModel.settings.followUpNudgesEnabled)
+            }
+            .onChange(of: viewModel.settings.followUpNudgesEnabled) { _, _ in viewModel.saveSettings() }
+
+            if viewModel.settings.followUpNudgesEnabled {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemName: "clock.badge.questionmark", color: .indigo)
+                    Picker("Nudge after", selection: $viewModel.settings.followUpNudgeDelayDays) {
+                        Text("2 days").tag(2)
+                        Text("3 days").tag(3)
+                        Text("5 days").tag(5)
+                        Text("7 days").tag(7)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .onChange(of: viewModel.settings.followUpNudgeDelayDays) { _, _ in viewModel.saveSettings() }
+            }
+
+            HStack(spacing: 12) {
                 SettingsIcon(systemName: "arrow.uturn.backward.circle.fill", color: .purple)
                 Picker("Undo Send", selection: $viewModel.settings.undoSendDelaySeconds) {
                     Text("5 seconds").tag(5)
@@ -684,6 +704,8 @@ struct AppSettings: Codable {
     var signature: String = ""
     var undoSendDelaySeconds: Int = 5
     var hapticsEnabled: Bool = true
+    var followUpNudgesEnabled: Bool = false
+    var followUpNudgeDelayDays: Int = 3
 
     // Advanced settings
     var conversationThreading: Bool = true
