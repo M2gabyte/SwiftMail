@@ -1420,26 +1420,33 @@ final class InboxViewModel: ObservableObject {
         HapticFeedback.medium()
 
         // Show undo toast
-        undoToastMessage = "Email Archived"
-        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
-            showingUndoToast = true
-        }
-
         let delaySeconds = undoDelaySeconds()
-        startUndoCountdown(seconds: delaySeconds)
+        if delaySeconds > 0 {
+            undoToastMessage = "Email Archived"
+            animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+                showingUndoToast = true
+            }
+            startUndoCountdown(seconds: delaySeconds)
+        }
 
         // Start countdown to finalize
         let emailId = email.id
         undoTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delaySeconds))
+            if delaySeconds > 0 {
+                try? await Task.sleep(for: .seconds(delaySeconds))
 
-            // Check if task was cancelled (user tapped undo)
-            guard !Task.isCancelled else { return }
+                // Check if task was cancelled (user tapped undo)
+                guard !Task.isCancelled else { return }
 
-            // Finalize the archive
-            guard let self else { return }
-            if let pendingArchive, pendingArchive.email.id == emailId {
-                finalizeArchive(pendingArchive.email)
+                // Finalize the archive
+                guard let self else { return }
+                if let pendingArchive, pendingArchive.email.id == emailId {
+                    finalizeArchive(pendingArchive.email)
+                }
+            } else {
+                // No undo window; finalize immediately
+                guard let self else { return }
+                finalizeArchive(email)
             }
         }
     }
@@ -2003,19 +2010,25 @@ final class InboxViewModel: ObservableObject {
         updateFilterCounts()
 
         pendingBulkAction = PendingBulkAction(items: pendingItems, action: action)
-        undoToastMessage = action == .archive ? "Archived" : "Moved to Trash"
-        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
-            showingUndoToast = true
+        let delaySeconds = undoDelaySeconds()
+        if delaySeconds > 0 {
+            undoToastMessage = action == .archive ? "Archived" : "Moved to Trash"
+            animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+                showingUndoToast = true
+            }
+            startUndoCountdown(seconds: delaySeconds)
         }
 
-        let delaySeconds = undoDelaySeconds()
-        startUndoCountdown(seconds: delaySeconds)
-
         undoTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delaySeconds))
-            guard !Task.isCancelled else { return }
-            guard let self, let pending = self.pendingBulkAction else { return }
-            self.finalizeBulkAction(pending)
+            if delaySeconds > 0 {
+                try? await Task.sleep(for: .seconds(delaySeconds))
+                guard !Task.isCancelled else { return }
+                guard let self, let pending = self.pendingBulkAction else { return }
+                self.finalizeBulkAction(pending)
+            } else {
+                guard let self, let pending = self.pendingBulkAction else { return }
+                self.finalizeBulkAction(pending)
+            }
         }
     }
 
@@ -2051,20 +2064,25 @@ final class InboxViewModel: ObservableObject {
             action: action
         )
 
-        // Show undo toast
-        undoToastMessage = action == .archive ? "Archived" : "Moved to Trash"
-        animate(.spring(response: 0.3, dampingFraction: 0.8)) {
-            showingUndoToast = true
+        let delaySeconds = undoDelaySeconds()
+        if delaySeconds > 0 {
+            undoToastMessage = action == .archive ? "Archived" : "Moved to Trash"
+            animate(.spring(response: 0.3, dampingFraction: 0.8)) {
+                showingUndoToast = true
+            }
+            startUndoCountdown(seconds: delaySeconds)
         }
 
-        let delaySeconds = undoDelaySeconds()
-        startUndoCountdown(seconds: delaySeconds)
-
         undoTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delaySeconds))
-            guard !Task.isCancelled else { return }
-            guard let self, let pending = self.pendingSingleMessageAction else { return }
-            self.finalizeSingleMessageAction(pending)
+            if delaySeconds > 0 {
+                try? await Task.sleep(for: .seconds(delaySeconds))
+                guard !Task.isCancelled else { return }
+                guard let self, let pending = self.pendingSingleMessageAction else { return }
+                self.finalizeSingleMessageAction(pending)
+            } else {
+                guard let self, let pending = self.pendingSingleMessageAction else { return }
+                self.finalizeSingleMessageAction(pending)
+            }
         }
     }
 
@@ -2178,7 +2196,7 @@ final class InboxViewModel: ObservableObject {
         let accountEmail = AuthService.shared.currentAccount?.email
         if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
            let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            return settings.undoSendDelaySeconds
+            return settings.showUndoToasts ? settings.undoSendDelaySeconds : 0
         }
         return 5
     }

@@ -2909,7 +2909,7 @@ class ComposeViewModel: ObservableObject {
         let accountEmail = AuthService.shared.currentAccount?.email
         if let data = AccountDefaults.data(for: "appSettings", accountEmail: accountEmail),
            let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            return settings.undoSendDelaySeconds
+            return settings.showUndoToasts ? settings.undoSendDelaySeconds : 0
         }
         return 5
     }

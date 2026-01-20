@@ -315,12 +315,19 @@ struct SettingsView: View {
 
             HStack(spacing: 12) {
                 SettingsIcon(systemName: "arrow.uturn.backward.circle.fill", color: .purple)
+                Toggle("Show Undo Toasts", isOn: $viewModel.settings.showUndoToasts)
+            }
+            .onChange(of: viewModel.settings.showUndoToasts) { _, _ in viewModel.saveSettings() }
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemName: "arrow.uturn.backward.circle.fill", color: .purple)
                 Picker("Undo Send", selection: $viewModel.settings.undoSendDelaySeconds) {
                     Text("5 seconds").tag(5)
                     Text("10 seconds").tag(10)
                     Text("20 seconds").tag(20)
                     Text("30 seconds").tag(30)
                 }
+                .disabled(!viewModel.settings.showUndoToasts)
             }
             .onChange(of: viewModel.settings.undoSendDelaySeconds) { _, _ in viewModel.saveSettings() }
 
@@ -702,6 +709,7 @@ struct AppSettings: Codable {
     var backgroundSummaryProcessing: Bool = false
     var smartReplies: Bool = true
     var signature: String = ""
+    var showUndoToasts: Bool = true
     var undoSendDelaySeconds: Int = 5
     var hapticsEnabled: Bool = true
     var followUpNudgesEnabled: Bool = false
