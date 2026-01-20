@@ -243,6 +243,7 @@ struct EmailDetailView: View {
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
+    @State private var showReplyActions = false
 
     // Expose sanitized HTML cache for quoting
     private static let renderCacheVersion = 2
@@ -343,39 +344,43 @@ struct EmailDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            DetailBottomDock(
-                onArchive: {
-                    Task { await viewModel.archive(); dismiss() }
-                },
-                onReply: { showingReplySheet = true },
-                onReplyAll: {
-                    if let latestMessage = viewModel.messages.last {
-                        showingReplySheet = false
-                        DispatchQueue.main.async {
-                            showingReplySheet = true
-                            replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
+            ZStack(alignment: .top) {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(alignment: .top) {
+                        Divider().opacity(0.25)
+                    }
+
+                DetailBottomDock(
+                    showReplyActions: $showReplyActions,
+                    onArchive: {
+                        Task { await viewModel.archive(); dismiss() }
+                    },
+                    onReply: { showingReplySheet = true },
+                    onReplyAll: {
+                        if let latestMessage = viewModel.messages.last {
+                            showingReplySheet = false
+                            DispatchQueue.main.async {
+                                showingReplySheet = true
+                                replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
+                            }
+                        }
+                    },
+                    onForward: {
+                        if let latestMessage = viewModel.messages.last {
+                            showingReplySheet = false
+                            DispatchQueue.main.async {
+                                showingReplySheet = true
+                                replyModeOverride = .forward(original: latestMessage)
+                            }
                         }
                     }
-                },
-                onForward: {
-                    if let latestMessage = viewModel.messages.last {
-                        showingReplySheet = false
-                        DispatchQueue.main.async {
-                            showingReplySheet = true
-                            replyModeOverride = .forward(original: latestMessage)
-                        }
-                    }
-                }
-            )
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear { bottomBarHeight = geo.size.height }
-                        .onChange(of: geo.size.height) { _, newHeight in
-                            bottomBarHeight = newHeight
-                        }
-                }
-            )
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+            }
+            .frame(height: 92)
         }
         .sheet(isPresented: $showingReplySheet) {
             if let mode = replyModeOverride {
@@ -2201,6 +2206,7 @@ private struct DockPillButton: View {
     let systemImage: String
     let style: DockButtonStyle
     let action: () -> Void
+    var onLongPress: (() -> Void)? = nil
 
     var body: some View {
         Button(action: action) {
@@ -2215,13 +2221,18 @@ private struct DockPillButton: View {
         .foregroundStyle(foreground)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(style == .primary ? Color.accentColor.opacity(0.92) : Color(UIColor.secondarySystemBackground))
+                .fill(style == .primary ? Color.accentColor.opacity(0.92) : Color(.systemBackground).opacity(0.8))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(GlassTokens.strokeColor.opacity(style == .primary ? 0.18 : 0.25), lineWidth: GlassTokens.strokeWidth)
         )
-        .shadow(color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity), radius: GlassTokens.shadowRadius, y: GlassTokens.shadowY)
+        .shadow(color: GlassTokens.shadowColor.opacity(0.02), radius: 2, y: 1)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                onLongPress?()
+            }
+        )
     }
 
     private var foreground: Color {
@@ -2233,6 +2244,7 @@ private struct DockPillButton: View {
 }
 
 struct DetailBottomDock: View {
+    @Binding var showReplyActions: Bool
     let onArchive: () -> Void
     let onReply: () -> Void
     let onReplyAll: () -> Void
@@ -2243,35 +2255,33 @@ struct DetailBottomDock: View {
             DockPillButton(title: "Archive", systemImage: "archivebox", style: .secondary, action: onArchive)
                 .frame(width: 140)
 
-            DockPillButton(title: "Reply", systemImage: "arrowshape.turn.up.left", style: .primary, action: onReply)
-                .frame(maxWidth: .infinity)
-                .layoutPriority(1)
-                .contextMenu {
-                    Button(action: onReply) {
-                        Label("Reply", systemImage: "arrowshape.turn.up.left")
-                    }
-                    Button(action: onReplyAll) {
-                        Label("Reply All", systemImage: "arrowshape.turn.up.left.2")
-                    }
-                    Button(action: onForward) {
-                        Label("Forward", systemImage: "arrowshape.turn.up.right")
-                    }
-                }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 10)
-        .background(dockBackground)
-    }
-
-    private var dockBackground: some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(GlassTokens.controlMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity), lineWidth: GlassTokens.strokeWidth)
+            DockPillButton(
+                title: "Reply",
+                systemImage: "arrowshape.turn.up.left",
+                style: .primary,
+                action: onReply,
+                onLongPress: { showReplyActions = true }
             )
-            .shadow(color: GlassTokens.shadowColor.opacity(GlassTokens.shadowOpacity), radius: GlassTokens.shadowRadius, y: GlassTokens.shadowY)
+            .frame(maxWidth: .infinity)
+            .layoutPriority(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(GlassTokens.controlMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity), lineWidth: GlassTokens.strokeWidth)
+                )
+                .shadow(color: GlassTokens.shadowColor.opacity(0.04), radius: 6, y: 3)
+        )
+        .confirmationDialog("Reply", isPresented: $showReplyActions, titleVisibility: .hidden) {
+            Button("Reply") { onReply() }
+            Button("Reply All") { onReplyAll() }
+            Button("Forward") { onForward() }
+            Button("Cancel", role: .cancel) { }
+        }
     }
 }
 
