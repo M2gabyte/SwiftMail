@@ -364,6 +364,7 @@ struct EmailDetailView: View {
         }
         .toolbar(.hidden, for: .tabBar)
         .onAppear { StallLogger.mark("EmailDetail.appear") }
+        .onDisappear { showReplyPopover = false }
     }
 
     // Split out main scroll content so the compiler has fewer nested clauses to solve.
@@ -463,57 +464,51 @@ struct EmailDetailView: View {
     // Popover overlay anchored to reply split button
     @ViewBuilder
     private var replyPopoverOverlay: some View {
-        overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
-            GeometryReader { proxy in
-                popoverContent(anchor: anchor, proxy: proxy)
+        if showReplyPopover {
+            overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
+                GeometryReader { proxy in
+                    popoverContent(anchor: anchor, proxy: proxy)
+                }
             }
         }
     }
 
     @ViewBuilder
     private func popoverContent(anchor: Anchor<CGRect>?, proxy: GeometryProxy) -> some View {
-        if showReplyPopover, let anchor {
-            let frame = proxy[anchor]
-            let popoverWidth: CGFloat = 260
-            let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
+        guard showReplyPopover, let anchor else { EmptyView() }
 
-            ZStack {
-                Color.black.opacity(0.10)
-                    .ignoresSafeArea()
-                    .onTapGesture { showReplyPopover = false }
+        let frame = proxy[anchor]
+        let popoverWidth: CGFloat = 260
+        let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
 
-                ReplyActionsPopover(
-                    onReply: {
+        ZStack {
+            Color.black.opacity(0.10)
+                .ignoresSafeArea()
+                .onTapGesture { showReplyPopover = false }
+
+            ReplyActionsPopover(
+                onReply: {
+                    showReplyPopover = false
+                    showingReplySheet = true
+                },
+                onReplyAll: {
+                    if let latestMessage = viewModel.messages.last {
                         showReplyPopover = false
                         showingReplySheet = true
-                    },
-                    onReplyAll: {
-                        if let latestMessage = viewModel.messages.last {
-                            showReplyPopover = false
-                            showingReplySheet = true
-                            replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
-                        }
-                    },
-                    onForward: {
-                        if let latestMessage = viewModel.messages.last {
-                            showReplyPopover = false
-                            showingReplySheet = true
-                            replyModeOverride = .forward(original: latestMessage)
-                        }
-                    },
-                    onDismiss: { showReplyPopover = false }
-                )
-                .position(x: clampedX, y: frame.minY - 18)
-                .transition(.scale(scale: 0.98).combined(with: .opacity))
-            }
-        } else {
-            Color.clear
-                .onAppear {
-                    // If the anchor disappears while the popover flag is still set, close it to avoid stale state / crashes.
-                    if showReplyPopover {
-                        showReplyPopover = false
+                        replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
                     }
-                }
+                },
+                onForward: {
+                    if let latestMessage = viewModel.messages.last {
+                        showReplyPopover = false
+                        showingReplySheet = true
+                        replyModeOverride = .forward(original: latestMessage)
+                    }
+                },
+                onDismiss: { showReplyPopover = false }
+            )
+            .position(x: clampedX, y: frame.minY - 18)
+            .transition(.scale(scale: 0.98).combined(with: .opacity))
         }
     }
 
