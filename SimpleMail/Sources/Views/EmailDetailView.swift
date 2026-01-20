@@ -503,6 +503,8 @@ struct EmailDetailView: View {
             let frame = proxy[anchor]
             let popoverWidth: CGFloat = 260
             let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
+            let popoverHeight: CGFloat = 150
+            let anchoredY = proxy.size.height - safeAreaBottom - 92 - 12 - (popoverHeight / 2)
 
             ZStack {
                 Color.black.opacity(0.10)
@@ -530,7 +532,8 @@ struct EmailDetailView: View {
                     },
                     onDismiss: { showReplyPopover = false }
                 )
-                .position(x: clampedX, y: frame.minY - 18)
+                .frame(height: popoverHeight)
+                .position(x: clampedX, y: anchoredY)
                 .transition(.scale(scale: 0.98).combined(with: .opacity))
             }
         }
