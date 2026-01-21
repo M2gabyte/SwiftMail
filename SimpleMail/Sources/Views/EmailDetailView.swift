@@ -289,7 +289,7 @@ struct EmailDetailView: View {
         content
         .background(
             GeometryReader { geometry in
-                Color(.systemGroupedBackground)
+                Color(.systemBackground)
                     .onAppear { safeAreaBottom = geometry.safeAreaInsets.bottom }
                     .onChange(of: geometry.safeAreaInsets.bottom) { _, newValue in
                         safeAreaBottom = newValue
@@ -365,6 +365,18 @@ struct EmailDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("More")
+            }
+        }
+        .toolbarBackground(.regularMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarRole(.navigationStack)
+        .toolbar {
+            ToolbarItem(placement: .navigationBar) {
+                Rectangle()
+                    .fill(Color.black.opacity(0.06))
+                    .frame(height: 0.5)
+                    .offset(y: 22)
+                    .allowsHitTesting(false)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomDock }
@@ -539,8 +551,8 @@ struct EmailMessageCard: View {
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     let onToggleExpand: () -> Void
 
-    private let avatarSize: CGFloat = 40
-    private let headerSpacing: CGFloat = 12
+    private let avatarSize: CGFloat = 36
+    private let headerSpacing: CGFloat = 10
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -566,10 +578,10 @@ struct EmailMessageCard: View {
                                     .truncationMode(.tail)
                                     .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
 
-                                if trackersBlocked > 0 {
-                                    trackerBadge
-                                }
+                            if isExpanded, trackersBlocked > 0 {
+                                trackerBadge
                             }
+                        }
 
                             if isExpanded {
                                 Text("to \(message.to.joined(separator: ", "))")
@@ -618,16 +630,18 @@ struct EmailMessageCard: View {
                     .fixedSize(horizontal: true, vertical: false)
 
                     // TRAILING accessory: chevron separated from the column
-                    Button(action: onToggleExpand) {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 28, height: 28)
+                    if isExpanded {
+                        Button(action: onToggleExpand) {
+                            Image(systemName: "chevron.up")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                                .frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, isExpanded ? 10 : 6)
+                .padding(.vertical, isExpanded ? 10 : 4)
             }
             .buttonStyle(.plain)
 
@@ -646,9 +660,10 @@ struct EmailMessageCard: View {
             }
         }
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 10 : 6))
+        .shadow(color: Color.black.opacity(isExpanded ? 0.06 : 0.0), radius: isExpanded ? 6 : 0, y: isExpanded ? 2 : 0)
         .padding(.horizontal, 12)
-        .padding(.vertical, isExpanded ? 3 : 1)
+        .padding(.vertical, isExpanded ? 3 : 0)
     }
 
     private var senderEmail: String {
