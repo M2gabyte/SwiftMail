@@ -641,6 +641,7 @@ struct EmailMessageCard: View {
                     bottomInset: bottomInset
                 )
                     .frame(minHeight: 100)
+                    .padding(.top, 8)
                     .padding(.leading, avatarSize + headerSpacing)
             }
         }
