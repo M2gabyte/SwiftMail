@@ -540,7 +540,7 @@ struct EmailMessageCard: View {
 
                     Spacer(minLength: 8)
 
-                    // RIGHT COLUMN: time, unsubscribe, chevron
+                    // RIGHT COLUMN: time + unsubscribe
                     VStack(alignment: .trailing, spacing: 4) {
                         Text(formatDate(message.date))
                             .font(.subheadline)
@@ -552,23 +552,30 @@ struct EmailMessageCard: View {
                             Button {
                                 pendingAction = .unsubscribe
                             } label: {
-                        ViewThatFits(in: .horizontal) {
-                            Text("Unsubscribe")
-                            Image(systemName: "envelope.badge.minus")
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.accentColor.opacity(0.65))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
+                                ViewThatFits(in: .horizontal) {
+                                    Text("Unsubscribe")
+                                    Image(systemName: "envelope.badge.minus")
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tint)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .contentShape(Rectangle())
+                                .padding(.vertical, 2)
                             }
                             .buttonStyle(.plain)
                         }
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
 
+                    // TRAILING accessory: chevron separated from the column
+                    Button(action: onToggleExpand) {
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.tertiary)
+                            .frame(width: 28, height: 28)
                     }
-                    .fixedSize(horizontal: true, vertical: false)
+                    .buttonStyle(.plain)
                 }
                 .padding()
             }
