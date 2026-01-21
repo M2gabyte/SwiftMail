@@ -260,6 +260,74 @@ struct EmailDetailView: View {
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
 
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigationBarLeading) {
+            Button(action: { dismiss() }) {
+                Image(systemName: "chevron.left")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.secondary.opacity(0.18), lineWidth: 0.8)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+        }
+
+        ToolbarItemGroup(placement: .principal) {
+            VStack(spacing: 2) {
+                Text(viewModel.subject)
+                    .font(.headline)
+                    .lineLimit(1)
+                if viewModel.messages.count > 1 {
+                    Text("\(viewModel.messages.count) messages")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            if let onNavigatePrevious, hasPrevious {
+                Button(action: onNavigatePrevious) {
+                    Image(systemName: "chevron.up")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .disabled(!hasPrevious)
+                .accessibilityLabel("Previous message")
+            }
+            if let onNavigateNext, hasNext {
+                Button(action: onNavigateNext) {
+                    Image(systemName: "chevron.down")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .disabled(!hasNext)
+                .accessibilityLabel("Next message")
+            }
+
+            Button(action: { showingActionSheet = true }) {
+                Image(systemName: "ellipsis")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.secondary.opacity(0.18), lineWidth: 0.8)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("More")
+        }
+    }
+
     // Expose sanitized HTML cache for quoting
     private static let renderCacheVersion = 2
     static func cacheKey(for messageId: String) -> String { "\(renderCacheVersion)::\(messageId)" }
@@ -300,85 +368,10 @@ struct EmailDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "chevron.left")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.secondary.opacity(0.18), lineWidth: 0.8)
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Back")
-            }
-
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 2) {
-                    Text(viewModel.subject)
-                        .font(.headline)
-                        .lineLimit(1)
-                    if viewModel.messages.count > 1 {
-                        Text("\(viewModel.messages.count) messages")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if let onNavigatePrevious, hasPrevious {
-                    Button(action: onNavigatePrevious) {
-                        Image(systemName: "chevron.up")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .disabled(!hasPrevious)
-                    .accessibilityLabel("Previous message")
-                }
-                if let onNavigateNext, hasNext {
-                    Button(action: onNavigateNext) {
-                        Image(systemName: "chevron.down")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .disabled(!hasNext)
-                    .accessibilityLabel("Next message")
-                }
-
-                Button(action: { showingActionSheet = true }) {
-                    Image(systemName: "ellipsis")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.secondary.opacity(0.18), lineWidth: 0.8)
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("More")
-            }
-        }
+        .toolbar { toolbarContent }
         .toolbarBackground(.regularMaterial, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarRole(.navigationStack)
-        .toolbar {
-            ToolbarItem(placement: .navigationBar) {
-                Rectangle()
-                    .fill(Color.black.opacity(0.06))
-                    .frame(height: 0.5)
-                    .offset(y: 22)
-                    .allowsHitTesting(false)
-            }
-        }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomDock }
         .sheet(isPresented: $showingReplySheet) {
             if let mode = replyModeOverride {
