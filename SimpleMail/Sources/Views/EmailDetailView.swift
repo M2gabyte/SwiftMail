@@ -1955,9 +1955,9 @@ struct EmailActionChipsView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(.green)
-                            Text("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
+                            Text("\(trackersBlocked)")
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(Color.primary.opacity(0.8))
+                                .foregroundStyle(.green)
                         }
                     }
                     .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
