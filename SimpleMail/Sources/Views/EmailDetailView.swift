@@ -1955,44 +1955,43 @@ struct EmailActionChipsView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(.green)
-                            Text("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
-                                .font(.caption.weight(.semibold))
+                            Text("\(trackersBlocked)")
+                                .font(.caption.weight(.medium))
                                 .foregroundStyle(.green)
                         }
                     }
-                    .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked — message safe-checked")
+                    .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
                 }
 
-                // Unsubscribe – keep visible, higher contrast
+                // Unsubscribe chip - equal peer
                 if canUnsubscribe {
-                    ActionChip(strokeOpacity: 0.28) {
+                    ActionChip(strokeOpacity: chipStrokeOpacity) {
                         pendingAction = .unsubscribe
                     } label: {
-                        Label("Unsubscribe", systemImage: "envelope.badge.minus")
-                            .font(.caption.weight(.semibold))
-                            .labelStyle(.titleAndIcon)
-                            .foregroundStyle(.primary)
+                        Text("Unsubscribe")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                 }
 
-                // Block – make destructive-adjacent
-                ActionChip(strokeOpacity: 0.32, fillColor: Color.red.opacity(0.10), strokeColor: Color.red.opacity(0.35)) {
+                // Block chip - equal peer
+                ActionChip(strokeOpacity: chipStrokeOpacity) {
                     pendingAction = .block
                 } label: {
-                    Label("Block", systemImage: "hand.raised.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.red)
+                    Text("Block")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
                 .accessibilityLabel("Block \(senderName)")
 
-                // Spam – also destructive tone, hide in replies
+                // Spam chip - equal peer (not for replies)
                 if !isReply {
-                    ActionChip(strokeOpacity: 0.32, fillColor: Color.orange.opacity(0.12), strokeColor: Color.orange.opacity(0.35)) {
+                    ActionChip(strokeOpacity: chipStrokeOpacity) {
                         pendingAction = .spam
                     } label: {
-                        Label("Spam", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.orange)
+                        Text("Spam")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                     .accessibilityLabel("Mark as spam")
                 }
@@ -2015,7 +2014,7 @@ struct EmailActionChipsView: View {
 
 struct ActionChip<Label: View>: View {
     let strokeOpacity: Double
-    var fillColor: Color = Color(UIColor.secondarySystemBackground).opacity(0.9)
+    var fillColor: Color = GlassTokens.chromeMaterial
     var strokeColor: Color = GlassTokens.strokeColor
     let action: () -> Void
     @ViewBuilder let label: () -> Label
