@@ -234,6 +234,10 @@ struct EmailDetailView: View {
     let emailId: String
     let threadId: String
     let accountEmail: String?
+    let onNavigatePrevious: (() -> Void)?
+    let onNavigateNext: (() -> Void)?
+    let hasPrevious: Bool
+    let hasNext: Bool
 
     @StateObject private var viewModel: EmailDetailViewModel
     @Environment(\.dismiss) private var dismiss
@@ -251,10 +255,22 @@ struct EmailDetailView: View {
     static var sharedLastRenderedBodies: [String: BodyRenderActor.RenderedBody] = [:]
     @State private var pendingChipAction: PendingChipAction?
 
-    init(emailId: String, threadId: String, accountEmail: String? = nil) {
+    init(
+        emailId: String,
+        threadId: String,
+        accountEmail: String? = nil,
+        onNavigatePrevious: (() -> Void)? = nil,
+        onNavigateNext: (() -> Void)? = nil,
+        hasPrevious: Bool = false,
+        hasNext: Bool = false
+    ) {
         self.emailId = emailId
         self.threadId = threadId
         self.accountEmail = accountEmail
+        self.onNavigatePrevious = onNavigatePrevious
+        self.onNavigateNext = onNavigateNext
+        self.hasPrevious = hasPrevious
+        self.hasNext = hasNext
         self._viewModel = StateObject(wrappedValue: EmailDetailViewModel(threadId: threadId, accountEmail: accountEmail))
     }
 
@@ -305,7 +321,24 @@ struct EmailDetailView: View {
                 }
             }
 
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if let onNavigatePrevious, hasPrevious {
+                    Button(action: onNavigatePrevious) {
+                        Image(systemName: "chevron.up")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .disabled(!hasPrevious)
+                    .accessibilityLabel("Previous message")
+                }
+                if let onNavigateNext, hasNext {
+                    Button(action: onNavigateNext) {
+                        Image(systemName: "chevron.down")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .disabled(!hasNext)
+                    .accessibilityLabel("Next message")
+                }
+
                 Button(action: { showingActionSheet = true }) {
                     Image(systemName: "ellipsis")
                         .font(.title3.weight(.semibold))

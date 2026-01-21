@@ -219,6 +219,32 @@ final class InboxViewModel: ObservableObject {
     var selectedEmail: Email?
     var showingEmailDetail = false
 
+    var hasPreviousEmail: Bool {
+        guard let selectedEmail,
+              let index = emails.firstIndex(where: { $0.id == selectedEmail.id }) else { return false }
+        return index > 0
+    }
+
+    var hasNextEmail: Bool {
+        guard let selectedEmail,
+              let index = emails.firstIndex(where: { $0.id == selectedEmail.id }) else { return false }
+        return index < emails.count - 1
+    }
+
+    func goToPreviousEmail() {
+        guard hasPreviousEmail,
+              let selectedEmail,
+              let index = emails.firstIndex(where: { $0.id == selectedEmail.id }) else { return }
+        self.selectedEmail = emails[index - 1]
+    }
+
+    func goToNextEmail() {
+        guard hasNextEmail,
+              let selectedEmail,
+              let index = emails.firstIndex(where: { $0.id == selectedEmail.id }) else { return }
+        self.selectedEmail = emails[index + 1]
+    }
+
     // MARK: - View State
 
     var viewState = InboxViewState()

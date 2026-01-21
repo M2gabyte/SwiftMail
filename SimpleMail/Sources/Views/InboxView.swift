@@ -1080,7 +1080,15 @@ struct InboxView: View {
     @ViewBuilder
     private var detailDestination: some View {
         if let email = viewModel.selectedEmail {
-            EmailDetailView(emailId: email.id, threadId: email.threadId, accountEmail: email.accountEmail)
+            EmailDetailView(
+                emailId: email.id,
+                threadId: email.threadId,
+                accountEmail: email.accountEmail,
+                onNavigatePrevious: viewModel.hasPreviousEmail ? { viewModel.goToPreviousEmail() } : nil,
+                onNavigateNext: viewModel.hasNextEmail ? { viewModel.goToNextEmail() } : nil,
+                hasPrevious: viewModel.hasPreviousEmail,
+                hasNext: viewModel.hasNextEmail
+            )
         }
     }
 
