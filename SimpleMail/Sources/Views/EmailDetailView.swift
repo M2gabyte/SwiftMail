@@ -509,17 +509,18 @@ struct EmailMessageCard: View {
                         )
 
                         VStack(alignment: .leading, spacing: 4) {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(senderName)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .lineLimit(2)
-                                    .truncationMode(.tail)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(senderName)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .lineLimit(2)
+                                .truncationMode(.tail)
+                                .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
 
-                                if trackersBlocked > 0 {
-                                    trackerBadge
-                                }
+                            if trackersBlocked > 0 {
+                                trackerBadge
                             }
+                        }
 
                             if isExpanded {
                                 Text("to \(message.to.joined(separator: ", "))")
@@ -551,14 +552,14 @@ struct EmailMessageCard: View {
                             Button {
                                 pendingAction = .unsubscribe
                             } label: {
-                                ViewThatFits(in: .horizontal) {
-                                    Text("Unsubscribe")
-                                    Image(systemName: "envelope.badge.minus")
-                                }
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color.accentColor.opacity(0.75))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
+                        ViewThatFits(in: .horizontal) {
+                            Text("Unsubscribe")
+                            Image(systemName: "envelope.badge.minus")
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.accentColor.opacity(0.65))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                             }
                             .buttonStyle(.plain)
                         }
@@ -605,20 +606,21 @@ struct EmailMessageCard: View {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "shield.fill")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.green)
                 Text("\(trackersBlocked)")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.green)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2.5)
             .background(.ultraThinMaterial)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
+        .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
     }
 
     private func formatDate(_ date: Date) -> String {
