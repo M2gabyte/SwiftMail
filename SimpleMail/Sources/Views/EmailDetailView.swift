@@ -2014,7 +2014,7 @@ struct EmailActionChipsView: View {
 
 struct ActionChip<Label: View>: View {
     let strokeOpacity: Double
-    var fillColor: Color = GlassTokens.chromeMaterial
+    var fillColor: Color = Color(.tertiarySystemFill)
     var strokeColor: Color = GlassTokens.strokeColor
     let action: () -> Void
     @ViewBuilder let label: () -> Label
