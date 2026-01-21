@@ -211,6 +211,23 @@ actor BodyRenderActor {
                     pre, code { background: #2a2a2a; }
                     blockquote { border-left-color: #555; color: #aaa; }
                 }
+                /* Base typography normalization */
+                :root { -webkit-text-size-adjust: 100% !important; }
+                body, table, td, th, p, span, div {
+                    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif !important;
+                    font-size: 16px !important;
+                    line-height: 1.45 !important;
+                    color: #1c1c1c;
+                }
+                blockquote {
+                    margin-left: 0;
+                    padding-left: 12px;
+                    border-left: 2px solid rgba(0,0,0,0.12);
+                }
+                @media (prefers-color-scheme: dark) {
+                    body, table, td, th, p, span, div { color: #e6e6e6; }
+                    blockquote { border-left-color: rgba(255,255,255,0.2); }
+                }
                 .blocked-form { border: 1px dashed #ccc; padding: 8px; margin: 8px 0; }
             </style>
         </head>
@@ -531,26 +548,28 @@ struct EmailMessageCard: View {
             Button(action: onToggleExpand) {
                 HStack(alignment: .top, spacing: headerSpacing) {
                     // LEFT COLUMN: avatar + sender + badge + snippet/to line
-                    HStack(alignment: .top, spacing: 12) {
-                        SmartAvatarView(
-                            email: senderEmail,
-                            name: senderName,
-                            size: avatarSize
-                        )
+                    HStack(alignment: .top, spacing: isExpanded ? 12 : 8) {
+                        if isExpanded {
+                            SmartAvatarView(
+                                email: senderEmail,
+                                name: senderName,
+                                size: avatarSize
+                            )
+                        }
 
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: isExpanded ? 4 : 2) {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text(senderName)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .lineLimit(2)
-                                .truncationMode(.tail)
-                                .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
+                                    .font(isExpanded ? .subheadline : .callout)
+                                    .fontWeight(.semibold)
+                                    .lineLimit(isExpanded ? 2 : 1)
+                                    .truncationMode(.tail)
+                                    .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
 
-                            if trackersBlocked > 0 {
-                                trackerBadge
+                                if trackersBlocked > 0 {
+                                    trackerBadge
+                                }
                             }
-                        }
 
                             if isExpanded {
                                 Text("to \(message.to.joined(separator: ", "))")
@@ -607,7 +626,8 @@ struct EmailMessageCard: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding()
+                .padding(.horizontal, 12)
+                .padding(.vertical, isExpanded ? 10 : 6)
             }
             .buttonStyle(.plain)
 
@@ -627,7 +647,7 @@ struct EmailMessageCard: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .padding(.horizontal, 12)
-        .padding(.vertical, 3)
+        .padding(.vertical, isExpanded ? 3 : 1)
     }
 
     private var senderEmail: String {
