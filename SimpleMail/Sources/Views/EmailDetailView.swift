@@ -272,7 +272,26 @@ struct EmailDetailView: View {
         .accessibilityIdentifier("emailDetailView")
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "chevron.left")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.secondary.opacity(0.18), lineWidth: 0.8)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+            }
+
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 2) {
                     Text(viewModel.subject)
@@ -286,10 +305,22 @@ struct EmailDetailView: View {
                 }
             }
 
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: { showingActionSheet = true }) {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.secondary.opacity(0.18), lineWidth: 0.8)
+                        )
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("More")
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomDock }
