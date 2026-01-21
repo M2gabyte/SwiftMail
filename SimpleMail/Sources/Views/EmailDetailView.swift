@@ -240,13 +240,10 @@ struct EmailDetailView: View {
     @State private var showingReplySheet = false
     @State private var replyModeOverride: ComposeMode?
     @State private var showingActionSheet = false
-    @State private var showReplyPopover = false
-    @State private var showReplyFallbackDialog = false
-    @State private var hasReplyAnchor = false
+    @State private var showReplyActions = false
     @State private var showingSnoozeSheet = false
     @State private var bottomBarHeight: CGFloat = 0
     @State private var safeAreaBottom: CGFloat = 0
-    @State private var showReplyActions = false
 
     // Expose sanitized HTML cache for quoting
     private static let renderCacheVersion = 2
@@ -296,7 +293,6 @@ struct EmailDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomDock }
-        .overlay(replyPopoverOverlay)
         .sheet(isPresented: $showingReplySheet) {
             if let mode = replyModeOverride {
                 ComposeView(mode: mode)
@@ -310,22 +306,6 @@ struct EmailDetailView: View {
                     await viewModel.snooze(until: date)
                 }
             })
-        }
-        .confirmationDialog("Reply", isPresented: $showReplyFallbackDialog, titleVisibility: .hidden) {
-            Button("Reply") { showingReplySheet = true }
-            Button("Reply All") {
-                if let latestMessage = viewModel.messages.last {
-                    showingReplySheet = true
-                    replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
-                }
-            }
-            Button("Forward") {
-                if let latestMessage = viewModel.messages.last {
-                    showingReplySheet = true
-                    replyModeOverride = .forward(original: latestMessage)
-                }
-            }
-            Button("Cancel", role: .cancel) { }
         }
         .confirmationDialog("More Actions", isPresented: $showingActionSheet) {
             Button("Archive") {
@@ -382,7 +362,6 @@ struct EmailDetailView: View {
         }
         .toolbar(.hidden, for: .tabBar)
         .onAppear { StallLogger.mark("EmailDetail.appear") }
-        .onDisappear { showReplyPopover = false }
         .coordinateSpace(name: "ReplyOverlay")
     }
 
@@ -449,29 +428,21 @@ struct EmailDetailView: View {
                 .overlay(alignment: .top) { Divider().opacity(0.25) }
 
             DetailBottomDock(
-                showReplyPopover: $showReplyPopover,
-                hasReplyAnchor: $hasReplyAnchor,
-                showReplyFallbackDialog: $showReplyFallbackDialog,
+                showReplyActions: $showReplyActions,
                 onArchive: {
                     Task { await viewModel.archive(); dismiss() }
                 },
                 onReply: { showingReplySheet = true },
                 onReplyAll: {
                     if let latestMessage = viewModel.messages.last {
-                        showingReplySheet = false
-                        DispatchQueue.main.async {
-                            showingReplySheet = true
-                            replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
-                        }
+                        showingReplySheet = true
+                        replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
                     }
                 },
                 onForward: {
                     if let latestMessage = viewModel.messages.last {
-                        showingReplySheet = false
-                        DispatchQueue.main.async {
-                            showingReplySheet = true
-                            replyModeOverride = .forward(original: latestMessage)
-                        }
+                        showingReplySheet = true
+                        replyModeOverride = .forward(original: latestMessage)
                     }
                 }
             )
@@ -483,72 +454,6 @@ struct EmailDetailView: View {
         .coordinateSpace(name: "ReplyDock")
     }
 
-    // Popover overlay anchored to reply split button
-    @ViewBuilder
-    private var replyPopoverOverlay: some View {
-        if showReplyPopover {
-            overlayPreferenceValue(ReplyButtonAnchorKey.self) { anchor in
-                GeometryReader { proxy in
-                    popoverContent(anchor: anchor, proxy: proxy)
-                }
-                .onAppear { hasReplyAnchor = anchor != nil }
-                .onChange(of: anchor != nil) { _, newValue in
-                    hasReplyAnchor = newValue
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func popoverContent(anchor: Anchor<CGRect>?, proxy: GeometryProxy) -> some View {
-        if showReplyPopover, let anchor {
-            let frame = proxy[anchor]
-            let popoverWidth: CGFloat = 260
-            let clampedX = min(max(frame.midX, popoverWidth / 2 + 12), proxy.size.width - popoverWidth / 2 - 12)
-            let popoverHeight: CGFloat = 150
-            let naturalY = frame.minY - popoverHeight / 2 - 12
-            let minY = popoverHeight / 2 + 12
-            let anchoredY = max(minY, naturalY)
-
-            ZStack {
-                Color.black.opacity(0.10)
-                    .ignoresSafeArea()
-                    .onTapGesture { showReplyPopover = false }
-
-                ReplyActionsPopover(
-                    onReply: {
-                        showReplyPopover = false
-                        showingReplySheet = true
-                    },
-                    onReplyAll: {
-                        if let latestMessage = viewModel.messages.last {
-                            showReplyPopover = false
-                            showingReplySheet = true
-                            replyModeOverride = .replyAll(to: latestMessage, threadId: threadId)
-                        }
-                    },
-                    onForward: {
-                        if let latestMessage = viewModel.messages.last {
-                            showReplyPopover = false
-                            showingReplySheet = true
-                            replyModeOverride = .forward(original: latestMessage)
-                        }
-                    },
-                    onDismiss: { showReplyPopover = false }
-                )
-                .frame(height: popoverHeight)
-                .position(x: clampedX, y: anchoredY)
-                .transition(.scale(scale: 0.98).combined(with: .opacity))
-            }
-        }
-    }
-
-    // Ensure we clear popover state if the detail view disappears mid-gesture
-    private func resetReplyPopoverIfNeeded() {
-        if showReplyPopover {
-            showReplyPopover = false
-        }
-    }
 }
 
 // MARK: - Email Message Card
@@ -2027,35 +1932,36 @@ struct EmailActionChipsView: View {
                     .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
                 }
 
-                // Unsubscribe chip - equal peer
+                // Unsubscribe – keep visible, higher contrast
                 if canUnsubscribe {
-                    ActionChip(strokeOpacity: chipStrokeOpacity) {
+                    ActionChip(strokeOpacity: 0.28) {
                         pendingAction = .unsubscribe
                     } label: {
-                        Text("Unsubscribe")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                        Label("Unsubscribe", systemImage: "envelope.badge.minus")
+                            .font(.caption.weight(.semibold))
+                            .labelStyle(.titleAndIcon)
+                            .foregroundStyle(.primary)
                     }
                 }
 
-                // Block chip - equal peer
-                ActionChip(strokeOpacity: chipStrokeOpacity) {
+                // Block – make destructive-adjacent
+                ActionChip(strokeOpacity: 0.32, fillColor: Color.red.opacity(0.10), strokeColor: Color.red.opacity(0.35)) {
                     pendingAction = .block
                 } label: {
-                    Text("Block")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                    Label("Block", systemImage: "hand.raised.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
                 }
                 .accessibilityLabel("Block \(senderName)")
 
-                // Spam chip - equal peer (not for replies)
+                // Spam – also destructive tone, hide in replies
                 if !isReply {
-                    ActionChip(strokeOpacity: chipStrokeOpacity) {
+                    ActionChip(strokeOpacity: 0.32, fillColor: Color.orange.opacity(0.12), strokeColor: Color.orange.opacity(0.35)) {
                         pendingAction = .spam
                     } label: {
-                        Text("Spam")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                        Label("Spam", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
                     }
                     .accessibilityLabel("Mark as spam")
                 }
@@ -2078,6 +1984,8 @@ struct EmailActionChipsView: View {
 
 struct ActionChip<Label: View>: View {
     let strokeOpacity: Double
+    var fillColor: Color = GlassTokens.controlMaterial.opacity(0.9)
+    var strokeColor: Color = GlassTokens.strokeColor
     let action: () -> Void
     @ViewBuilder let label: () -> Label
 
@@ -2097,7 +2005,7 @@ struct ActionChip<Label: View>: View {
                 .frame(height: visualHeight)
                 .background(
                     Capsule()
-                        .fill(GlassTokens.chromeMaterial)
+                        .fill(fillColor)
                 )
                 .overlay(
                     // Pressed highlight overlay
@@ -2107,7 +2015,7 @@ struct ActionChip<Label: View>: View {
                 .overlay(
                     Capsule()
                         .stroke(
-                            GlassTokens.strokeColor.opacity(isPressed ? strokeOpacity + 0.06 : strokeOpacity),
+                            strokeColor.opacity(isPressed ? strokeOpacity + 0.06 : strokeOpacity),
                             lineWidth: GlassTokens.strokeWidth
                         )
                 )
@@ -2294,9 +2202,7 @@ struct DetailBottomBar: View {
 // MARK: - New Detail Bottom Dock (Archive + Reply with long-press menu)
 
     struct DetailBottomDock: View {
-        @Binding var showReplyPopover: Bool
-        @Binding var hasReplyAnchor: Bool
-        @Binding var showReplyFallbackDialog: Bool
+        @Binding var showReplyActions: Bool
         let onArchive: () -> Void
         let onReply: () -> Void
         let onReplyAll: () -> Void
@@ -2307,19 +2213,9 @@ struct DetailBottomBar: View {
             archiveButton
                 .frame(width: 140)
 
-            ReplySplitButton(
-                onReply: onReply,
-                onShowActions: {
-                    if hasReplyAnchor {
-                        showReplyPopover = true
-                        HapticFeedback.light()
-                    } else {
-                        showReplyFallbackDialog = true
-                    }
-                }
-            )
-            .frame(maxWidth: .infinity)
-            .layoutPriority(1)
+            replyButton
+                .frame(maxWidth: .infinity)
+                .layoutPriority(1)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
@@ -2332,6 +2228,12 @@ struct DetailBottomBar: View {
                 )
                 .shadow(color: GlassTokens.shadowColor.opacity(0.04), radius: 6, y: 3)
         )
+        .confirmationDialog("Reply Options", isPresented: $showReplyActions, titleVisibility: .hidden) {
+            Button("Reply") { onReply() }
+            Button("Reply All") { onReplyAll() }
+            Button("Forward") { onForward() }
+            Button("Cancel", role: .cancel) { }
+        }
     }
 
     private var archiveButton: some View {
@@ -2339,36 +2241,21 @@ struct DetailBottomBar: View {
             Label("Archive", systemImage: "archivebox")
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 52)
-                .padding(.horizontal, 12)
-                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.primary)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            Capsule()
                 .fill(Color(.systemBackground).opacity(0.85))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            Capsule()
                 .stroke(GlassTokens.strokeColor.opacity(0.2), lineWidth: GlassTokens.strokeWidth)
         )
     }
-}
 
-// MARK: - Reply Split + Popover Helpers
-
-private struct ReplyButtonAnchorKey: PreferenceKey {
-    static var defaultValue: Anchor<CGRect>? = nil
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-        value = nextValue() ?? value
-    }
-}
-
-private struct ReplySplitButton: View {
-    let onReply: () -> Void
-    let onShowActions: () -> Void
-
-    var body: some View {
+    private var replyButton: some View {
         HStack(spacing: 0) {
             Button(action: onReply) {
                 Label("Reply", systemImage: "arrowshape.turn.up.left")
@@ -2383,7 +2270,10 @@ private struct ReplySplitButton: View {
                 .fill(Color.white.opacity(0.18))
                 .frame(width: 1, height: 24)
 
-            Button(action: onShowActions) {
+            Button {
+                showReplyActions = true
+                HapticFeedback.light()
+            } label: {
                 Image(systemName: "chevron.up")
                     .font(.subheadline.weight(.semibold))
                     .frame(width: 48, height: 52)
@@ -2401,56 +2291,6 @@ private struct ReplySplitButton: View {
             Capsule()
                 .stroke(GlassTokens.strokeColor.opacity(0.18), lineWidth: GlassTokens.strokeWidth)
         )
-        .shadow(color: GlassTokens.shadowColor.opacity(0.04), radius: 4, y: 2)
-        .anchorPreference(key: ReplyButtonAnchorKey.self, value: .bounds) { $0 }
-    }
-}
-
-private struct ReplyActionsPopover: View {
-    let onReply: () -> Void
-    let onReplyAll: () -> Void
-    let onForward: () -> Void
-    let onDismiss: () -> Void
-
-    private let width: CGFloat = 260
-
-    var body: some View {
-        VStack(spacing: 12) {
-            actionRow(title: "Reply", systemImage: "arrowshape.turn.up.left", action: onReply)
-            actionRow(title: "Reply All", systemImage: "arrowshape.turn.up.left.2", action: onReplyAll)
-            actionRow(title: "Forward", systemImage: "arrowshape.turn.up.right", action: onForward)
-        }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
-        .frame(width: width)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(GlassTokens.controlMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(GlassTokens.strokeColor.opacity(GlassTokens.strokeOpacity), lineWidth: GlassTokens.strokeWidth)
-                )
-                .shadow(color: GlassTokens.shadowColor.opacity(0.08), radius: 10, y: 6)
-        )
-    }
-
-    private func actionRow(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: {
-            action()
-            onDismiss()
-        }) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .semibold))
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-            }
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.primary)
     }
 }
 
