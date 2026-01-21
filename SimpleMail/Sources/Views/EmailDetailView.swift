@@ -1970,7 +1970,7 @@ struct EmailActionChipsView: View {
                     } label: {
                         Text("Unsubscribe")
                             .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.primary.opacity(0.8))
                     }
                 }
 
@@ -1980,7 +1980,7 @@ struct EmailActionChipsView: View {
                 } label: {
                     Text("Block")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.primary.opacity(0.8))
                 }
                 .accessibilityLabel("Block \(senderName)")
 
@@ -1990,8 +1990,8 @@ struct EmailActionChipsView: View {
                         pendingAction = .spam
                     } label: {
                         Text("Spam")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.primary.opacity(0.8))
                     }
                     .accessibilityLabel("Mark as spam")
                 }
@@ -2013,9 +2013,9 @@ struct EmailActionChipsView: View {
 // MARK: - Action Chip Component (equal-weight, quiet, tappable)
 
 struct ActionChip<Label: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let strokeOpacity: Double
-    var fillColor: Color = Color(.tertiarySystemFill)
-    var strokeColor: Color = GlassTokens.strokeColor
     let action: () -> Void
     @ViewBuilder let label: () -> Label
 
@@ -2035,7 +2035,7 @@ struct ActionChip<Label: View>: View {
                 .frame(height: visualHeight)
                 .background(
                     Capsule()
-                        .fill(fillColor)
+                        .fill(.ultraThinMaterial)
                 )
                 .overlay(
                     // Pressed highlight overlay
@@ -2045,7 +2045,7 @@ struct ActionChip<Label: View>: View {
                 .overlay(
                     Capsule()
                         .stroke(
-                            strokeColor.opacity(isPressed ? strokeOpacity + 0.06 : strokeOpacity),
+                            strokeBaseColor.opacity(isPressed ? strokeOpacity + 0.04 : strokeOpacity),
                             lineWidth: GlassTokens.strokeWidth
                         )
                 )
@@ -2060,6 +2060,10 @@ struct ActionChip<Label: View>: View {
         .buttonStyle(ActionChipButtonStyle(isPressed: $isPressed))
         .frame(minHeight: 44)
         .contentShape(Rectangle())
+    }
+
+    private var strokeBaseColor: Color {
+        colorScheme == .dark ? Color.white : Color.black
     }
 }
 
