@@ -522,22 +522,25 @@ struct EmailMessageCard: View {
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     let onToggleExpand: () -> Void
 
+    private let avatarSize: CGFloat = 40
+    private let headerSpacing: CGFloat = 12
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header - always visible
             Button(action: onToggleExpand) {
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: headerSpacing) {
                     // LEFT COLUMN: avatar + sender + badge + snippet/to line
                     HStack(alignment: .top, spacing: 12) {
                         SmartAvatarView(
                             email: senderEmail,
                             name: senderName,
-                            size: 40
+                            size: avatarSize
                         )
 
                         VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(senderName)
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(senderName)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .lineLimit(2)
@@ -618,6 +621,7 @@ struct EmailMessageCard: View {
                     bottomInset: bottomInset
                 )
                     .frame(minHeight: 100)
+                    .padding(.leading, avatarSize + headerSpacing)
             }
         }
         .background(Color(.systemBackground))
@@ -2840,7 +2844,7 @@ class EmailDetailViewModel: ObservableObject {
         if expandedMessageIds.contains(messageId) {
             expandedMessageIds.remove(messageId)
         } else {
-            expandedMessageIds.insert(messageId)
+            expandedMessageIds = [messageId]
         }
     }
 
