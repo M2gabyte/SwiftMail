@@ -1924,12 +1924,12 @@ struct EmailActionChipsView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(.green)
-                            Text("\(trackersBlocked)")
-                                .font(.caption.weight(.medium))
+                            Text("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.green)
                         }
                     }
-                    .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
+                    .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked — message safe-checked")
                 }
 
                 // Unsubscribe – keep visible, higher contrast
