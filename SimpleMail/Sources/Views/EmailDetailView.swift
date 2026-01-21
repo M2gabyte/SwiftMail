@@ -548,49 +548,41 @@ struct EmailMessageCard: View {
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     let onToggleExpand: () -> Void
 
-    private let avatarSize: CGFloat = 36
     private let headerSpacing: CGFloat = 10
     private let compactRadius: CGFloat = 6
-    private let expandedRadius: CGFloat = 10
+    private let expandedRadius: CGFloat = 6
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header - always visible
             Button(action: onToggleExpand) {
                 HStack(alignment: .top, spacing: headerSpacing) {
-                    // LEFT COLUMN: avatar + sender + badge + snippet/to line
-                    HStack(alignment: .top, spacing: isExpanded ? 12 : 8) {
-                        if isExpanded {
-                            Spacer().frame(width: 0)
-                        }
-
-                        VStack(alignment: .leading, spacing: isExpanded ? 4 : 2) {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(senderName)
-                                    .font(isExpanded ? .subheadline : .callout)
-                                    .fontWeight(.semibold)
-                                    .lineLimit(isExpanded ? 2 : 1)
-                                    .truncationMode(.tail)
-                                    .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
+                    // LEFT COLUMN: sender + badge + snippet/to line (compact timeline style)
+                    VStack(alignment: .leading, spacing: isExpanded ? 4 : 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(senderName)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(isExpanded ? 2 : 1)
+                                .truncationMode(.tail)
+                                .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
 
                             if isExpanded, trackersBlocked > 0 {
                                 trackerBadge
                             }
                         }
 
-                            if isExpanded {
-                                Text("to \(message.to.joined(separator: ", "))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                            } else {
-                                Text(message.snippet)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                            }
+                        if isExpanded {
+                            Text("to \(message.to.joined(separator: ", "))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        } else {
+                            Text(message.snippet)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
                     }
 
@@ -599,7 +591,7 @@ struct EmailMessageCard: View {
                     // RIGHT COLUMN: time + unsubscribe
                     VStack(alignment: .trailing, spacing: 4) {
                         Text(formatDate(message.date))
-                            .font(.subheadline)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
@@ -656,9 +648,9 @@ struct EmailMessageCard: View {
         }
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: isExpanded ? expandedRadius : compactRadius))
-        .shadow(color: Color.black.opacity(isExpanded ? 0.04 : 0.0), radius: isExpanded ? 4 : 0, y: isExpanded ? 1 : 0)
+        .shadow(color: Color.black.opacity(isExpanded ? 0.03 : 0.0), radius: isExpanded ? 3 : 0, y: isExpanded ? 1 : 0)
         .padding(.horizontal, 12)
-        .padding(.vertical, isExpanded ? 3 : 0)
+        .padding(.vertical, isExpanded ? 2 : 0)
     }
 
     private var senderEmail: String {
