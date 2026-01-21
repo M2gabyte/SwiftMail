@@ -1947,17 +1947,17 @@ struct EmailActionChipsView: View {
             HStack(spacing: 10) {
                 // Tracker status chip (special - keeps green accent)
                 if trackersBlocked > 0 {
-                    ActionChip(strokeOpacity: 0.26) {
+                    ActionChip(strokeOpacity: chipStrokeOpacity) {
                         pendingAction = .tracker
                     } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: 4) {
                             Image(systemName: "shield.fill")
                                 .font(.system(size: 11, weight: .medium))
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(.green)
-                            Text("\(trackersBlocked)")
+                            Text("Tracking \(trackersBlocked)")
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Color.primary.opacity(0.8))
                         }
                     }
                     .accessibilityLabel("\(trackersBlocked) tracker\(trackersBlocked > 1 ? "s" : "") blocked")
