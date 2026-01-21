@@ -540,7 +540,7 @@ struct EmailMessageCard: View {
                     Spacer(minLength: 8)
 
                     // RIGHT COLUMN: time, unsubscribe, chevron
-                    VStack(alignment: .trailing, spacing: 6) {
+                    VStack(alignment: .trailing, spacing: 4) {
                         Text(formatDate(message.date))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -555,8 +555,8 @@ struct EmailMessageCard: View {
                                     Text("Unsubscribe")
                                     Image(systemName: "envelope.badge.minus")
                                 }
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.tint)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.accentColor.opacity(0.75))
                                 .lineLimit(1)
                                 .fixedSize(horizontal: true, vertical: false)
                             }
@@ -603,22 +603,18 @@ struct EmailMessageCard: View {
         Button {
             pendingAction = .tracker
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 Image(systemName: "shield.fill")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.green)
                 Text("\(trackersBlocked)")
-                    .font(.caption.weight(.medium))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.green)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
             .background(.ultraThinMaterial)
-            .overlay(
-                Capsule()
-                    .stroke(Color.black.opacity(0.08), lineWidth: 0.8)
-            )
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
