@@ -376,6 +376,7 @@ struct EmailDetailView: View {
         .toolbarBackground(Color(.systemBackground), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarRole(.navigationStack)
+        .safeAreaInset(edge: .top, spacing: 0) { threadHeaderInset }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomDock }
         .sheet(isPresented: $showingReplySheet) {
             if let mode = replyModeOverride {
@@ -496,6 +497,83 @@ struct EmailDetailView: View {
                 }
             }
         }
+    }
+
+    // Top inset to keep content below nav and provide stable header region
+    @ViewBuilder
+    private var threadHeaderInset: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(viewModel.subject)
+                        .font(.headline)
+                        .lineLimit(1)
+                    if viewModel.messages.count > 1 {
+                        Text("\(viewModel.messages.count) messages")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .onTapGesture { viewModel.expandLatestOnly() }
+                    }
+                }
+                Spacer()
+                if let onNavigatePrevious, hasPrevious {
+                    Button(action: onNavigatePrevious) {
+                        Image(systemName: "chevron.up")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .disabled(!hasPrevious)
+                }
+                if let onNavigateNext, hasNext {
+                    Button(action: onNavigateNext) {
+                        Image(systemName: "chevron.down")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .disabled(!hasNext)
+                }
+                Button(action: { showingActionSheet = true }) {
+                    Image(systemName: "ellipsis")
+                        .font(.title3.weight(.semibold))
+                }
+            }
+
+            if viewModel.autoSummarizeEnabled,
+               let latestMessage = viewModel.messages.last,
+               let fullBody = viewModel.latestMessageFullBody,
+               EmailTextHelper.plainTextLength(fullBody) > 300 {
+                // Collapsible summary stays inside fixed header height via ViewThatFits
+                ViewThatFits {
+                    EmailSummaryView(
+                        emailId: latestMessage.id,
+                        accountEmail: latestMessage.accountEmail,
+                        emailBody: fullBody,
+                        isExpanded: $viewModel.summaryExpanded
+                    )
+                    .padding(.horizontal, 4)
+                } compact: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.caption)
+                        Text("Summary")
+                            .font(.caption)
+                        Image(systemName: viewModel.summaryExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            viewModel.summaryExpanded.toggle()
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .background(.regularMaterial)
+        .overlay(Divider().opacity(0.3), alignment: .bottom)
     }
 
     // Bottom dock + scrim
