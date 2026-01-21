@@ -426,14 +426,6 @@ struct EmailDetailView: View {
                         .padding(.top, 8)
                     }
 
-                    EmailActionChipsView(
-                        canUnsubscribe: viewModel.canUnsubscribe,
-                        senderName: viewModel.senderName ?? "sender",
-                        isReply: viewModel.subject.lowercased().hasPrefix("re:"),
-                        trackersBlocked: viewModel.trackersBlocked,
-                        pendingAction: $pendingChipAction
-                    )
-
                     ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
                         let isLastMessage = index == viewModel.messages.count - 1
                         EmailMessageCard(
@@ -441,6 +433,9 @@ struct EmailDetailView: View {
                             styledHTML: viewModel.styledHTML(for: message),
                             renderedPlain: viewModel.plainText(for: message),
                             isExpanded: viewModel.expandedMessageIds.contains(message.id),
+                            canUnsubscribe: viewModel.canUnsubscribe,
+                            trackersBlocked: viewModel.trackersBlocked,
+                            pendingAction: $pendingChipAction,
                             bottomInset: isLastMessage ? bottomBarHeight + safeAreaBottom + 28 : 0,
                             onToggleExpand: { viewModel.toggleExpanded(message.id) }
                         )
@@ -494,6 +489,9 @@ struct EmailMessageCard: View {
     let styledHTML: String?     // nil = not ready yet, show skeleton
     let renderedPlain: String
     let isExpanded: Bool
+    let canUnsubscribe: Bool
+    let trackersBlocked: Int
+    @Binding var pendingAction: PendingChipAction?
     var bottomInset: CGFloat = 0  // Bottom inset to clear toolbar (for last message)
     let onToggleExpand: () -> Void
 
@@ -508,12 +506,27 @@ struct EmailMessageCard: View {
                         size: 40
                     )
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(senderName)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
+
+                            if trackersBlocked > 0 {
+                                trackerBadge
+                            }
+
                             Spacer()
+
+                            if canUnsubscribe {
+                                Button("Unsubscribe") {
+                                    pendingAction = .unsubscribe
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .buttonStyle(.plain)
+                                .tint(.blue)
+                            }
+
                             Text(formatDate(message.date))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -564,6 +577,32 @@ struct EmailMessageCard: View {
 
     private var senderName: String {
         EmailParser.extractSenderName(from: message.from)
+    }
+
+    private var trackerBadge: some View {
+        Button {
+            pendingAction = .tracker
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "shield.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.green)
+                Text("\(trackersBlocked)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.green)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial)
+            .overlay(
+                Capsule()
+                    .stroke(Color.black.opacity(0.08), lineWidth: 0.8)
+            )
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
     }
 
     private func formatDate(_ date: Date) -> String {
