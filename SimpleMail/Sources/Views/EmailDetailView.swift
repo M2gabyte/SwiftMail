@@ -541,32 +541,13 @@ struct EmailDetailView: View {
                let fullBody = viewModel.latestMessageFullBody,
                EmailTextHelper.plainTextLength(fullBody) > 300 {
                 // Collapsible summary stays inside fixed header height via ViewThatFits
-                ViewThatFits {
-                    EmailSummaryView(
-                        emailId: latestMessage.id,
-                        accountEmail: latestMessage.accountEmail,
-                        emailBody: fullBody,
-                        isExpanded: $viewModel.summaryExpanded
-                    )
-                    .padding(.horizontal, 4)
-                } compact: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
-                            .font(.caption)
-                        Text("Summary")
-                            .font(.caption)
-                        Image(systemName: viewModel.summaryExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption2)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            viewModel.summaryExpanded.toggle()
-                        }
-                    }
-                }
+                EmailSummaryView(
+                    emailId: latestMessage.id,
+                    accountEmail: latestMessage.accountEmail,
+                    emailBody: fullBody,
+                    isExpanded: $viewModel.summaryExpanded
+                )
+                .padding(.horizontal, 4)
             }
         }
         .padding(.horizontal, 16)
