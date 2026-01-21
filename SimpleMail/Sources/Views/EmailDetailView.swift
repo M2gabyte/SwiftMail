@@ -499,55 +499,75 @@ struct EmailMessageCard: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header - always visible
             Button(action: onToggleExpand) {
-                HStack(spacing: 12) {
-                    SmartAvatarView(
-                        email: senderEmail,
-                        name: senderName,
-                        size: 40
-                    )
+                HStack(alignment: .top, spacing: 12) {
+                    // LEFT COLUMN: avatar + sender + badge + snippet/to line
+                    HStack(alignment: .top, spacing: 12) {
+                        SmartAvatarView(
+                            email: senderEmail,
+                            name: senderName,
+                            size: 40
+                        )
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(senderName)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(senderName)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .lineLimit(2)
+                                    .truncationMode(.tail)
 
-                            if trackersBlocked > 0 {
-                                trackerBadge
-                            }
-
-                            Spacer()
-
-                            if canUnsubscribe {
-                                Button("Unsubscribe") {
-                                    pendingAction = .unsubscribe
+                                if trackersBlocked > 0 {
+                                    trackerBadge
                                 }
-                                .font(.subheadline.weight(.semibold))
-                                .buttonStyle(.plain)
-                                .tint(.blue)
                             }
 
-                            Text(formatDate(message.date))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if isExpanded {
-                            Text("to \(message.to.joined(separator: ", "))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        } else {
-                            Text(message.snippet)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            if isExpanded {
+                                Text("to \(message.to.joined(separator: ", "))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            } else {
+                                Text(message.snippet)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
                         }
                     }
 
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 8)
+
+                    // RIGHT COLUMN: time, unsubscribe, chevron
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(formatDate(message.date))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+
+                        if canUnsubscribe {
+                            Button {
+                                pendingAction = .unsubscribe
+                            } label: {
+                                ViewThatFits(in: .horizontal) {
+                                    Text("Unsubscribe")
+                                    Image(systemName: "envelope.badge.minus")
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.tint)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
                 }
                 .padding()
             }
