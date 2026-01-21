@@ -1089,6 +1089,7 @@ struct InboxView: View {
                 hasPrevious: viewModel.hasPreviousEmail,
                 hasNext: viewModel.hasNextEmail
             )
+            .id(email.id) // force view refresh when selection changes
         }
     }
 
