@@ -289,6 +289,9 @@ struct EmailDetailView: View {
                     Text("\(viewModel.messages.count) messages")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .onTapGesture {
+                            viewModel.expandLatestOnly()
+                        }
                 }
             }
         }
@@ -370,7 +373,7 @@ struct EmailDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar { toolbarContent }
-        .toolbarBackground(.regularMaterial, for: .navigationBar)
+        .toolbarBackground(Color(.systemBackground), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarRole(.navigationStack)
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomDock }
@@ -547,6 +550,8 @@ struct EmailMessageCard: View {
 
     private let avatarSize: CGFloat = 36
     private let headerSpacing: CGFloat = 10
+    private let compactRadius: CGFloat = 6
+    private let expandedRadius: CGFloat = 10
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -556,11 +561,7 @@ struct EmailMessageCard: View {
                     // LEFT COLUMN: avatar + sender + badge + snippet/to line
                     HStack(alignment: .top, spacing: isExpanded ? 12 : 8) {
                         if isExpanded {
-                            SmartAvatarView(
-                                email: senderEmail,
-                                name: senderName,
-                                size: avatarSize
-                            )
+                            Spacer().frame(width: 0)
                         }
 
                         VStack(alignment: .leading, spacing: isExpanded ? 4 : 2) {
@@ -650,12 +651,12 @@ struct EmailMessageCard: View {
                 )
                     .frame(minHeight: 100)
                     .padding(.top, 8)
-                    .padding(.leading, avatarSize + headerSpacing)
+                    .padding(.leading, isExpanded ? 0 : 0)
             }
         }
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 10 : 6))
-        .shadow(color: Color.black.opacity(isExpanded ? 0.06 : 0.0), radius: isExpanded ? 6 : 0, y: isExpanded ? 2 : 0)
+        .clipShape(RoundedRectangle(cornerRadius: isExpanded ? expandedRadius : compactRadius))
+        .shadow(color: Color.black.opacity(isExpanded ? 0.04 : 0.0), radius: isExpanded ? 4 : 0, y: isExpanded ? 1 : 0)
         .padding(.horizontal, 12)
         .padding(.vertical, isExpanded ? 3 : 0)
     }
@@ -2875,6 +2876,12 @@ class EmailDetailViewModel: ObservableObject {
             expandedMessageIds.remove(messageId)
         } else {
             expandedMessageIds = [messageId]
+        }
+    }
+
+    func expandLatestOnly() {
+        if let lastId = messages.last?.id {
+            expandedMessageIds = [lastId]
         }
     }
 
