@@ -509,6 +509,49 @@ actor ReplyAIService {
         }
     }
 
+    // MARK: - Suggestion Validation
+
+    /// Validates a suggestion is high-quality enough to show
+    private func isValidSuggestion(_ reply: SuggestedReply) -> Bool {
+        let body = reply.body
+
+        // Extract the "meat" - strip greeting line and signoff
+        let lines = body.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        // Need at least 3 lines (greeting, content, signoff)
+        guard lines.count >= 3 else { return false }
+
+        // Get content lines (skip first greeting, last 1-2 signoff lines)
+        let contentLines = lines.dropFirst().dropLast(2)
+
+        // Content must exist and not be ONLY a placeholder
+        let contentText = contentLines.joined(separator: " ")
+
+        // Check if content is meaningful:
+        // 1. Strip placeholders and check what's left
+        let withoutPlaceholders = contentText
+            .replacingOccurrences(of: "[[P1]]", with: "")
+            .replacingOccurrences(of: "[[P2]]", with: "")
+            .replacingOccurrences(of: "[[P3]]", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Must have at least 5 chars of actual content besides placeholders
+        if withoutPlaceholders.count < 5 {
+            return false
+        }
+
+        // 2. Must contain at least one word that isn't a placeholder
+        let words = withoutPlaceholders.components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+        if words.isEmpty {
+            return false
+        }
+
+        return true
+    }
+
     // MARK: - Response Parsing
 
     private func parseIntentBasedSuggestions(_ text: String, context: ReplyAIContext, voiceProfile: VoiceProfile, intent: EmailIntent, links: [ExtractedLink]) -> [SuggestedReply] {
@@ -527,22 +570,34 @@ actor ReplyAIService {
 
             if !intentTitle.isEmpty && body.count >= 10 {
                 let hasBlanks = body.contains("[[P1]]") || body.contains("[[P2]]")
-                suggestions.append(SuggestedReply(
+                let suggestion = SuggestedReply(
                     intent: intentTitle,
                     body: body,
                     hasBlanks: hasBlanks
-                ))
+                )
+
+                // Only add if it passes validation
+                if isValidSuggestion(suggestion) {
+                    suggestions.append(suggestion)
+                }
             }
         }
 
-        // If parsing failed, use intent-specific fallbacks
+        // If parsing failed or all were invalid, use intent-specific fallbacks
         if suggestions.isEmpty {
             suggestions = createIntentFallbacks(context: context, voiceProfile: voiceProfile, intent: intent, links: links)
         }
 
-        // Ensure we have at least 2, max 3
-        while suggestions.count < 2 {
-            suggestions.append(contentsOf: createIntentFallbacks(context: context, voiceProfile: voiceProfile, intent: intent, links: links))
+        // Validate fallbacks too (filter out any bad ones)
+        suggestions = suggestions.filter { isValidSuggestion($0) }
+
+        // Top up with more fallbacks if needed (but cap at 3 attempts)
+        var attempts = 0
+        while suggestions.count < 2 && attempts < 3 {
+            let more = createIntentFallbacks(context: context, voiceProfile: voiceProfile, intent: intent, links: links)
+                .filter { isValidSuggestion($0) }
+            suggestions.append(contentsOf: more)
+            attempts += 1
         }
 
         return Array(suggestions.prefix(3))
@@ -619,8 +674,8 @@ actor ReplyAIService {
                         hasBlanks: true
                     ),
                     SuggestedReply(
-                        intent: "Quick question",
-                        body: "\(greeting)\n\n[[P1]]\n\n\(signoff)",
+                        intent: "Quick question first",
+                        body: "\(greeting)\n\nQuick question before I fill it out: [[P1]]\n\n\(signoff)",
                         hasBlanks: true
                     )
                 ]
@@ -632,8 +687,8 @@ actor ReplyAIService {
                         hasBlanks: false
                     ),
                     SuggestedReply(
-                        intent: "Quick question",
-                        body: "\(greeting)\n\n[[P1]]\n\n\(signoff)",
+                        intent: "Quick question first",
+                        body: "\(greeting)\n\nQuick question: [[P1]]\n\n\(signoff)",
                         hasBlanks: true
                     )
                 ]
@@ -762,12 +817,15 @@ actor ReplyAIService {
     }
 
     private nonisolated func placeholderInfo(index: Int, intent: EmailIntent) -> (label: String, kind: String, example: String?) {
+        // Get device timezone abbreviation
+        let tz = TimeZone.current.abbreviation() ?? "local"
+
         switch intent {
         case .meetingRequest, .introduction:
             if index == 1 {
-                return ("First time option", "time", "Tuesday 2pm")
+                return ("First time", "time", "Tuesday 2pm \(tz)")
             } else {
-                return ("Second time option", "time", "Thursday morning")
+                return ("Second time", "time", "Thursday morning \(tz)")
             }
 
         case .questionAsking, .followUp:
@@ -775,13 +833,13 @@ actor ReplyAIService {
 
         case .surveyRequest:
             if index == 1 {
-                return ("First time", "time", "Monday afternoon")
+                return ("First time", "time", "Monday afternoon \(tz)")
             } else {
-                return ("Second time", "time", "Wednesday")
+                return ("Second time", "time", "Wednesday \(tz)")
             }
 
         default:
-            return ("Fill in", "info", nil)
+            return ("Your input", "info", nil)
         }
     }
 }

@@ -1,6 +1,22 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Navigation Destination
+
+/// Hashable destination for fill-blanks navigation
+private struct FillBlanksDestination: Hashable {
+    let reply: SuggestedReply
+    let intent: EmailIntent
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(reply.id)
+    }
+
+    static func == (lhs: FillBlanksDestination, rhs: FillBlanksDestination) -> Bool {
+        lhs.reply.id == rhs.reply.id
+    }
+}
+
 // MARK: - Reply AI Sheet
 
 struct ReplyAISheet: View {
@@ -14,8 +30,7 @@ struct ReplyAISheet: View {
     @State private var result: ReplyAIResult?
     @State private var errorText: String?
     @State private var selectedReplyIndex: Int?
-    @State private var showFillBlanks = false
-    @State private var selectedReplyForBlanks: SuggestedReply?
+    @State private var navigationPath = NavigationPath()
 
     init(
         context: ReplyAIContext,
@@ -30,7 +45,7 @@ struct ReplyAISheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if isLoading {
                     loadingView
@@ -48,15 +63,13 @@ struct ReplyAISheet: View {
                 }
             }
             .task { await load() }
-            .sheet(isPresented: $showFillBlanks) {
-                if let reply = selectedReplyForBlanks, let result = result {
-                    FillBlanksSheet(
-                        replyTemplate: reply.body,
-                        placeholders: extractPlaceholders(from: reply.body, intent: result.emailIntent)
-                    ) { filledBody in
-                        onInsert(filledBody)
-                        dismiss()
-                    }
+            .navigationDestination(for: FillBlanksDestination.self) { destination in
+                FillBlanksView(
+                    replyTemplate: destination.reply.body,
+                    placeholders: extractPlaceholders(from: destination.reply.body, intent: destination.intent)
+                ) { filledBody in
+                    onInsert(filledBody)
+                    dismiss()
                 }
             }
             .alert("AI Reply Error", isPresented: Binding(
@@ -136,9 +149,9 @@ struct ReplyAISheet: View {
                         emailIntent: result.emailIntent
                     ) { cleanedBody in
                         if suggestion.hasBlanks {
-                            // Show fill blanks sheet
-                            selectedReplyForBlanks = suggestion
-                            showFillBlanks = true
+                            // Navigate to fill blanks view
+                            let destination = FillBlanksDestination(reply: suggestion, intent: result.emailIntent)
+                            navigationPath.append(destination)
                         } else {
                             // Direct insert
                             withAnimation(.easeInOut(duration: 0.15)) {
@@ -209,19 +222,22 @@ struct ReplyAISheet: View {
     }
 
     private func placeholderInfo(index: Int, intent: EmailIntent, isTimesReply: Bool) -> (label: String, kind: String, example: String?) {
+        // Get device timezone abbreviation
+        let tz = TimeZone.current.abbreviation() ?? "local"
+
         // If it's a times-based reply (has both P1 and P2), use time labels
         if isTimesReply {
             if index == 1 {
-                return ("First time option", "time", "Tuesday 2pm")
+                return ("First time", "time", "Tuesday 2pm \(tz)")
             } else {
-                return ("Second time option", "time", "Thursday morning")
+                return ("Second time", "time", "Thursday morning \(tz)")
             }
         }
 
         // Single placeholder - context-aware based on intent
         switch intent {
         case .meetingRequest, .introduction:
-            return ("Suggested time", "time", "Tuesday 2pm")
+            return ("Suggested time", "time", "Tuesday 2pm \(tz)")
 
         case .questionAsking, .followUp:
             return ("Your response", "info", nil)
@@ -278,7 +294,7 @@ private struct RecommendedActionRow: View {
                     .fontWeight(.medium)
             }
 
-            // Action buttons - "one tap and you're done"
+            // Action buttons - both clearly tappable
             if let primaryLink = links.first {
                 HStack(spacing: 12) {
                     // Primary: Open & Archive (complete the loop)
@@ -291,13 +307,13 @@ private struct RecommendedActionRow: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundStyle(.white)
+                            .frame(height: 36)
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
                             .background(Capsule().fill(Color.accentColor))
                     }
                     .buttonStyle(.plain)
 
-                    // Secondary: Just open (if user wants to come back)
+                    // Secondary: Just open (bordered style, same height)
                     Button {
                         let generator = UIImpactFeedbackGenerator(style: .light)
                         generator.impactOccurred()
@@ -305,10 +321,14 @@ private struct RecommendedActionRow: View {
                     } label: {
                         Text("Just Open")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(Color(.tertiarySystemFill)))
+                            .fontWeight(.medium)
+                            .foregroundStyle(Color.accentColor)
+                            .frame(height: 36)
+                            .padding(.horizontal, 16)
+                            .background(
+                                Capsule()
+                                    .strokeBorder(Color.accentColor, lineWidth: 1.5)
+                            )
                     }
                     .buttonStyle(.plain)
 
@@ -367,18 +387,18 @@ private struct SuggestionRow: View {
     private func placeholderLabels(for intent: EmailIntent, isTimesReply: Bool) -> (String, String) {
         // If it's a times-based reply (has both P1 and P2), use time labels
         if isTimesReply {
-            return ("time 1", "time 2")
+            return ("First time", "Second time")
         }
 
         // Single placeholder - context-aware
         switch intent {
         case .meetingRequest, .introduction:
-            return ("time", "time 2")
+            return ("time", "Second time")
         case .surveyRequest:
             // Single placeholder in survey = question
             return ("your question", "details")
         case .questionAsking, .followUp:
-            return ("your answer", "details")
+            return ("your response", "details")
         default:
             return ("your input", "more info")
         }
@@ -440,17 +460,19 @@ private struct SuggestionRow: View {
         var result = AttributedString(displayBody)
         result.foregroundColor = .secondary
 
-        // Style the placeholder markers
-        let placeholderRanges = [
-            ("⟨time 1⟩", Color.accentColor),
-            ("⟨time 2⟩", Color.accentColor),
-            ("⟨your input⟩", Color.accentColor)
-        ]
+        // Style all ⟨...⟩ placeholder markers
+        let text = displayBody
+        let pattern = "⟨[^⟩]+⟩"
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let nsRange = NSRange(text.startIndex..., in: text)
+            let matches = regex.matches(in: text, range: nsRange)
 
-        for (placeholder, color) in placeholderRanges {
-            if let range = result.range(of: placeholder) {
-                result[range].foregroundColor = color
-                result[range].font = .subheadline.weight(.medium)
+            for match in matches {
+                if let swiftRange = Range(match.range, in: text),
+                   let attrRange = result.range(of: String(text[swiftRange])) {
+                    result[attrRange].foregroundColor = .accentColor
+                    result[attrRange].font = .subheadline.weight(.medium)
+                }
             }
         }
 
@@ -467,9 +489,9 @@ private struct SuggestionRow: View {
     }
 }
 
-// MARK: - Fill Blanks Sheet
+// MARK: - Fill Blanks View (Navigation Destination)
 
-struct FillBlanksSheet: View {
+private struct FillBlanksView: View {
     let replyTemplate: String
     let placeholders: [ReplyPlaceholder]
     let onDone: (String) -> Void
@@ -489,95 +511,87 @@ struct FillBlanksSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                // Preview section
-                Section {
-                    Text(livePreview)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } header: {
-                    Text("Preview")
-                }
+        Form {
+            // Preview section
+            Section {
+                Text(livePreview)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Preview")
+            }
 
-                // Input fields
-                Section {
-                    ForEach(placeholders) { placeholder in
-                        VStack(alignment: .leading, spacing: 6) {
-                            // Label with icon
-                            HStack(spacing: 6) {
-                                Image(systemName: iconForKind(placeholder.kind))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+            // Input fields
+            Section {
+                ForEach(placeholders) { placeholder in
+                    VStack(alignment: .leading, spacing: 6) {
+                        // Label with icon
+                        HStack(spacing: 6) {
+                            Image(systemName: iconForKind(placeholder.kind))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
 
-                                Text(placeholder.label)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text(placeholder.label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
 
-                            // Text field
-                            TextField(
-                                placeholder.example ?? "Enter value",
-                                text: Binding(
-                                    get: { values[placeholder.token] ?? "" },
-                                    set: { values[placeholder.token] = $0 }
-                                )
+                        // Text field
+                        TextField(
+                            placeholder.example ?? "Enter value",
+                            text: Binding(
+                                get: { values[placeholder.token] ?? "" },
+                                set: { values[placeholder.token] = $0 }
                             )
-                            .textInputAutocapitalization(.sentences)
-                            .focused($focusedField, equals: placeholder.token)
-                            .submitLabel(isLastPlaceholder(placeholder) ? .done : .next)
-                            .onSubmit {
-                                advanceToNextField(from: placeholder)
-                            }
+                        )
+                        .textInputAutocapitalization(.sentences)
+                        .focused($focusedField, equals: placeholder.token)
+                        .submitLabel(isLastPlaceholder(placeholder) ? .done : .next)
+                        .onSubmit {
+                            advanceToNextField(from: placeholder)
                         }
-                        .padding(.vertical, 4)
                     }
-                } header: {
-                    Text("Fill in the blanks")
+                    .padding(.vertical, 4)
                 }
+            } header: {
+                Text("Fill in the blanks")
             }
-            .navigationTitle("Complete Reply")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+        }
+        .navigationTitle("Complete Reply")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Insert") {
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
+                    let filled = substitute(cleanedBody, values: values)
+                    onDone(filled)
                 }
+                .fontWeight(.semibold)
+                .disabled(!allFilled)
+            }
 
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Insert") {
-                        let generator = UINotificationFeedbackGenerator()
-                        generator.notificationOccurred(.success)
-                        let filled = substitute(cleanedBody, values: values)
-                        onDone(filled)
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(!allFilled)
-                }
-
-                ToolbarItem(placement: .keyboard) {
-                    HStack {
-                        Spacer()
-                        Button("Done") {
-                            focusedField = nil
-                        }
+            ToolbarItem(placement: .keyboard) {
+                HStack {
+                    Spacer()
+                    Button("Done") {
+                        focusedField = nil
                     }
                 }
             }
-            .onAppear {
-                // Initialize values
-                for placeholder in placeholders {
-                    values[placeholder.token] = ""
-                }
-                // Focus first field
+        }
+        .onAppear {
+            // Initialize values
+            for placeholder in placeholders {
+                values[placeholder.token] = ""
+            }
+            // Focus first field after a brief delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if let first = placeholders.first {
                     focusedField = first.token
                 }
             }
         }
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
-        .interactiveDismissDisabled(hasPartialInput)
     }
 
     // MARK: - Computed Properties
