@@ -52,6 +52,7 @@ struct ComposeView: View {
     @StateObject private var richTextContext = RichTextContext()
     @State private var editingBody: NSAttributedString = NSAttributedString()
     @State private var showingAIDraft = false
+    @State private var showingReplyAI = false
     @State private var showingTemplates = false
     @State private var showingScheduleSheet = false
     @State private var showingAttachmentOptions = false
@@ -118,6 +119,38 @@ struct ComposeView: View {
         }
     }
 
+    @ViewBuilder
+    private var replyAISheetView: some View {
+        let ctx = viewModel.buildReplyAIContext()
+        ReplyAISheet(
+            context: ctx,
+            onInsert: { body in
+                self.insertReplyAIBody(body)
+            },
+            onOpenLink: { url in
+                UIApplication.shared.open(url)
+            },
+            onArchive: {
+                // User chose "no reply needed" - dismiss compose view
+                self.dismiss()
+            }
+        )
+    }
+
+    private func insertReplyAIBody(_ body: String) {
+        let currentBody = editingBody.string
+        let trimmedCurrent = currentBody.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newBody: String
+        if trimmedCurrent.isEmpty {
+            newBody = body
+        } else {
+            newBody = body + "\n\n" + trimmedCurrent
+        }
+        let attributed = ComposeViewModel.attributedBody(from: newBody)
+        editingBody = attributed
+        viewModel.bodyAttributed = attributed
+    }
+
     private func applySheets<V: View>(to view: V) -> some View {
         view
             .sheet(isPresented: $showingAIDraft) {
@@ -148,6 +181,9 @@ struct ComposeView: View {
                     editingBody = attributed
                     viewModel.bodyAttributed = attributed
                 }
+            }
+            .sheet(isPresented: $showingReplyAI) {
+                replyAISheetView
             }
             .sheet(isPresented: $showingTemplates) {
                 TemplatesSheet(
@@ -490,13 +526,19 @@ struct ComposeView: View {
                         .accessibilityLabel("More options")
                 }
 
-                Button(action: { showingAIDraft = true }) {
+                Button(action: {
+                    if isReplyMode {
+                        showingReplyAI = true
+                    } else {
+                        showingAIDraft = true
+                    }
+                }) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 16, weight: .medium))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.secondary)
                 }
-                .accessibilityLabel("AI Draft")
+                .accessibilityLabel(isReplyMode ? "AI Reply" : "AI Draft")
 
                 Button(action: send) {
                     Image(systemName: "paperplane")
@@ -2226,6 +2268,8 @@ class ComposeViewModel: ObservableObject {
     private var isSavingDraft = false  // Prevent concurrent saves
     private var pendingHTMLBody: String?
     private var pendingQuotedEmail: EmailDetail?
+    /// Stored email info for Reply AI context (persists after pendingQuotedEmail is cleared)
+    private var replyTargetEmail: EmailDetail?
     nonisolated(unsafe) private static let htmlCache = NSCache<NSString, NSAttributedString>()
 
     private struct AttributedResult: @unchecked Sendable {
@@ -2298,6 +2342,7 @@ class ComposeViewModel: ObservableObject {
             // Use placeholder - loadDeferredBody() will build quote on background thread
             bodyAttributed = Self.attributedBody(from: "\n\n")
             pendingQuotedEmail = email
+            replyTargetEmail = email  // Persist for Reply AI context
             replyThreadId = threadId
             replyToMessageId = email.id
 
@@ -2309,6 +2354,7 @@ class ComposeViewModel: ObservableObject {
             // Use placeholder - loadDeferredBody() will build quote on background thread
             bodyAttributed = Self.attributedBody(from: "\n\n")
             pendingQuotedEmail = email
+            replyTargetEmail = email  // Persist for Reply AI context
             replyThreadId = threadId
             replyToMessageId = email.id
 
@@ -2762,6 +2808,47 @@ class ComposeViewModel: ObservableObject {
         }
         bodyAttributed = Self.attributedBody(from: draft.body)
         pendingAIDraft = nil
+    }
+
+    /// Build context for Reply AI from the email being replied to
+    func buildReplyAIContext() -> ReplyAIContext {
+        let senderName: String
+        let subjectLine: String
+        let inboundPlain: String
+        let inboundHTML: String?
+
+        if let email = replyTargetEmail {
+            senderName = EmailParser.extractSenderName(from: email.from)
+            subjectLine = email.subject
+            inboundHTML = email.body  // Raw HTML for link extraction
+
+            // Prefer cached rendered plain text if available (better quality)
+            let cacheKey = EmailDetailView.cacheKey(for: email.id)
+            if let cached = EmailDetailView.sharedLastRenderedBodies[cacheKey]?.plain {
+                inboundPlain = cached
+            } else {
+                // Fall back to stripping HTML from body
+                inboundPlain = HTMLSanitizer.plainText(email.body)
+            }
+        } else {
+            // Fallback if no reply target (shouldn't happen in reply mode)
+            senderName = "Sender"
+            subjectLine = subject
+            inboundPlain = ""
+            inboundHTML = nil
+        }
+
+        // Get user name from current account
+        let userName = AuthService.shared.currentAccount?.name ?? "User"
+
+        return ReplyAIContext(
+            accountEmail: AuthService.shared.currentAccount?.email,
+            userName: userName,
+            senderName: senderName,
+            subject: subjectLine,
+            latestInboundPlainText: inboundPlain,
+            latestInboundHTML: inboundHTML
+        )
     }
 
     private func buildForwardedMessage(_ email: EmailDetail) -> String {

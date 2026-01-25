@@ -285,6 +285,13 @@ final class OutboxManager {
 
             logger.info("Successfully sent queued email to \(email.toRecipients.count) recipients")
 
+            // Record sent email for voice profile training
+            await VoiceProfileManager.shared.recordSentEmail(
+                accountEmail: email.accountEmail,
+                subject: email.subject,
+                body: email.body
+            )
+
             // Haptic feedback
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)

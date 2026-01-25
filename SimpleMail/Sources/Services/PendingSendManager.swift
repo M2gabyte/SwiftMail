@@ -119,6 +119,13 @@ final class PendingSendManager {
                 try? await GmailService.shared.deleteDraft(draftId: draftId)
             }
 
+            // Record sent email for voice profile training (only on successful send)
+            await VoiceProfileManager.shared.recordSentEmail(
+                accountEmail: email.accountEmail,
+                subject: email.subject,
+                body: email.body
+            )
+
             // Haptic feedback
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)

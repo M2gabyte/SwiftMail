@@ -81,6 +81,9 @@
 		A9000101 /* BucketRowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000101 /* BucketRowModel.swift */; };
 		A9000102 /* BucketSeenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000102 /* BucketSeenStore.swift */; };
 		BBFBC3F0BBE8AA4034E5608F /* GlassDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7F9E59BDEE31EB40CDDA6A6 /* GlassDesignSystem.swift */; };
+		C2000001 /* VoiceProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000001 /* VoiceProfileManager.swift */; };
+		C2000002 /* ReplyAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000002 /* ReplyAIService.swift */; };
+		C2000003 /* ReplyAISheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000003 /* ReplyAISheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -172,6 +175,9 @@
 		B9000101 /* BucketRowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketRowModel.swift; sourceTree = "<group>"; };
 		B9000102 /* BucketSeenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketSeenStore.swift; sourceTree = "<group>"; };
 		D7F9E59BDEE31EB40CDDA6A6 /* GlassDesignSystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GlassDesignSystem.swift; path = SimpleMail/Sources/Views/GlassDesignSystem.swift; sourceTree = "<group>"; };
+		C1000001 /* VoiceProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProfileManager.swift; sourceTree = "<group>"; };
+		C1000002 /* ReplyAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyAIService.swift; sourceTree = "<group>"; };
+		C1000003 /* ReplyAISheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyAISheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -312,6 +318,7 @@
 				B1000051 /* BottomCommandSurface.swift */,
 				B1000052 /* SwipeActionRow.swift */,
 				B10000B0 /* CategoryBundleRow.swift */,
+				C1000003 /* ReplyAISheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -356,6 +363,8 @@
 				B10000A9 /* AccountSnapshotStore.swift */,
 				B10000AA /* AccountWarmupCoordinator.swift */,
 				B9000102 /* BucketSeenStore.swift */,
+				C1000001 /* VoiceProfileManager.swift */,
+				C1000002 /* ReplyAIService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -584,6 +593,9 @@
 				A9000101 /* BucketRowModel.swift in Sources */,
 				A9000102 /* BucketSeenStore.swift in Sources */,
 				BBFBC3F0BBE8AA4034E5608F /* GlassDesignSystem.swift in Sources */,
+				C2000001 /* VoiceProfileManager.swift in Sources */,
+				C2000002 /* ReplyAIService.swift in Sources */,
+				C2000003 /* ReplyAISheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
